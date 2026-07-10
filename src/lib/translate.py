@@ -9,6 +9,8 @@ from lib.progress import (
     format_duration,
 )
 from lib.prompt import (
+    DEFAULT_GLOSSARY_NAME,
+    DEFAULT_STYLE_NAME,
     build_translation_prompt,
     load_glossary_entries,
 )
@@ -41,8 +43,6 @@ CHUNK_SIZE = 20
 # 翻訳対象の前後に参考として渡す字幕数
 CONTEXT_SIZE = 10
 
-DEFAULT_STYLE_NAME = "stargate"
-DEFAULT_GLOSSARY_NAME = "stargate"
 
 def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
     """
@@ -57,6 +57,7 @@ def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
         )
         for block in blocks
     ]
+
 
 def format_context(blocks: list[SrtBlock]) -> str:
     if not blocks:
@@ -154,7 +155,6 @@ def build_retry_instruction(
         for error in errors
     )
 
-
     return f"""
 
 【前回の出力は検証に失敗したため再翻訳する】
@@ -180,6 +180,7 @@ def build_retry_instruction(
 * 不明なOCR文字列を勝手に補完しない
 * 分からない文字列が含まれていても、レスポンス全体を反復させない
 """
+
 
 def save_failed_translation_response(
     response: str,
@@ -210,6 +211,7 @@ def save_failed_translation_response(
     )
 
     return output_path
+
 
 def translate_chunk(
     before_context: list[SrtBlock],
@@ -313,6 +315,8 @@ def translate_srt(
     model: str = MODEL,
     chunk_size: int = CHUNK_SIZE,
     context_size: int = CONTEXT_SIZE,
+    style_name: str = DEFAULT_STYLE_NAME,
+    glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> Path:
     input_srt = Path(input_srt).expanduser().resolve()
     output_srt = Path(output_srt).expanduser().resolve()
@@ -332,7 +336,7 @@ def translate_srt(
         )
 
     glossary_entries = load_glossary_entries(
-        DEFAULT_GLOSSARY_NAME
+        glossary_name
     )
 
     translated_all: list[SrtBlock] = []
@@ -348,6 +352,8 @@ def translate_srt(
     print("Translation Start")
     print("========================================")
     print(f"Model       : {model}")
+    print(f"Style       : {style_name}")
+    print(f"Glossary    : {glossary_name}")
     print(f"Subtitles   : {total_blocks}")
     print(f"Chunk Size  : {chunk_size}")
     print(f"Context     : {context_size} before / after")
@@ -397,6 +403,8 @@ def translate_srt(
             chunk_start=start + 1,
             chunk_end=end,
             glossary_entries=glossary_entries,
+            style_name=style_name,
+            glossary_name=glossary_name,
         )
 
         translated_blocks = apply_translations(

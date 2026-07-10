@@ -401,7 +401,12 @@ def find_effect_format_violations(
         ),
         start=1,
     ):
-        source = source_text.strip()
+        source = re.sub(
+            r"\s+",
+            " ",
+            source_text,
+        ).strip()
+
         translated = translated_text.strip()
 
         if not SOURCE_EFFECT_PATTERN.fullmatch(

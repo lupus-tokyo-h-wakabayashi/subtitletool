@@ -9,8 +9,8 @@ GLOSSARY_DIR = PROJECT_ROOT / "config" / "glossary"
 STYLE_DIR = PROJECT_ROOT / "config" / "styles"
 
 DEFAULT_PROMPT_NAME = "translate"
-DEFAULT_STYLE_NAME = "stargate"
-DEFAULT_GLOSSARY_NAME = "stargate"
+DEFAULT_STYLE_NAME = "default"
+DEFAULT_GLOSSARY_NAME = "default"
 
 
 def resolve_config_file(
@@ -152,7 +152,7 @@ def load_glossary_entries(
         glossary_text
     )
 
-    if not entries:
+    if not entries and glossary_name != DEFAULT_GLOSSARY_NAME:
         raise RuntimeError(
             f"No valid glossary entries: "
             f"{glossary_name}"
