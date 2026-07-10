@@ -220,15 +220,15 @@ def translate_chunk(
         last_errors = validation.reasons
 
         print(
-           "Translation validation failed "
-           f"(attempt {attempt}/"
-           f"{MAX_TRANSLATION_ATTEMPTS})"
+            "Translation validation failed "
+            f"(attempt {attempt}/"
+            f"{MAX_TRANSLATION_ATTEMPTS})"
         )
 
         print("Validation Errors:")
 
         for reason in last_errors:
-           print(f"  - {reason}")
+            print(f"  - {reason}")
 
         print(f"Saved response: {failed_path}")
 
