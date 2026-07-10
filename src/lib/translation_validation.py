@@ -724,12 +724,12 @@ def validate_translation_response(
         )
 
         # 再試行プロンプトが極端に長くならないよう、
-        # ログへ追加する件数を制限する。
+        # エラーへ追加する件数を制限する。
         for violation in glossary_violations[:10]:
-            result.add_warning(violation)
+            result.add_error(violation)
 
         if len(glossary_violations) > 10:
-            result.add_warning(
+            result.add_error(
                 "Additional glossary violations: "
                 f"{len(glossary_violations) - 10}"
             )

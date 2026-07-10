@@ -27,6 +27,7 @@ from lib.text import (
     is_suspicious_ocr_text,
 )
 from lib.translation_validation import (
+    source_contains_glossary_term,
     validate_translation_response,
 )
 
@@ -219,6 +220,108 @@ def build_retry_instruction(
 """
 
 
+def build_required_glossary_instruction(
+    target_blocks: list[SrtBlock],
+    glossary_entries: dict[str, str],
+) -> str:
+    """
+    翻訳対象チャンクに含まれる用語集項目を抽出し、
+    LLMへ使用必須の訳語として通知する。
+    """
+    required_entries: list[tuple[str, str]] = []
+
+    for source_term, expected_term in (
+        glossary_entries.items()
+    ):
+        if not any(
+            source_contains_glossary_term(
+                block.text,
+                source_term,
+            )
+            for block in target_blocks
+        ):
+            continue
+
+        required_entries.append(
+            (
+                source_term,
+                expected_term,
+            )
+        )
+
+    if not required_entries:
+        return ""
+
+    lines = "\n".join(
+        f"* {source_term} → {expected_term}"
+        for source_term, expected_term
+        in required_entries
+    )
+
+    return f"""
+
+【この翻訳で必ず使用する用語】
+
+{lines}
+
+上記の英語表現が原文にある字幕では、
+右側の日本語表記を一字一句そのまま使用すること。
+
+* 別の日本語へ意訳しない
+* 省略しない
+* 一般的な訳語へ戻さない
+* 長音、濁点、カタカナ表記を変更しない
+* 再試行時も、すべての指定用語を維持する
+"""
+
+
+def build_glossary_retry_instruction(
+    errors: list[str],
+) -> str:
+    glossary_lines = []
+
+    pattern = re.compile(
+        r"source_term=(?P<source>.+?), "
+        r"expected=(?P<expected>.+?), "
+        r"actual="
+    )
+
+    for error in errors:
+        if not error.startswith(
+            "Glossary violation:"
+        ):
+            continue
+
+        match = pattern.search(error)
+
+        if not match:
+            continue
+
+        source_term = match.group("source")
+        expected_term = match.group("expected")
+
+        glossary_lines.append(
+            f"* {source_term} → {expected_term}"
+        )
+
+    if not glossary_lines:
+        return ""
+
+    terms = "\n".join(glossary_lines)
+
+    return f"""
+
+【今回必ず使用する用語】
+
+{terms}
+
+* expected に記載された表記を一字一句そのまま使用する
+* 別の訳語へ言い換えない
+* 長音、濁点、カタカナ表記を変更しない
+* 前回正しかった他の用語を変更しない
+"""
+
+
 def save_failed_translation_response(
     response: str,
     *,
@@ -273,6 +376,15 @@ def translate_chunk(
         glossary_name=glossary_name,
     )
 
+    glossary_instruction = (
+        build_required_glossary_instruction(
+            target_blocks,
+            glossary_entries,
+        )
+    )
+
+    base_prompt += glossary_instruction
+
     for attempt in range(
         1,
         MAX_TRANSLATION_ATTEMPTS + 1,
@@ -283,6 +395,10 @@ def translate_chunk(
             prompt += build_retry_instruction(
                 last_errors
             )
+
+            # 再試行指示の末尾でも、対象チャンク内の
+            # 全用語を改めて固定する。
+            prompt += glossary_instruction
 
         response = generate(
             prompt,
