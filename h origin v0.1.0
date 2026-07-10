@@ -1,0 +1,1271 @@
+[33mtag v0.1.0[m
+Tagger: h.wakabayashi <h.wakabayashi@lupus.tokyo.jp>
+Date:   Fri Jul 10 10:03:18 2026 +0900
+
+v0.1.0 - Initial subtitle pipeline
+
+[33mcommit 1b3f9517681c4ee3c56074272a44140377b4b5c9[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;33mtag: v0.1.0[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: h.wakabayashi <h.wakabayashi@lupus.tokyo.jp>
+Date:   Fri Jul 10 09:53:20 2026 +0900
+
+    Initial subtitle processing pipeline
+
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mnew file mode 100644[m
+[1mindex 0000000..82519e1[m
+[1m--- /dev/null[m
+[1m+++ b/.gitignore[m
+[36m@@ -0,0 +1,28 @@[m
+[32m+[m[32m# Python[m
+[32m+[m[32m__pycache__/[m
+[32m+[m[32m*.pyc[m
+[32m+[m
+[32m+[m[32m# VSCode[m
+[32m+[m[32m.vscode/[m
+[32m+[m
+[32m+[m[32m# JetBrains[m
+[32m+[m[32m.idea/[m
+[32m+[m
+[32m+[m[32m# macOS[m
+[32m+[m[32m.DS_Store[m
+[32m+[m
+[32m+[m[32m# build[m
+[32m+[m[32m*.log[m
+[32m+[m
+[32m+[m[32m# generated subtitles[m
+[32m+[m[32m*.eng.sup[m
+[32m+[m[32m*.eng.srt[m
+[32m+[m[32m*.ja.srt[m
+[32m+[m[32m*.ja.mkv[m
+[32m+[m
+[32m+[m[32m# temp[m
+[32m+[m[32mwork/[m
+[32m+[m[32moutput/[m
+[32m+[m
+[32m+[m[32m# python[m
+[32m+[m[32m.venv/[m
+\ No newline at end of file[m
+[1mdiff --git a/README.md b/README.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..d5ac75c[m
+[1m--- /dev/null[m
+[1m+++ b/README.md[m
+[36m@@ -0,0 +1,24 @@[m
+[32m+[m[32mSubtitleTool[m
+[32m+[m
+[32m+[m[32mEnglish PGS Subtitle[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mextract[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mOCR[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mEnglish SRT[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mOllama Translate[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mJapanese SRT[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mmux[m
+[32m+[m[32m│[m
+[32m+[m[32m▼[m
+[32m+[m[32mJapanese MKV[m
+\ No newline at end of file[m
+[1mdiff --git a/bin/subtitletool b/bin/subtitletool[m
+[1mnew file mode 100755[m
+[1mindex 0000000..56546f6[m
+[1m--- /dev/null[m
+[1m+++ b/bin/subtitletool[m
+[36m@@ -0,0 +1,38 @@[m
+[32m+[m[32m#!/usr/bin/env fish[m
+[32m+[m
+[32m+[m[32mset COMMAND $argv[1][m
+[32m+[m
+[32m+[m[32mswitch $COMMAND[m
+[32m+[m[32m    case scan[m
+[32m+[m[32m        set -gx PYTHONPATH ~/projects/subtitletool/src[m
+[32m+[m[32m        python3 ~/projects/subtitletool/src/commands/scan.py $argv[2..-1][m
+[32m+[m
+[32m+[m[32m    case translate[m
+[32m+[m[32m        set -gx PYTHONPATH ~/projects/subtitletool/src[m
+[32m+[m[32m        python3 ~/projects/subtitletool/src/commands/translate.py $argv[2..-1][m
+[32m+[m
+[32m+[m[32m    case make[m
+[32m+[m[32m        set -gx PYTHONPATH ~/projects/subtitletool/src[m
+[32m+[m[32m        python3 ~/projects/subtitletool/src/commands/make.py $argv[2..-1][m
+[32m+[m
+[32m+[m[32m    case extract[m
+[32m+[m[32m        set -gx PYTHONPATH ~/projects/subtitletool/src[m
+[32m+[m[32m        python3 ~/projects/subtitletool/src/commands/extract.py $argv[2..-1][m
+[32m+[m
+[32m+[m[32m    case ocr[m
+[32m+[m[32m        set -gx PYTHONPATH ~/projects/subtitletool/src[m
+[32m+[m[32m        python3 ~/projects/subtitletool/src/commands/ocr.py $argv[2..-1][m
+[32m+[m
+[32m+[m[32m    case mux[m
+[32m+[m[32m        set -gx PYTHONPATH ~/projects/subtitletool/src[m
+[32m+[m[32m        python3 ~/projects/subtitletool/src/commands/mux.py $argv[2..-1][m
+[32m+[m
+[32m+[m[32m    case '*'[m
+[32m+[m[32m        echo "Usage:"[m
+[32m+[m[32m        echo "  subtitletool scan input.mkv"[m
+[32m+[m[32m        echo "  subtitletool translate input.eng.srt [output.ja.srt]"[m
+[32m+[m[32m        echo "  subtitletool make input.mkv"[m
+[32m+[m[32m        echo "  subtitletool extract input.mkv"[m
+[32m+[m[32m        echo "  subtitletool ocr input.eng.sup [output.eng.srt]"[m
+[32m+[m[32m        echo "  subtitletool mux input.mkv [input.ja.srt] [output.ja.mkv]"[m
+[32m+[m[32mend[m
+\ No newline at end of file[m
+[1mdiff --git a/src/commands/extract.py b/src/commands/extract.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..07f4c7e[m
+[1m--- /dev/null[m
+[1m+++ b/src/commands/extract.py[m
+[36m@@ -0,0 +1,44 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.extract import extract_english_pgs[m
+[32m+[m[32mfrom lib.ffprobe import find_best_english_pgs_subtitle[m
+[32m+[m[32mfrom lib.paths import eng_sup_path[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool extract input.mkv")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_path = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_path.exists():[m
+[32m+[m[32m        print(f"Not found: {input_path}")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    subtitle = find_best_english_pgs_subtitle(input_path)[m
+[32m+[m
+[32m+[m[32m    if subtitle is None:[m
+[32m+[m[32m        print("English PGS subtitle not found.")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    output_path = eng_sup_path(input_path)[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool Extract")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input : {input_path}")[m
+[32m+[m[32m    print(f"Track : 0:{subtitle['index']}")[m
+[32m+[m[32m    print(f"Output: {output_path}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    result = extract_english_pgs(input_path, output_path)[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(f"Done: {result}")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/commands/make.py b/src/commands/make.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..5e0456c[m
+[1m--- /dev/null[m
+[1m+++ b/src/commands/make.py[m
+[36m@@ -0,0 +1,51 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.extract import extract_english_pgs[m
+[32m+[m[32mfrom lib.ffmpeg import mux_japanese_srt[m
+[32m+[m[32mfrom lib.paths import eng_srt_path, eng_sup_path, ja_mkv_path, ja_srt_path[m
+[32m+[m[32mfrom lib.pgstosrt import ocr_sup_to_srt[m
+[32m+[m[32mfrom lib.translate import translate_srt[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool make input.mkv")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_mkv = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_mkv.exists():[m
+[32m+[m[32m        print(f"Not found: {input_mkv}")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    sup_path = eng_sup_path(input_mkv)[m
+[32m+[m[32m    eng_srt = eng_srt_path(input_mkv)[m
+[32m+[m[32m    ja_srt = ja_srt_path(input_mkv)[m
+[32m+[m[32m    output_mkv = ja_mkv_path(input_mkv)[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool Make")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input : {input_mkv}")[m
+[32m+[m[32m    print(f"SUP   : {sup_path}")[m
+[32m+[m[32m    print(f"ENG   : {eng_srt}")[m
+[32m+[m[32m    print(f"JPN   : {ja_srt}")[m
+[32m+[m[32m    print(f"Output: {output_mkv}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    extract_english_pgs(input_mkv, sup_path)[m
+[32m+[m[32m    ocr_sup_to_srt(sup_path, eng_srt)[m
+[32m+[m[32m    translate_srt(eng_srt, ja_srt)[m
+[32m+[m[32m    mux_japanese_srt(input_mkv, ja_srt, output_mkv)[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("Done")[m
+[32m+[m[32m    print(f"Output: {output_mkv}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/commands/mux.py b/src/commands/mux.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..2143984[m
+[1m--- /dev/null[m
+[1m+++ b/src/commands/mux.py[m
+[36m@@ -0,0 +1,41 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.ffmpeg import mux_japanese_srt[m
+[32m+[m[32mfrom lib.srt import default_ja_path[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool mux input.mkv [input.ja.srt] [output.ja.mkv]")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_mkv = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if len(sys.argv) >= 3:[m
+[32m+[m[32m        ja_srt = Path(sys.argv[2]).expanduser().resolve()[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        ja_srt = default_ja_path(input_mkv.with_suffix(".eng.srt"))[m
+[32m+[m
+[32m+[m[32m    if len(sys.argv) >= 4:[m
+[32m+[m[32m        output_mkv = Path(sys.argv[3]).expanduser().resolve()[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        output_mkv = input_mkv.with_name(f"{input_mkv.stem}.ja.mkv")[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool Mux")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input : {input_mkv}")[m
+[32m+[m[32m    print(f"SRT   : {ja_srt}")[m
+[32m+[m[32m    print(f"Output: {output_mkv}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    result = mux_japanese_srt(input_mkv, ja_srt, output_mkv)[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(f"Done: {result}")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/commands/ocr.py b/src/commands/ocr.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..21ec9cd[m
+[1m--- /dev/null[m
+[1m+++ b/src/commands/ocr.py[m
+[36m@@ -0,0 +1,34 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.pgstosrt import ocr_sup_to_srt[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool ocr input.eng.sup [output.eng.srt]")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_sup = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if len(sys.argv) >= 3:[m
+[32m+[m[32m        output_srt = Path(sys.argv[2]).expanduser().resolve()[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        output_srt = input_sup.with_suffix(".srt")[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool OCR")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input : {input_sup}")[m
+[32m+[m[32m    print(f"Output: {output_srt}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    ocr_sup_to_srt(input_sup, output_srt)[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(f"Done: {output_srt}")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/commands/scan.py b/src/commands/scan.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..5722864[m
+[1m--- /dev/null[m
+[1m+++ b/src/commands/scan.py[m
+[36m@@ -0,0 +1,84 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.ffprobe import ([m
+[32m+[m[32m    audio_streams,[m
+[32m+[m[32m    find_best_english_pgs_subtitle,[m
+[32m+[m[32m    subtitle_streams,[m
+[32m+[m[32m    video_streams,[m
+[32m+[m[32m)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef lang(stream: dict) -> str:[m
+[32m+[m[32m    return stream.get("tags", {}).get("language", "-")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef title(stream: dict) -> str:[m
+[32m+[m[32m    return stream.get("tags", {}).get("title", "-")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool scan input.mkv")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_path = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_path.exists():[m
+[32m+[m[32m        print(f"Not found: {input_path}")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool Scan")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input: {input_path}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print("[Video]")[m
+[32m+[m[32m    for stream in video_streams(input_path):[m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"#{stream.get('index')}: "[m
+[32m+[m[32m            f"{stream.get('codec_name')} "[m
+[32m+[m[32m            f"{stream.get('width')}x{stream.get('height')} "[m
+[32m+[m[32m            f"{stream.get('avg_frame_rate')}"[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print("[Audio]")[m
+[32m+[m[32m    for stream in audio_streams(input_path):[m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"#{stream.get('index')}: "[m
+[32m+[m[32m            f"{lang(stream)} "[m
+[32m+[m[32m            f"{stream.get('codec_name')} "[m
+[32m+[m[32m            f"{stream.get('channels')}ch "[m
+[32m+[m[32m            f"title={title(stream)}"[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print("[Subtitle]")[m
+[32m+[m[32m    for stream in subtitle_streams(input_path):[m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"#{stream.get('index')}: "[m
+[32m+[m[32m            f"{lang(stream)} "[m
+[32m+[m[32m            f"{stream.get('codec_name')} "[m
+[32m+[m[32m            f"frames={stream.get('nb_frames', '-')} "[m
+[32m+[m[32m            f"title={title(stream)}"[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    best = find_best_english_pgs_subtitle(input_path)[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print("[Recommended]")[m
+[32m+[m[32m    if best:[m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"English PGS subtitle: #{best.get('index')} "[m
+[32m+[m[32m            f"frames={best.get('nb_frames', '-')}"[m
+[32m+[m[32m        )[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        print("English PGS subtitle: not found")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/commands/translate.py b/src/commands/translate.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..e2e4bc5[m
+[1m--- /dev/null[m
+[1m+++ b/src/commands/translate.py[m
+[36m@@ -0,0 +1,40 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.srt import default_ja_path[m
+[32m+[m[32mfrom lib.translate import MODEL, translate_srt[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool translate input.eng.srt [output.ja.srt]")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_srt = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if len(sys.argv) >= 3:[m
+[32m+[m[32m        output_srt = Path(sys.argv[2]).expanduser().resolve()[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        output_srt = default_ja_path(input_srt)[m
+[32m+[m
+[32m+[m[32m    if not input_srt.exists():[m
+[32m+[m[32m        print(f"Not found: {input_srt}")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool Translate")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input : {input_srt}")[m
+[32m+[m[32m    print(f"Output: {output_srt}")[m
+[32m+[m[32m    print(f"Model : {MODEL}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    result = translate_srt(input_srt, output_srt)[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(f"Done: {result}")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/extract.py b/src/lib/extract.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..2c96a70[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/extract.py[m
+[36m@@ -0,0 +1,44 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport subprocess[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.ffprobe import find_best_english_pgs_subtitle[m
+[32m+[m[32mfrom lib.paths import eng_sup_path[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef extract_english_pgs(input_mkv: str | Path, output_sup: str | Path | None = None) -> Path:[m
+[32m+[m[32m    input_mkv = Path(input_mkv).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if output_sup is None:[m
+[32m+[m[32m        output_sup = eng_sup_path(input_mkv)[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        output_sup = Path(output_sup).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_mkv.exists():[m
+[32m+[m[32m        raise FileNotFoundError(f"MKV not found: {input_mkv}")[m
+[32m+[m
+[32m+[m[32m    subtitle = find_best_english_pgs_subtitle(input_mkv)[m
+[32m+[m
+[32m+[m[32m    if subtitle is None:[m
+[32m+[m[32m        raise RuntimeError("English PGS subtitle not found.")[m
+[32m+[m
+[32m+[m[32m    stream_index = subtitle["index"][m
+[32m+[m
+[32m+[m[32m    if output_sup.exists():[m
+[32m+[m[32m        print(f"Skip Extract: {output_sup}")[m
+[32m+[m[32m        return output_sup[m
+[32m+[m
+[32m+[m[32m    cmd = [[m
+[32m+[m[32m        "ffmpeg",[m
+[32m+[m[32m        "-y",[m
+[32m+[m[32m        "-i", str(input_mkv),[m
+[32m+[m[32m        "-map", f"0:{stream_index}",[m
+[32m+[m[32m        "-c:s", "copy",[m
+[32m+[m[32m        str(output_sup),[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(" ".join(cmd))[m
+[32m+[m[32m    subprocess.run(cmd, check=True)[m
+[32m+[m
+[32m+[m[32m    return output_sup[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/ffmpeg.py b/src/lib/ffmpeg.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..c4c3afe[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/ffmpeg.py[m
+[36m@@ -0,0 +1,62 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport subprocess[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.ffprobe import subtitle_count[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef run(cmd: list[str]) -> None:[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(" ".join(str(c) for c in cmd))[m
+[32m+[m[32m    subprocess.run(cmd, check=True)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef mux_japanese_srt([m
+[32m+[m[32m    input_mkv: str | Path,[m
+[32m+[m[32m    ja_srt: str | Path,[m
+[32m+[m[32m    output_mkv: str | Path | None = None,[m
+[32m+[m[32m) -> Path:[m
+[32m+[m[32m    input_mkv = Path(input_mkv).expanduser().resolve()[m
+[32m+[m[32m    ja_srt = Path(ja_srt).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if output_mkv is None:[m
+[32m+[m[32m        output_mkv = input_mkv.with_name(f"{input_mkv.stem}.ja.mkv")[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        output_mkv = Path(output_mkv).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_mkv.exists():[m
+[32m+[m[32m        raise FileNotFoundError(f"MKV not found: {input_mkv}")[m
+[32m+[m
+[32m+[m[32m    if not ja_srt.exists():[m
+[32m+[m[32m        raise FileNotFoundError(f"SRT not found: {ja_srt}")[m
+[32m+[m
+[32m+[m[32m    if output_mkv.exists():[m
+[32m+[m[32m        print(f"Skip MUX: {output_mkv}")[m
+[32m+[m[32m        return output_mkv[m
+[32m+[m
+[32m+[m[32m    added_subtitle_index = subtitle_count(input_mkv)[m
+[32m+[m
+[32m+[m[32m    cmd = [[m
+[32m+[m[32m        "ffmpeg",[m
+[32m+[m[32m        "-y",[m
+[32m+[m[32m        "-i", str(input_mkv),[m
+[32m+[m[32m        "-i", str(ja_srt),[m
+[32m+[m
+[32m+[m[32m        "-map", "0",[m
+[32m+[m[32m        "-map", "1:0",[m
+[32m+[m
+[32m+[m[32m        # まず全ストリームをコピー[m
+[32m+[m[32m        "-c", "copy",[m
+[32m+[m
+[32m+[m[32m        # 追加される字幕だけSRTとしてmux[m
+[32m+[m[32m        f"-c:s:{added_subtitle_index}", "srt",[m
+[32m+[m
+[32m+[m[32m        f"-metadata:s:s:{added_subtitle_index}", "language=jpn",[m
+[32m+[m[32m        f"-metadata:s:s:{added_subtitle_index}", "title=Japanese AI",[m
+[32m+[m
+[32m+[m[32m        str(output_mkv),[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    run(cmd)[m
+[32m+[m
+[32m+[m[32m    return output_mkv[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/ffprobe.py b/src/lib/ffprobe.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..d6acb5c[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/ffprobe.py[m
+[36m@@ -0,0 +1,75 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport json[m
+[32m+[m[32mimport subprocess[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef probe(input_path: str | Path) -> dict:[m
+[32m+[m[32m    result = subprocess.run([m
+[32m+[m[32m        [[m
+[32m+[m[32m            "ffprobe",[m
+[32m+[m[32m            "-v", "error",[m
+[32m+[m[32m            "-print_format", "json",[m
+[32m+[m[32m            "-show_streams",[m
+[32m+[m[32m            "-show_format",[m
+[32m+[m[32m            str(input_path),[m
+[32m+[m[32m        ],[m
+[32m+[m[32m        text=True,[m
+[32m+[m[32m        stdout=subprocess.PIPE,[m
+[32m+[m[32m        stderr=subprocess.PIPE,[m
+[32m+[m[32m        check=True,[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    return json.loads(result.stdout)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef streams(input_path: str | Path) -> list[dict]:[m
+[32m+[m[32m    return probe(input_path).get("streams", [])[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef subtitle_streams(input_path: str | Path) -> list[dict]:[m
+[32m+[m[32m    return [[m
+[32m+[m[32m        stream for stream in streams(input_path)[m
+[32m+[m[32m        if stream.get("codec_type") == "subtitle"[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef audio_streams(input_path: str | Path) -> list[dict]:[m
+[32m+[m[32m    return [[m
+[32m+[m[32m        stream for stream in streams(input_path)[m
+[32m+[m[32m        if stream.get("codec_type") == "audio"[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef video_streams(input_path: str | Path) -> list[dict]:[m
+[32m+[m[32m    return [[m
+[32m+[m[32m        stream for stream in streams(input_path)[m
+[32m+[m[32m        if stream.get("codec_type") == "video"[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef find_best_english_pgs_subtitle(input_path: str | Path) -> dict | None:[m
+[32m+[m[32m    candidates = [][m
+[32m+[m
+[32m+[m[32m    for stream in subtitle_streams(input_path):[m
+[32m+[m[32m        tags = stream.get("tags", {})[m
+[32m+[m[32m        language = tags.get("language", "")[m
+[32m+[m[32m        codec = stream.get("codec_name", "")[m
+[32m+[m
+[32m+[m[32m        if language == "eng" and codec in ["hdmv_pgs_subtitle", "pgssub"]:[m
+[32m+[m[32m            candidates.append(stream)[m
+[32m+[m
+[32m+[m[32m    if not candidates:[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m[32m    # 通常字幕を優先。強制字幕はフレーム数が少ないことが多いので避ける。[m
+[32m+[m[32m    candidates.sort([m
+[32m+[m[32m        key=lambda s: int(s.get("nb_frames") or 0),[m
+[32m+[m[32m        reverse=True,[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    return candidates[0][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef subtitle_count(input_path: str | Path) -> int:[m
+[32m+[m[32m    return len(subtitle_streams(input_path))[m
+[1mdiff --git a/src/lib/ollama.py b/src/lib/ollama.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..020afc8[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/ollama.py[m
+[36m@@ -0,0 +1,43 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport json[m
+[32m+[m[32mimport subprocess[m
+[32m+[m[32mimport urllib.request[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef get_ollama_base_url() -> str:[m
+[32m+[m[32m    host = subprocess.check_output([m
+[32m+[m[32m        "ip route | awk '/default/ {print $3}'",[m
+[32m+[m[32m        shell=True,[m
+[32m+[m[32m        text=True,[m
+[32m+[m[32m    ).strip()[m
+[32m+[m
+[32m+[m[32m    return f"http://{host}:11434"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef generate([m
+[32m+[m[32m    prompt: str,[m
+[32m+[m[32m    model: str = "qwen3:14b",[m
+[32m+[m[32m    temperature: float = 0.2,[m
+[32m+[m[32m    top_p: float = 0.9,[m
+[32m+[m[32m    timeout: int = 900,[m
+[32m+[m[32m) -> str:[m
+[32m+[m[32m    data = json.dumps({[m
+[32m+[m[32m        "model": model,[m
+[32m+[m[32m        "prompt": prompt,[m
+[32m+[m[32m        "stream": False,[m
+[32m+[m[32m        "options": {[m
+[32m+[m[32m            "temperature": temperature,[m
+[32m+[m[32m            "top_p": top_p,[m
+[32m+[m[32m        },[m
+[32m+[m[32m    }).encode("utf-8")[m
+[32m+[m
+[32m+[m[32m    req = urllib.request.Request([m
+[32m+[m[32m        f"{get_ollama_base_url()}/api/generate",[m
+[32m+[m[32m        data=data,[m
+[32m+[m[32m        headers={"Content-Type": "application/json"},[m
+[32m+[m[32m        method="POST",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    with urllib.request.urlopen(req, timeout=timeout) as res:[m
+[32m+[m[32m        body = json.loads(res.read().decode("utf-8"))[m
+[32m+[m[32m        return body["response"].strip()[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/paths.py b/src/lib/paths.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..73815ff[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/paths.py[m
+[36m@@ -0,0 +1,22 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef eng_sup_path(input_mkv: str | Path) -> Path:[m
+[32m+[m[32m    input_mkv = Path(input_mkv).expanduser().resolve()[m
+[32m+[m[32m    return input_mkv.with_suffix(".eng.sup")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef eng_srt_path(input_mkv: str | Path) -> Path:[m
+[32m+[m[32m    input_mkv = Path(input_mkv).expanduser().resolve()[m
+[32m+[m[32m    return input_mkv.with_suffix(".eng.srt")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef ja_srt_path(input_mkv: str | Path) -> Path:[m
+[32m+[m[32m    input_mkv = Path(input_mkv).expanduser().resolve()[m
+[32m+[m[32m    return input_mkv.with_suffix(".ja.srt")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef ja_mkv_path(input_mkv: str | Path) -> Path:[m
+[32m+[m[32m    input_mkv = Path(input_mkv).expanduser().resolve()[m
+[32m+[m[32m    return input_mkv.with_name(f"{input_mkv.stem}.ja.mkv")[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/pgstosrt.py b/src/lib/pgstosrt.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..a9e72d1[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/pgstosrt.py[m
+[36m@@ -0,0 +1,35 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport subprocess[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mDOTNET8 = Path.home() / ".dotnet8/dotnet"[m
+[32m+[m[32mPGS_TO_SRT_DLL = Path.home() / "PgsToSrt/src/PgsToSrt/bin/Release/net8.0/PgsToSrt.dll"[m
+[32m+[m[32mTESSDATA = "/usr/share/tesseract-ocr/4.00/tessdata"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef ocr_sup_to_srt(input_sup: str | Path, output_srt: str | Path, language: str = "eng") -> Path:[m
+[32m+[m[32m    input_sup = Path(input_sup).expanduser().resolve()[m
+[32m+[m[32m    output_srt = Path(output_srt).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_sup.exists():[m
+[32m+[m[32m        raise FileNotFoundError(f"SUP not found: {input_sup}")[m
+[32m+[m
+[32m+[m[32m    if output_srt.exists():[m
+[32m+[m[32m        print(f"Skip OCR: {output_srt}")[m
+[32m+[m[32m        return output_srt[m
+[32m+[m
+[32m+[m[32m    cmd = [[m
+[32m+[m[32m        str(DOTNET8),[m
+[32m+[m[32m        str(PGS_TO_SRT_DLL),[m
+[32m+[m[32m        "--input", str(input_sup),[m
+[32m+[m[32m        "--output", str(output_srt),[m
+[32m+[m[32m        "--tesseractlanguage", language,[m
+[32m+[m[32m        "--tesseractdata", TESSDATA,[m
+[32m+[m[32m        "--tesseractversion", "4",[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(" ".join(cmd))[m
+[32m+[m[32m    subprocess.run(cmd, check=True)[m
+[32m+[m
+[32m+[m[32m    return output_srt[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/srt.py b/src/lib/srt.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..334b86e[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/srt.py[m
+[36m@@ -0,0 +1,130 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport re[m
+[32m+[m[32mfrom dataclasses import dataclass[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@dataclass[m
+[32m+[m[32mclass SrtBlock:[m
+[32m+[m[32m    number: str[m
+[32m+[m[32m    timestamp: str[m
+[32m+[m[32m    text: str[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef parse_srt(path: str | Path) -> list[SrtBlock]:[m
+[32m+[m[32m    path = Path(path).expanduser().resolve()[m
+[32m+[m[32m    raw = path.read_text(encoding="utf-8", errors="replace").strip()[m
+[32m+[m
+[32m+[m[32m    blocks = [][m
+[32m+[m
+[32m+[m[32m    for chunk in re.split(r"\n\s*\n", raw):[m
+[32m+[m[32m        lines = [line.rstrip() for line in chunk.splitlines()][m
+[32m+[m
+[32m+[m[32m        if len(lines) < 2:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        number = lines[0].strip()[m
+[32m+[m[32m        timestamp = lines[1].strip()[m
+[32m+[m[32m        text = "\n".join(lines[2:]).strip()[m
+[32m+[m
+[32m+[m[32m        if "-->" not in timestamp:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        blocks.append(SrtBlock(number=number, timestamp=timestamp, text=text))[m
+[32m+[m
+[32m+[m[32m    return blocks[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef write_structured_srt(path: str | Path, blocks: list[SrtBlock]) -> None:[m
+[32m+[m[32m    path = Path(path).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    out = [][m
+[32m+[m
+[32m+[m[32m    for block in blocks:[m
+[32m+[m[32m        text = block.text.strip()[m
+[32m+[m
+[32m+[m[32m        if not text:[m
+[32m+[m[32m            text = block.text[m
+[32m+[m
+[32m+[m[32m        out.append(f"{block.number}\n{block.timestamp}\n{text}")[m
+[32m+[m
+[32m+[m[32m    path.write_text("\n\n".join(out).strip() + "\n", encoding="utf-8")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef chunk_blocks(blocks: list[SrtBlock], size: int):[m
+[32m+[m[32m    for i in range(0, len(blocks), size):[m
+[32m+[m[32m        yield blocks[i:i + size][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef default_ja_path(input_srt: str | Path) -> Path:[m
+[32m+[m[32m    input_srt = Path(input_srt).expanduser().resolve()[m
+[32m+[m[32m    name = input_srt.name[m
+[32m+[m
+[32m+[m[32m    if name.endswith(".eng.srt"):[m
+[32m+[m[32m        return input_srt.with_name(name.replace(".eng.srt", ".ja.srt"))[m
+[32m+[m
+[32m+[m[32m    if name.endswith(".srt"):[m
+[32m+[m[32m        return input_srt.with_name(name.replace(".srt", ".ja.srt"))[m
+[32m+[m
+[32m+[m[32m    return input_srt.with_suffix(".ja.srt")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef extract_text_lines(blocks: list[SrtBlock]) -> str:[m
+[32m+[m[32m    lines = [][m
+[32m+[m
+[32m+[m[32m    for i, block in enumerate(blocks, start=1):[m
+[32m+[m[32m        text = block.text.replace("\n", " / ").strip()[m
+[32m+[m[32m        lines.append(f"{i}. {text}")[m
+[32m+[m
+[32m+[m[32m    return "\n".join(lines)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef parse_numbered_translation(text: str, expected_count: int) -> list[str]:[m
+[32m+[m[32m    text = text.strip()[m
+[32m+[m[32m    text = re.sub(r"^```(?:text)?\s*", "", text)[m
+[32m+[m[32m    text = re.sub(r"\s*```$", "", text)[m
+[32m+[m
+[32m+[m[32m    result = [""] * expected_count[m
+[32m+[m
+[32m+[m[32m    pattern = re.compile([m
+[32m+[m[32m        r"^\s*(\d+)[\.\)：:)、]\s*(.*)$"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    for line in text.splitlines():[m
+[32m+[m[32m        line = line.strip()[m
+[32m+[m[32m        match = pattern.match(line)[m
+[32m+[m
+[32m+[m[32m        if not match:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        idx = int(match.group(1)) - 1[m
+[32m+[m[32m        value = match.group(2).strip()[m
+[32m+[m
+[32m+[m[32m        if 0 <= idx < expected_count:[m
+[32m+[m[32m            result[idx] = value[m
+[32m+[m
+[32m+[m[32m    return result[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef apply_translations([m
+[32m+[m[32m    source_blocks: list[SrtBlock],[m
+[32m+[m[32m    translations: list[str],[m
+[32m+[m[32m) -> list[SrtBlock]:[m
+[32m+[m[32m    output = [][m
+[32m+[m
+[32m+[m[32m    for block, translated in zip(source_blocks, translations):[m
+[32m+[m[32m        text = translated.strip()[m
+[32m+[m
+[32m+[m[32m        # 空・空白プレースホルダなら元文を残す[m
+[32m+[m[32m        if not text or text in ["（空白）", "(blank)", "blank", "空白"]:[m
+[32m+[m[32m            text = block.text[m
+[32m+[m
+[32m+[m[32m        output.append([m
+[32m+[m[32m            SrtBlock([m
+[32m+[m[32m                number=block.number,[m
+[32m+[m[32m                timestamp=block.timestamp,[m
+[32m+[m[32m                text=text,[m
+[32m+[m[32m            )[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    return output[m
+\ No newline at end of file[m
+[1mdiff --git a/src/lib/translate.py b/src/lib/translate.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..a6f7295[m
+[1m--- /dev/null[m
+[1m+++ b/src/lib/translate.py[m
+[36m@@ -0,0 +1,102 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mfrom lib.ollama import generate[m
+[32m+[m[32mfrom lib.srt import ([m
+[32m+[m[32m    SrtBlock,[m
+[32m+[m[32m    apply_translations,[m
+[32m+[m[32m    chunk_blocks,[m
+[32m+[m[32m    extract_text_lines,[m
+[32m+[m[32m    parse_numbered_translation,[m
+[32m+[m[32m    parse_srt,[m
+[32m+[m[32m    write_structured_srt,[m
+[32m+[m[32m)[m
+[32m+[m
+[32m+[m[32mMODEL = "qwen3:14b"[m
+[32m+[m[32mCHUNK_SIZE = 30[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef build_prompt(text_lines: str, count: int) -> str:[m
+[32m+[m[32m    return f"""You are a professional subtitle translator.[m
+[32m+[m
+[32m+[m[32mTranslate the following English subtitle lines into natural Japanese.[m
+[32m+[m
+[32m+[m[32mRules:[m
+[32m+[m[32m- Output exactly {count} lines.[m
+[32m+[m[32m- Keep the same numbering format: "1. ...", "2. ...".[m
+[32m+[m[32m- Do not output timestamps.[m
+[32m+[m[32m- Do not output SRT blocks.[m
+[32m+[m[32m- Do not add explanations.[m
+[32m+[m[32m- Translate only the text after the number.[m
+[32m+[m[32m- Keep each line short and natural for subtitles.[m
+[32m+[m[32m- If a line has only symbols or no meaningful text, copy it as-is.[m
+[32m+[m[32m- Never output "blank" or "（空白）".[m
+[32m+[m[32m- Keep names consistent:[m
+[32m+[m[32m  Stargate=スターゲイト[m
+[32m+[m[32m  Destiny=デスティニー[m
+[32m+[m[32m  Colonel Young=ヤング大佐[m
+[32m+[m[32m  Eli=イーライ[m
+[32m+[m[32m  Rush=ラッシュ博士[m
+[32m+[m[32m  Chloe=クロエ[m
+[32m+[m[32m  Scott=スコット[m
+[32m+[m[32m  Lieutenant=中尉[m
+[32m+[m[32m  Senator=上院議員[m
+[32m+[m
+[32m+[m[32mInput:[m
+[32m+[m[32m{text_lines}[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef translate_chunk(blocks: list[SrtBlock], model: str) -> list[str]:[m
+[32m+[m[32m    text_lines = extract_text_lines(blocks)[m
+[32m+[m[32m    prompt = build_prompt(text_lines, len(blocks))[m
+[32m+[m
+[32m+[m[32m    response = generate(prompt, model=model)[m
+[32m+[m[32m    translations = parse_numbered_translation(response, len(blocks))[m
+[32m+[m
+[32m+[m[32m    # 不足がある場合は元文で補完[m
+[32m+[m[32m    fixed = [][m
+[32m+[m
+[32m+[m[32m    for block, translated in zip(blocks, translations):[m
+[32m+[m[32m        if translated.strip():[m
+[32m+[m[32m            fixed.append(translated.strip())[m
+[32m+[m[32m        else:[m
+[32m+[m[32m            fixed.append(block.text)[m
+[32m+[m
+[32m+[m[32m    return fixed[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef translate_srt([m
+[32m+[m[32m    input_srt: str | Path,[m
+[32m+[m[32m    output_srt: str | Path,[m
+[32m+[m[32m    model: str = MODEL,[m
+[32m+[m[32m    chunk_size: int = CHUNK_SIZE,[m
+[32m+[m[32m) -> Path:[m
+[32m+[m[32m    input_srt = Path(input_srt).expanduser().resolve()[m
+[32m+[m[32m    output_srt = Path(output_srt).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_srt.exists():[m
+[32m+[m[32m        raise FileNotFoundError(f"SRT not found: {input_srt}")[m
+[32m+[m
+[32m+[m[32m    if output_srt.exists():[m
+[32m+[m[32m        print(f"Skip Translate: {output_srt}")[m
+[32m+[m[32m        return output_srt[m
+[32m+[m
+[32m+[m[32m    source_blocks = parse_srt(input_srt)[m
+[32m+[m
+[32m+[m[32m    translated_all: list[SrtBlock] = [][m
+[32m+[m[32m    total = len(source_blocks)[m
+[32m+[m[32m    done = 0[m
+[32m+[m
+[32m+[m[32m    for chunk in chunk_blocks(source_blocks, chunk_size):[m
+[32m+[m[32m        print(f"Translating {done + 1}-{done + len(chunk)} / {total} ...")[m
+[32m+[m
+[32m+[m[32m        translated_texts = translate_chunk(chunk, model)[m
+[32m+[m[32m        translated_blocks = apply_translations(chunk, translated_texts)[m
+[32m+[m
+[32m+[m[32m        translated_all.extend(translated_blocks)[m
+[32m+[m[32m        done += len(chunk)[m
+[32m+[m
+[32m+[m[32m        write_structured_srt(output_srt, translated_all)[m
+[32m+[m
+[32m+[m[32m    return output_srt[m
+\ No newline at end of file[m
+[1mdiff --git a/src/make.py b/src/make.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..4415162[m
+[1m--- /dev/null[m
+[1m+++ b/src/make.py[m
+[36m@@ -0,0 +1,114 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport subprocess[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mPGS_TO_SRT = str(Path.home() / "PgsToSrt/src/PgsToSrt/bin/Release/net8.0/PgsToSrt.dll")[m
+[32m+[m[32mDOTNET8 = str(Path.home() / ".dotnet8/dotnet")[m
+[32m+[m[32mTRANSLATE = str(Path.home() / "projects/subtitletool/src/translate.py")[m
+[32m+[m
+[32m+[m[32mSUBTITLE_TRACK = "0:3"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef run(cmd):[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print(" ".join(str(c) for c in cmd))[m
+[32m+[m[32m    subprocess.run(cmd, check=True)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 2:[m
+[32m+[m[32m        print("Usage: subtitletool make input.mkv")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_path = Path(sys.argv[1]).expanduser().resolve()[m
+[32m+[m
+[32m+[m[32m    if not input_path.exists():[m
+[32m+[m[32m        print(f"Not found: {input_path}")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    work_dir = input_path.parent[m
+[32m+[m[32m    stem = input_path.stem[m
+[32m+[m
+[32m+[m[32m    sup_path = work_dir / f"{stem}.eng.sup"[m
+[32m+[m[32m    eng_srt_path = work_dir / f"{stem}.eng.srt"[m
+[32m+[m[32m    ja_srt_path = work_dir / f"{stem}.ja.srt"[m
+[32m+[m[32m    output_mkv_path = work_dir / f"{stem}.ja.mkv"[m
+[32m+[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("SubtitleTool Make")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print(f"Input : {input_path}")[m
+[32m+[m[32m    print(f"Track : {SUBTITLE_TRACK}")[m
+[32m+[m[32m    print(f"SUP   : {sup_path}")[m
+[32m+[m[32m    print(f"ENG   : {eng_srt_path}")[m
+[32m+[m[32m    print(f"JPN   : {ja_srt_path}")[m
+[32m+[m[32m    print(f"Output: {output_mkv_path}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m[32m    if not sup_path.exists():[m
+[32m+[m[32m        run([[m
+[32m+[m[32m            "ffmpeg",[m
+[32m+[m[32m            "-y",[m
+[32m+[m[32m            "-i", str(input_path),[m
+[32m+[m[32m            "-map", SUBTITLE_TRACK,[m
+[32m+[m[32m            "-c:s", "copy",[m
+[32m+[m[32m            str(sup_path),[m
+[32m+[m[32m        ])[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        print(f"Skip SUP: {sup_path}")[m
+[32m+[m
+[32m+[m[32m    if not eng_srt_path.exists():[m
+[32m+[m[32m        run([[m
+[32m+[m[32m            DOTNET8,[m
+[32m+[m[32m            PGS_TO_SRT,[m
+[32m+[m[32m            "--input", str(sup_path),[m
+[32m+[m[32m            "--output", str(eng_srt_path),[m
+[32m+[m[32m            "--tesseractlanguage", "eng",[m
+[32m+[m[32m            "--tesseractdata", "/usr/share/tesseract-ocr/4.00/tessdata",[m
+[32m+[m[32m            "--tesseractversion", "4",[m
+[32m+[m[32m        ])[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        print(f"Skip ENG SRT: {eng_srt_path}")[m
+[32m+[m
+[32m+[m[32m    if not ja_srt_path.exists():[m
+[32m+[m[32m        run([[m
+[32m+[m[32m            "python3",[m
+[32m+[m[32m            TRANSLATE,[m
+[32m+[m[32m            str(eng_srt_path),[m
+[32m+[m[32m            str(ja_srt_path),[m
+[32m+[m[32m        ])[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        print(f"Skip JPN SRT: {ja_srt_path}")[m
+[32m+[m
+[32m+[m[32m    if not output_mkv_path.exists():[m
+[32m+[m[32m        run([[m
+[32m+[m[32m            "ffmpeg",[m
+[32m+[m[32m            "-y",[m
+[32m+[m[32m            "-i", str(input_path),[m
+[32m+[m[32m            "-i", str(ja_srt_path),[m
+[32m+[m[32m            "-map", "0",[m
+[32m+[m[32m            "-map", "1",[m
+[32m+[m[32m            "-c", "copy",[m
+[32m+[m[32m            "-c:s", "srt",[m
+[32m+[m[32m            "-metadata:s:s:0", "language=eng",[m
+[32m+[m[32m            "-metadata:s:s:1", "language=fre",[m
+[32m+[m[32m            "-metadata:s:s:2", "language=spa",[m
+[32m+[m[32m            "-metadata:s:s:3", "language=spa",[m
+[32m+[m[32m            "-metadata:s:s:4", "language=jpn",[m
+[32m+[m[32m            "-metadata:s:s:4", "title=Japanese",[m
+[32m+[m[32m            str(output_mkv_path),[m
+[32m+[m[32m        ])[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        print(f"Skip MKV: {output_mkv_path}")[m
+[32m+[m
+[32m+[m[32m    print()[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m[32m    print("Done")[m
+[32m+[m[32m    print(f"Output: {output_mkv_path}")[m
+[32m+[m[32m    print("========================================")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
+[32m+[m
+[1mdiff --git a/src/translate.py b/src/translate.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..108ef6a[m
+[1m--- /dev/null[m
+[1m+++ b/src/translate.py[m
+[36m@@ -0,0 +1,118 @@[m
+[32m+[m[32m#!/usr/bin/env python3[m
+[32m+[m[32mimport json[m
+[32m+[m[32mimport re[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mimport urllib.request[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m
+[32m+[m[32mMODEL = "qwen3:14b"[m
+[32m+[m[32mCHUNK_SIZE = 40[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef get_ollama_url():[m
+[32m+[m[32m    import subprocess[m
+[32m+[m[32m    host = subprocess.check_output([m
+[32m+[m[32m        "ip route | awk '/default/ {print $3}'",[m
+[32m+[m[32m        shell=True,[m
+[32m+[m[32m        text=True[m
+[32m+[m[32m    ).strip()[m
+[32m+[m[32m    return f"http://{host}:11434/api/generate"[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef split_srt_blocks(text):[m
+[32m+[m[32m    return re.split(r"\n\s*\n", text.strip())[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef chunk_blocks(blocks, size):[m
+[32m+[m[32m    for i in range(0, len(blocks), size):[m
+[32m+[m[32m        yield blocks[i:i + size][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef build_prompt(srt_chunk):[m
+[32m+[m[32m    return f"""You are a professional subtitle translator.[m
+[32m+[m
+[32m+[m[32mTranslate this SRT from English to natural Japanese.[m
+[32m+[m
+[32m+[m[32mRules:[m
+[32m+[m[32m- Preserve subtitle numbers exactly.[m
+[32m+[m[32m- Preserve timestamps exactly.[m
+[32m+[m[32m- Preserve SRT block structure.[m
+[32m+[m[32m- Translate only dialogue text.[m
+[32m+[m[32m- Output ONLY valid SRT.[m
+[32m+[m[32m- Do not add explanations.[m
+[32m+[m[32m- Use natural spoken Japanese.[m
+[32m+[m[32m- Keep names consistent:[m
+[32m+[m[32m  Stargate=スターゲイト[m
+[32m+[m[32m  Destiny=デスティニー[m
+[32m+[m[32m  Colonel Young=ヤング大佐[m
+[32m+[m[32m  Eli=イーライ[m
+[32m+[m[32m  Rush=ラッシュ博士[m
+[32m+[m[32m  Chloe=クロエ[m
+[32m+[m[32m  Scott=スコット[m
+[32m+[m[32m  Lieutenant=中尉[m
+[32m+[m[32m  Senator=上院議員[m
+[32m+[m
+[32m+[m[32mSRT:[m
+[32m+[m[32m{srt_chunk}[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef call_ollama(prompt):[m
+[32m+[m[32m    data = json.dumps({[m
+[32m+[m[32m        "model": MODEL,[m
+[32m+[m[32m        "prompt": prompt,[m
+[32m+[m[32m        "stream": False,[m
+[32m+[m[32m        "options": {[m
+[32m+[m[32m            "temperature": 0.2,[m
+[32m+[m[32m            "top_p": 0.9[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }).encode("utf-8")[m
+[32m+[m
+[32m+[m[32m    req = urllib.request.Request([m
+[32m+[m[32m        get_ollama_url(),[m
+[32m+[m[32m        data=data,[m
+[32m+[m[32m        headers={"Content-Type": "application/json"},[m
+[32m+[m[32m        method="POST",[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    with urllib.request.urlopen(req, timeout=600) as res:[m
+[32m+[m[32m        body = json.loads(res.read().decode("utf-8"))[m
+[32m+[m[32m        return body["response"].strip()[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    if len(sys.argv) < 3:[m
+[32m+[m[32m        print("Usage: subtitletool translate input.srt output.srt")[m
+[32m+[m[32m        sys.exit(1)[m
+[32m+[m
+[32m+[m[32m    input_path = Path(sys.argv[1]).expanduser()[m
+[32m+[m[32m    output_path = Path(sys.argv[2]).expanduser()[m
+[32m+[m
+[32m+[m[32m    text = input_path.read_text(encoding="utf-8", errors="replace")[m
+[32m+[m[32m    blocks = split_srt_blocks(text)[m
+[32m+[m
+[32m+[m[32m    translated_chunks = [][m
+[32m+[m
+[32m+[m[32m    total = len(blocks)[m
+[32m+[m[32m    done = 0[m
+[32m+[m
+[32m+[m[32m    for chunk in chunk_blocks(blocks, CHUNK_SIZE):[m
+[32m+[m[32m        srt_chunk = "\n\n".join(chunk)[m
+[32m+[m[32m        prompt = build_prompt(srt_chunk)[m
+[32m+[m
+[32m+[m[32m        print(f"Translating {done + 1}-{done + len(chunk)} / {total} ...")[m
+[32m+[m[32m        translated = call_ollama(prompt)[m
+[32m+[m
+[32m+[m[32m        translated_chunks.append(translated)[m
+[32m+[m[32m        done += len(chunk)[m
+[32m+[m
+[32m+[m[32m        output_path.write_text([m
+[32m+[m[32m            "\n\n".join(translated_chunks).strip() + "\n",[m
+[32m+[m[32m            encoding="utf-8"[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    print(f"Done: {output_path}")[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    main()[m
