@@ -74,6 +74,21 @@ DEFAULT_MAX_CHARS_PER_SUBTITLE = 200
 
 DEFAULT_INCOMPLETE_THRESHOLD = 3
 
+DEFAULT_MINIMUM_SOURCE_LENGTH = 8
+DEFAULT_MINIMUM_LENGTH_RATIO = 0.15
+DEFAULT_MAXIMUM_LENGTH_RATIO = 4.0
+DEFAULT_MAXIMUM_SEGMENTS = 4
+
+NUMBER_PATTERN = re.compile(r"\d+")
+
+SOURCE_EFFECT_PATTERN = re.compile(
+    r"^\s*\([A-Z0-9 ,.'’!?-]+\)\s*$"
+)
+
+TRANSLATED_EFFECT_PATTERN = re.compile(
+    r"^\s*[（(].+[）)]\s*$"
+)
+
 # 字幕の末尾として不自然になりやすい助詞・接続表現。
 #
 # 字幕では次の字幕へ文章が続くこともあるため、
@@ -92,6 +107,7 @@ INCOMPLETE_ENDING_PATTERN = re.compile(
 SOUND_EFFECT_PATTERN = re.compile(
     r"^[（(].+[）)]$"
 )
+
 
 @dataclass
 class ValidationResult:
@@ -256,6 +272,192 @@ def normalize_line_for_comparison(
     )
 
     return normalized
+
+
+def normalized_text_length(
+    text: str,
+) -> int:
+    """
+    空白と字幕内改行記号を除外した文字数を返す。
+    """
+    normalized = re.sub(
+        r"[\s／/]+",
+        "",
+        text,
+    )
+
+    return len(normalized)
+
+
+
+def find_length_ratio_violations(
+    source_texts: list[str],
+    translated_texts: list[str],
+    *,
+    minimum_source_length: int = DEFAULT_MINIMUM_SOURCE_LENGTH,
+    minimum_ratio: float = DEFAULT_MINIMUM_LENGTH_RATIO,
+    maximum_ratio: float = DEFAULT_MAXIMUM_LENGTH_RATIO,
+) -> list[str]:
+    """
+    原文に対して訳文が極端に短い、または長い字幕を検出する。
+    """
+    violations: list[str] = []
+
+    for index, (
+        source_text,
+        translated_text,
+    ) in enumerate(
+        zip(
+            source_texts,
+            translated_texts,
+            strict=True,
+        ),
+        start=1,
+    ):
+        source_length = normalized_text_length(
+            source_text
+        )
+        translated_length = normalized_text_length(
+            translated_text
+        )
+
+        if source_length < minimum_source_length:
+            continue
+
+        ratio = translated_length / source_length
+
+        if minimum_ratio <= ratio <= maximum_ratio:
+            continue
+
+        violations.append(
+            "Suspicious translation length: "
+            f"subtitle={index}, "
+            f"source_length={source_length}, "
+            f"translated_length={translated_length}, "
+            f"ratio={ratio:.2f}"
+        )
+
+    return violations
+
+
+def find_number_mismatches(
+    source_texts: list[str],
+    translated_texts: list[str],
+) -> list[str]:
+    """
+    原文と訳文に含まれる数字が一致しているか確認する。
+    """
+    violations: list[str] = []
+
+    for index, (
+        source_text,
+        translated_text,
+    ) in enumerate(
+        zip(
+            source_texts,
+            translated_texts,
+            strict=True,
+        ),
+        start=1,
+    ):
+        source_numbers = NUMBER_PATTERN.findall(
+            source_text
+        )
+        translated_numbers = NUMBER_PATTERN.findall(
+            translated_text
+        )
+
+        if source_numbers == translated_numbers:
+            continue
+
+        violations.append(
+            "Number mismatch: "
+            f"subtitle={index}, "
+            f"source={source_numbers}, "
+            f"translated={translated_numbers}"
+        )
+
+    return violations
+
+
+def find_effect_format_violations(
+    source_texts: list[str],
+    translated_texts: list[str],
+) -> list[str]:
+    """
+    原文が効果音のみなのに、
+    訳文が括弧形式になっていない字幕を検出する。
+    """
+    violations: list[str] = []
+
+    for index, (
+        source_text,
+        translated_text,
+    ) in enumerate(
+        zip(
+            source_texts,
+            translated_texts,
+            strict=True,
+        ),
+        start=1,
+    ):
+        source = source_text.strip()
+        translated = translated_text.strip()
+
+        if not SOURCE_EFFECT_PATTERN.fullmatch(
+            source
+        ):
+            continue
+
+        if TRANSLATED_EFFECT_PATTERN.fullmatch(
+            translated
+        ):
+            continue
+
+        violations.append(
+            "Sound effect format mismatch: "
+            f"subtitle={index}, "
+            f"source={source!r}, "
+            f"translated={translated!r}"
+        )
+
+    return violations
+
+
+def find_excessive_segments(
+    translated_texts: list[str],
+    *,
+    maximum_segments: int = DEFAULT_MAXIMUM_SEGMENTS,
+) -> list[str]:
+    """
+    1字幕内の区切りが多すぎる字幕を検出する。
+    """
+    violations: list[str] = []
+
+    for index, text in enumerate(
+        translated_texts,
+        start=1,
+    ):
+        segments = [
+            segment.strip()
+            for segment in re.split(
+                r"\s*[／/]\s*",
+                text,
+            )
+            if segment.strip()
+        ]
+
+        if len(segments) <= maximum_segments:
+            continue
+
+        violations.append(
+            "Too many subtitle segments: "
+            f"subtitle={index}, "
+            f"segments={len(segments)}, "
+            f"text={text!r}"
+        )
+
+    return violations
 
 
 def find_repeated_lines(
@@ -527,6 +729,69 @@ def validate_translation_response(
                 f"{len(glossary_violations) - 10}"
             )
 
+    if (
+        source_texts is not None
+        and len(source_texts) == len(translated_texts)
+    ):
+        length_violations = (
+            find_length_ratio_violations(
+                source_texts,
+                translated_texts,
+            )
+        )
+
+        for violation in length_violations[:10]:
+            result.add_warning(violation)
+
+        if len(length_violations) > 10:
+            result.add_warning(
+                "Additional length ratio violations: "
+                f"{len(length_violations) - 10}"
+            )
+
+        number_mismatches = find_number_mismatches(
+            source_texts,
+            translated_texts,
+        )
+
+        for violation in number_mismatches[:10]:
+            result.add_warning(violation)
+
+        if len(number_mismatches) > 10:
+            result.add_warning(
+                "Additional number mismatches: "
+                f"{len(number_mismatches) - 10}"
+            )
+
+        effect_violations = (
+            find_effect_format_violations(
+                source_texts,
+                translated_texts,
+            )
+        )
+
+        for violation in effect_violations[:10]:
+            result.add_warning(violation)
+
+        if len(effect_violations) > 10:
+            result.add_warning(
+                "Additional effect format violations: "
+                f"{len(effect_violations) - 10}"
+            )
+
+    excessive_segments = find_excessive_segments(
+        translated_texts
+    )
+
+    for violation in excessive_segments[:10]:
+        result.add_warning(violation)
+
+    if len(excessive_segments) > 10:
+        result.add_warning(
+            "Additional excessive segment warnings: "
+            f"{len(excessive_segments) - 10}"
+        )
+
     incomplete_translations = (
         find_incomplete_translations(
             translated_texts
@@ -534,7 +799,7 @@ def validate_translation_response(
     )
 
     # 字幕では文章が次のブロックへ続く場合があるため、
-    # 1件では再試行せず、一定数以上の場合のみ異常扱いする。
+    # 一定数以上でも警告に留め、再試行理由にはしない。
     if (
         len(incomplete_translations)
         >= incomplete_threshold
@@ -569,6 +834,7 @@ def validate_translation_response(
         )
 
     return result
+
 
 def source_contains_glossary_term(
     source_text: str,
