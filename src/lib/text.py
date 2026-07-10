@@ -18,9 +18,6 @@ SPEAKER_LABEL_PATTERN = re.compile(
 )
 
 LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
-NORMAL_ENGLISH_WORD_PATTERN = re.compile(
-    r"^[A-Za-z]+(?:'[A-Za-z]+)?$"
-)
 KNOWN_OCR_NOISE_PATTERNS = (
     re.compile(
         r"\beRe\s+Are\b",
@@ -40,6 +37,24 @@ KNOWN_OCR_NOISE_PATTERNS = (
     ),
     re.compile(
         r"\bHil\s+I['’]?m\b",
+        re.IGNORECASE,
+    ),
+
+    # 実際の長編テストで確認したOCR破損。
+    re.compile(
+        r"\bb\s+ATT\s+oe\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bMim\s+elom\s+i\s+elaie\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bWV\s+iaiac-lalmia\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bdavial\s+qatar\s+lan\s+mellem\b",
         re.IGNORECASE,
     ),
 )
@@ -66,12 +81,50 @@ DEFAULT_ALLOWED_LATIN_TERMS = {
     "Chloe",
     "Young",
 }
-LATIN_SEQUENCE_PATTERN = re.compile(
-    r"(?<![A-Za-z])"
-    r"[A-Za-z][A-Za-z'-]*"
-    r"(?:[ \t]+[A-Za-z][A-Za-z'-]*)+"
-    r"(?![A-Za-z])"
+SUSPICIOUS_MIXED_CASE_TOKEN_PATTERN = re.compile(
+    r"\b[A-Za-z]{8,}\b"
 )
+
+
+def is_suspicious_mixed_case_token(
+    token: str,
+) -> bool:
+    """
+    長い英字列の不自然な大小文字混在を検出する。
+
+    正常例:
+        Stargate
+        Johansen
+
+    異常例:
+        VVNsKomCIAcM
+        MimElomIElaie
+    """
+    if len(token) < 8:
+        return False
+
+    upper_count = sum(
+        character.isupper()
+        for character in token
+    )
+
+    lower_count = sum(
+        character.islower()
+        for character in token
+    )
+
+    # 通常の固有名詞:
+    # 先頭のみ大文字、残りは小文字。
+    if (
+        token[0].isupper()
+        and token[1:].islower()
+    ):
+        return False
+
+    return (
+        upper_count >= 2
+        and lower_count >= 2
+    )
 
 
 def mask_chinese_ocr_text(
@@ -160,14 +213,25 @@ def normalize_latin_token(
     ).upper()
 
 
-def is_suspicious_latin_sequence(
-    sequence: str,
+def find_suspicious_latin_sequences(
+    text: str,
     *,
     allowed_terms: set[str] | None = None,
-) -> bool:
+) -> list[str]:
     """
-    複数語の英字列がOCR破損らしいか判定する。
+    OCR破損の可能性が高い英字列を保守的に抽出する。
+
+    判定対象:
+        - 実際に確認済みのOCRパターン
+        - 明らかに不自然な大小文字混在の長い1単語
+
+    通常の複数単語英文はOCR候補にしない。
     """
+    normalized = text.replace(
+        "\n",
+        " ",
+    )
+
     allowed = {
         normalize_latin_token(term)
         for term in (
@@ -176,94 +240,34 @@ def is_suspicious_latin_sequence(
         )
     }
 
-    words = LATIN_TOKEN_PATTERN.findall(
-        sequence
-    )
-
-    if len(words) < 2:
-        return False
-
-    unknown_words = [
-        word
-        for word in words
-        if normalize_latin_token(word)
-        not in allowed
-    ]
-
-    if not unknown_words:
-        return False
-
-    short_words = sum(
-        len(word) <= 2
-        for word in words
-    )
-
-    unusual_case_words = sum(
-        any(character.isupper() for character in word)
-        and any(character.islower() for character in word)
-        and not (
-            word[0].isupper()
-            and word[1:].islower()
-        )
-        for word in words
-    )
-
-    internal_upper_words = sum(
-        word.isupper()
-        and len(word) >= 2
-        for word in words[1:]
-    )
-
-    all_unknown = (
-        len(unknown_words)
-        == len(words)
-    )
-
-    return (
-        unusual_case_words > 0
-        or internal_upper_words > 0
-        or short_words >= 2
-        or (
-            all_unknown
-            and len(words) >= 3
-        )
-    )
-
-
-def find_suspicious_latin_sequences(
-    text: str,
-    *,
-    allowed_terms: set[str] | None = None,
-) -> list[str]:
-    """
-    OCR破損の可能性が高い複数語の英字列を抽出する。
-    """
-    normalized = text.replace(
-        "\n",
-        " ",
-    )
-
     results: list[str] = []
 
-    for match in LATIN_SEQUENCE_PATTERN.finditer(
-        normalized
-    ):
-        sequence = match.group(0).strip()
-
-        if not is_suspicious_latin_sequence(
-            sequence,
-            allowed_terms=allowed_terms,
-        ):
-            continue
-
-        results.append(sequence)
-
     for pattern in KNOWN_OCR_NOISE_PATTERNS:
-        for match in pattern.finditer(normalized):
+        for match in pattern.finditer(
+            normalized
+        ):
             sequence = match.group(0).strip()
 
             if sequence not in results:
                 results.append(sequence)
+
+    for match in (
+        SUSPICIOUS_MIXED_CASE_TOKEN_PATTERN.finditer(
+            normalized
+        )
+    ):
+        token = match.group(0)
+
+        if normalize_latin_token(token) in allowed:
+            continue
+
+        if not is_suspicious_mixed_case_token(
+            token
+        ):
+            continue
+
+        if token not in results:
+            results.append(token)
 
     return results
 
@@ -305,17 +309,8 @@ def is_suspicious_ocr_text(
     """
     OCR破損文字列が含まれる可能性を判定する。
     """
-    if find_suspicious_latin_sequences(
-        text
-    ):
-        return True
-
-    normalized = text.replace(
-        "\n",
-        " ",
-    )
-
-    return any(
-        pattern.search(normalized)
-        for pattern in KNOWN_OCR_NOISE_PATTERNS
+    return bool(
+        find_suspicious_latin_sequences(
+            text
+        )
     )

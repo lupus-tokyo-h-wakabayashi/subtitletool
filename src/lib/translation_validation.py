@@ -94,10 +94,26 @@ class ValidationResult:
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     translated_texts: list[str] = field(default_factory=list)
+    failed_ids: set[str] = field(default_factory=set)
+    requires_full_retry: bool = False
 
-    def add_error(self, reason: str) -> None:
+    def add_error(
+        self,
+        reason: str,
+        *,
+        subtitle_id: str | None = None,
+        requires_full_retry: bool = False,
+    ) -> None:
         self.valid = False
         self.reasons.append(reason)
+
+        if subtitle_id is not None:
+            self.failed_ids.add(
+                subtitle_id
+            )
+
+        if requires_full_retry:
+            self.requires_full_retry = True
 
     def add_warning(self, warning: str) -> None:
         self.warnings.append(warning)

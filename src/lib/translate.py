@@ -174,7 +174,7 @@ def build_ocr_noise_instruction(
     )
 
     print(
-        "OCR Noise Candidates: "
+        "OCR Noise IDs: "
         f"{ids}"
     )
 
