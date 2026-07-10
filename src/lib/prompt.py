@@ -9,7 +9,8 @@ GLOSSARY_DIR = PROJECT_ROOT / "config" / "glossary"
 STYLE_DIR = PROJECT_ROOT / "config" / "styles"
 
 DEFAULT_PROMPT_NAME = "translate"
-DEFAULT_STYLE_NAME = "stargate"
+DEFAULT_STYLE_NAME = "default"
+DEFAULT_GLOSSARY_NAME = "default"
 
 
 def resolve_config_file(
@@ -87,7 +88,7 @@ def load_prompt_template(
 
 
 def load_glossary(
-    glossary_name: str = DEFAULT_STYLE_NAME,
+    glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> str:
     path = resolve_config_file(
         GLOSSARY_DIR,
@@ -96,6 +97,68 @@ def load_glossary(
 
     return read_config_file(path)
 
+
+def parse_glossary_entries(
+    glossary_text: str,
+) -> dict[str, str]:
+    """
+    次の形式の用語集を辞書へ変換する。
+
+    English term = 日本語訳
+
+    空行と # から始まるコメントは無視する。
+    """
+    entries: dict[str, str] = {}
+
+    for raw_line in glossary_text.splitlines():
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        if line.startswith("#"):
+            continue
+
+        if "=" not in line:
+            continue
+
+        source_term, translated_term = line.split(
+            "=",
+            maxsplit=1,
+        )
+
+        source_term = source_term.strip()
+        translated_term = translated_term.strip()
+
+        if not source_term or not translated_term:
+            continue
+
+        entries[source_term] = translated_term
+
+    return entries
+
+
+def load_glossary_entries(
+    glossary_name: str = DEFAULT_GLOSSARY_NAME,
+) -> dict[str, str]:
+    """
+    指定した用語集を検証用の辞書として読み込む。
+    """
+    glossary_text = load_glossary(
+        glossary_name
+    )
+
+    entries = parse_glossary_entries(
+        glossary_text
+    )
+
+    if not entries and glossary_name != DEFAULT_GLOSSARY_NAME:
+        raise RuntimeError(
+            f"No valid glossary entries: "
+            f"{glossary_name}"
+        )
+
+    return entries
 
 def load_style(
     style_name: str = DEFAULT_STYLE_NAME,
@@ -126,7 +189,7 @@ def build_translation_prompt(
     target_text: str,
     after_context: str,
     prompt_name: str = DEFAULT_PROMPT_NAME,
-    glossary_name: str = DEFAULT_STYLE_NAME,
+    glossary_name: str = DEFAULT_GLOSSARY_NAME,
     style_name: str = DEFAULT_STYLE_NAME,
 ) -> str:
     template = load_prompt_template(prompt_name)
