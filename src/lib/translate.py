@@ -85,6 +85,25 @@ def build_request_item(
     }
 
 
+def build_context_item(
+    block: SrtBlock,
+) -> dict[str, str | None]:
+    """
+    参考文脈をLLMリクエスト用JSONへ変換する。
+
+    contextは出力対象ではないため、
+    targetと混同されないようidを含めない。
+    """
+    parsed = parse_speaker_from_text(
+        block.text
+    )
+
+    return {
+        "speaker": parsed.speaker,
+        "text": parsed.text,
+    }
+
+
 def build_translation_request_json(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
@@ -95,7 +114,7 @@ def build_translation_request_json(
     """
     payload = {
         "context_before": [
-            build_request_item(block)
+            build_context_item(block)
             for block in before_context
         ],
         "target": [
@@ -103,7 +122,7 @@ def build_translation_request_json(
             for block in target_blocks
         ],
         "context_after": [
-            build_request_item(block)
+            build_context_item(block)
             for block in after_context
         ],
     }
@@ -259,7 +278,88 @@ def build_retry_instruction(
 * 英文をそのまま出力しない
 * 中国語を出力しない
 * 同じ字幕を繰り返さない
+* エラーにsubtitle_idがある場合、そのIDだけを修正する
+* エラーがないIDのtranslationは前回の内容を維持する
+* 用語集の指定訳を別のIDへ移動しない
+* 修正対象外の字幕へ用語を追加しない
 """
+
+
+STRUCTURAL_ERROR_PREFIXES = (
+    "Invalid JSON response:",
+    "Invalid translations:",
+    "Translation count mismatch:",
+    "Duplicate translation IDs:",
+    "Missing translation IDs:",
+    "Unexpected translation IDs:",
+    "Invalid translation ID order:",
+    "Response has too many lines:",
+    "Response is too long:",
+)
+
+
+def has_structural_validation_error(
+    errors: list[str],
+) -> bool:
+    """
+    ID対応やJSON構造を保証できないエラーがあるか判定する。
+    """
+    return any(
+        error.startswith(
+            STRUCTURAL_ERROR_PREFIXES
+        )
+        for error in errors
+    )
+
+
+def extract_error_subtitle_ids(
+    errors: list[str],
+    *,
+    prefixes: tuple[str, ...] | None = None,
+) -> set[str]:
+    """
+    subtitle_idを含む検証エラーから、
+    修正対象のSRT字幕IDを抽出する。
+    """
+    subtitle_ids: set[str] = set()
+
+    pattern = re.compile(
+        r"subtitle_id=(?P<quote>['\"])"
+        r"(?P<id>.+?)"
+        r"(?P=quote)"
+    )
+
+    for error in errors:
+        if (
+            prefixes is not None
+            and not error.startswith(prefixes)
+        ):
+            continue
+
+        match = pattern.search(error)
+
+        if not match:
+            continue
+
+        subtitle_ids.add(
+            match.group("id")
+        )
+
+    return subtitle_ids
+
+
+def extract_glossary_error_ids(
+    errors: list[str],
+) -> set[str]:
+    """
+    用語集違反がある字幕IDを抽出する。
+    """
+    return extract_error_subtitle_ids(
+        errors,
+        prefixes=(
+            "Glossary violation:",
+        ),
+    )
 
 
 def extract_chinese_error_ids(
@@ -464,6 +564,48 @@ def build_latin_ocr_retry_instruction(
 """
 
 
+def build_untranslated_english_retry_instruction(
+    errors: list[str],
+) -> str:
+    """
+    未翻訳英文の再試行指示を生成する。
+    """
+    english_errors = [
+        error
+        for error in errors
+        if error.startswith(
+            "Untranslated English sentence detected:"
+        )
+    ]
+
+    if not english_errors:
+        return ""
+
+    details = "\n".join(
+        f"* {error}"
+        for error in english_errors
+    )
+
+    return f"""
+
+【未翻訳英文の修正】
+
+以下の字幕には未翻訳の英文が残っている。
+
+{details}
+
+必ず次を守ること。
+
+* エラーに記載されたsubtitle_idの英文をすべて日本語へ翻訳する
+* translationへ英文をそのままコピーしない
+* 複数行の字幕は、すべての行を日本語へ翻訳する
+* 一部だけ翻訳して残りの英文を残さない
+* 人名、作品固有名詞、略語以外の英文を残さない
+* 前回出力した未翻訳英文を再利用しない
+* OCR破損ではない正常な英文を「（判読不能）」へ置き換えない
+"""
+
+
 def build_required_glossary_instruction(
     target_blocks: list[SrtBlock],
     glossary_entries: dict[str, str],
@@ -522,47 +664,118 @@ def build_required_glossary_instruction(
 def build_glossary_retry_instruction(
     errors: list[str],
 ) -> str:
-    glossary_lines = []
-
-    pattern = re.compile(
-        r"source_term=(?P<source>.+?), "
-        r"expected=(?P<expected>.+?), "
-        r"actual="
-    )
-
-    for error in errors:
-        if not error.startswith(
+    """
+    用語集違反の字幕ID・指定訳・前回訳を含む
+    再試行指示を生成する。
+    """
+    glossary_errors = [
+        error
+        for error in errors
+        if error.startswith(
             "Glossary violation:"
-        ):
-            continue
-
-        match = pattern.search(error)
-
-        if not match:
-            continue
-
-        source_term = match.group("source")
-        expected_term = match.group("expected")
-
-        glossary_lines.append(
-            f"* {source_term} → {expected_term}"
         )
+    ]
 
-    if not glossary_lines:
+    if not glossary_errors:
         return ""
 
-    terms = "\n".join(glossary_lines)
+    details = "\n".join(
+        f"* {error}"
+        for error in glossary_errors
+    )
+
+    target_ids = sorted(
+        extract_glossary_error_ids(errors),
+        key=lambda value: (
+            int(value)
+            if value.isdigit()
+            else value
+        ),
+    )
+
+    ids = ", ".join(target_ids)
 
     return f"""
 
-【今回必ず使用する用語】
+【用語集違反の修正】
 
-{terms}
+修正対象ID: {ids}
 
-* expected に記載された表記を一字一句そのまま使用する
-* 別の訳語へ言い換えない
-* 長音、濁点、カタカナ表記を変更しない
-* 前回正しかった他の用語を変更しない
+以下の用語集違反だけを修正する。
+
+{details}
+
+必ず次を守ること。
+
+* 出力には入力targetの全IDを必ず含める
+* 修正対象IDだけtranslationの内容を修正する
+* 修正対象外IDはpreserved_translationsの訳文をそのままコピーする
+* 修正対象IDだけを出力することは禁止する
+* source_termが原文にある場合、expectedを一字一句そのまま使用する
+* actualに記載された前回訳の問題部分を修正する
+* 指定訳を別の字幕IDへ移動しない
+* 指定訳を無関係な字幕へ追加しない
+* 修正対象外IDの意味と内容を変更しない
+* 用語を入れるために原文にない内容を追加しない
+"""
+
+
+def build_preserved_translations_instruction(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    errors: list[str],
+) -> str:
+    """
+    前回正常だった字幕を、再試行時の固定訳として通知する。
+    """
+    failed_ids = extract_error_subtitle_ids(
+        errors
+    )
+
+    if not failed_ids:
+        return ""
+
+    preserved = [
+        {
+            "id": block.number,
+            "translation": translation,
+        }
+        for block, translation in zip(
+            target_blocks,
+            translated_texts,
+            strict=True,
+        )
+        if block.number not in failed_ids
+    ]
+
+    if not preserved:
+        return ""
+
+    preserved_json = json.dumps(
+        {
+            "preserved_translations": preserved,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    return f"""
+
+【変更禁止の前回正常訳】
+
+以下は前回の検証で問題が検出されなかった字幕である。
+
+{preserved_json}
+
+必ず次を守ること。
+
+* preserved_translationsのtranslationをそのまま出力する
+* 表現、語尾、句読点、内容を変更しない
+* 別のidへ移動しない
+* 修正対象字幕の内容を混ぜない
+* 出力JSONには入力targetの全IDを含める
+* エラーに記載されたsubtitle_idだけ内容を修正する
+* preserved_translationsのIDも省略せず出力する
 """
 
 
@@ -597,6 +810,48 @@ def save_failed_translation_response(
     return output_path
 
 
+def build_structural_retry_instruction(
+    target_blocks: list[SrtBlock],
+    errors: list[str],
+) -> str:
+    """
+    JSON・ID構造エラー専用の再試行指示を生成する。
+    """
+    if not has_structural_validation_error(
+        errors
+    ):
+        return ""
+
+    target_ids = [
+        block.number
+        for block in target_blocks
+    ]
+
+    ids_json = json.dumps(
+        target_ids,
+        ensure_ascii=False,
+    )
+
+    return f"""
+
+【JSON構造の修正】
+
+今回出力してよいIDは次のIDだけである。
+
+{ids_json}
+
+必ず次を守ること。
+
+* translationsは配列にする
+* translationsは必ず{len(target_ids)}件にする
+* 上記IDを同じ順序で1回ずつ出力する
+* context_beforeとcontext_afterの内容・IDを出力しない
+* 上記にないIDを追加しない
+* 一部のIDだけを出力しない
+* Markdownコードブロックを付けない
+"""
+
+
 def translate_chunk(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
@@ -610,6 +865,7 @@ def translate_chunk(
     glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> list[str]:
     last_errors: list[str] = []
+    last_translated_texts: list[str] = []
 
     glossary_instruction = (
         build_required_glossary_instruction(
@@ -654,13 +910,39 @@ def translate_chunk(
                 last_errors
             )
 
-            prompt += build_chinese_retry_instruction(
-                last_errors
+            prompt += build_structural_retry_instruction(
+                target_blocks,
+                last_errors,
             )
 
-            prompt += build_latin_ocr_retry_instruction(
+            if not has_structural_validation_error(
                 last_errors
-            )
+            ):
+                prompt += build_chinese_retry_instruction(
+                    last_errors
+                )
+
+                prompt += build_latin_ocr_retry_instruction(
+                    last_errors
+                )
+
+                prompt += (
+                    build_untranslated_english_retry_instruction(
+                        last_errors
+                    )
+                )
+
+                prompt += build_glossary_retry_instruction(
+                    last_errors
+                )
+
+                prompt += (
+                    build_preserved_translations_instruction(
+                        target_blocks,
+                        last_translated_texts,
+                        last_errors,
+                    )
+                )
 
         response = generate(
             prompt,
@@ -708,6 +990,16 @@ def translate_chunk(
         )
 
         last_errors = validation.reasons
+
+        if (
+            len(validation.translated_texts)
+            == len(target_blocks)
+        ):
+            last_translated_texts = (
+                validation.translated_texts
+            )
+        else:
+            last_translated_texts = []
 
         print(
             "Translation validation failed "

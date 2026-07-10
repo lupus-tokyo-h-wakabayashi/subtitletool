@@ -985,6 +985,7 @@ def validate_translation_response(
             find_glossary_violations(
                 source_texts,
                 translated_texts,
+                expected_ids,
                 glossary_entries,
             )
         )
@@ -1132,6 +1133,7 @@ def source_contains_glossary_term(
 def find_glossary_violations(
     source_texts: list[str],
     translated_texts: list[str],
+    subtitle_ids: list[str],
     glossary_entries: Mapping[str, str],
 ) -> list[str]:
     """
@@ -1140,16 +1142,15 @@ def find_glossary_violations(
     """
     violations: list[str] = []
 
-    for index, (
+    for (
+        subtitle_id,
         source_text,
         translated_text,
-    ) in enumerate(
-        zip(
-            source_texts,
-            translated_texts,
-            strict=True,
-        ),
-        start=1,
+    ) in zip(
+        subtitle_ids,
+        source_texts,
+        translated_texts,
+        strict=True,
     ):
         for source_term, expected_term in (
             glossary_entries.items()
@@ -1165,7 +1166,7 @@ def find_glossary_violations(
 
             violations.append(
                 "Glossary violation: "
-                f"subtitle={index}, "
+                f"subtitle_id={subtitle_id!r}, "
                 f"source_term={source_term!r}, "
                 f"expected={expected_term!r}, "
                 f"actual={translated_text!r}"

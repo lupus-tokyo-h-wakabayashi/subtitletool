@@ -57,6 +57,24 @@ KNOWN_OCR_NOISE_PATTERNS = (
         r"\bdavial\s+qatar\s+lan\s+mellem\b",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"(?<![A-Za-z])"
+        r"CTL\s+EA\s+rare"
+        r"(?![A-Za-z])",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![A-Za-z])"
+        r"Sy\s+\(aU\s+owe\s+Ste"
+        r"(?![A-Za-z])",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![A-Za-z])"
+        r"Mee\s+Wm\s+O\)\(oto\s+IU\s+Ke"
+        r"(?![A-Za-z])",
+        re.IGNORECASE,
+    ),
 )
 CHINESE_SPECIFIC_PATTERN = re.compile(
     r"[这些们为发经进过还让从个里边开关车话说时对与于后会动语]+"
