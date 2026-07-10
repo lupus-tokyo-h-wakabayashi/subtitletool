@@ -67,9 +67,7 @@ def load_prompt_template(
         "{target_count}",
         "{glossary}",
         "{style}",
-        "{before_context}",
-        "{target_text}",
-        "{after_context}",
+        "{request_json}",
     }
 
     missing = [
@@ -185,9 +183,7 @@ def load_style(
 def build_translation_prompt(
     *,
     target_count: int,
-    before_context: str,
-    target_text: str,
-    after_context: str,
+    request_json: str,
     prompt_name: str = DEFAULT_PROMPT_NAME,
     glossary_name: str = DEFAULT_GLOSSARY_NAME,
     style_name: str = DEFAULT_STYLE_NAME,
@@ -200,7 +196,5 @@ def build_translation_prompt(
         target_count=target_count,
         glossary=glossary,
         style=style,
-        before_context=before_context,
-        target_text=target_text,
-        after_context=after_context,
+        request_json=request_json,
     )

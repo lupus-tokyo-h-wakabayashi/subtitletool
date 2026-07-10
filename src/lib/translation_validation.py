@@ -1,22 +1,11 @@
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-
-# LLMへ要求している番号形式。
-#
-# 許可例:
-#   1. 翻訳文
-#   1) 翻訳文
-#   [1] 翻訳文
-#
-# 番号の後ろに本文が必要。
-NUMBERED_LINE_PATTERN = re.compile(
-    r"^\s*(?:\[(\d+)\]|(\d+)[.)])\s*(.+?)\s*$"
-)
 
 # 英語の文として残っている可能性が高い単語。
 # 固有名詞や略語だけを英語残存と誤判定しないため、
@@ -69,7 +58,7 @@ ALLOWED_LATIN_TERMS = {
 }
 
 DEFAULT_REPEAT_THRESHOLD = 5
-DEFAULT_MAX_LINES_PER_SUBTITLE = 4
+DEFAULT_MAX_LINES_PER_SUBTITLE = 6
 DEFAULT_MAX_CHARS_PER_SUBTITLE = 200
 
 DEFAULT_INCOMPLETE_THRESHOLD = 3
@@ -78,6 +67,8 @@ DEFAULT_MINIMUM_SOURCE_LENGTH = 8
 DEFAULT_MINIMUM_LENGTH_RATIO = 0.15
 DEFAULT_MAXIMUM_LENGTH_RATIO = 4.0
 DEFAULT_MAXIMUM_SEGMENTS = 4
+
+DEFAULT_JSON_RESPONSE_OVERHEAD_LINES = 5
 
 NUMBER_PATTERN = re.compile(r"\d+")
 
@@ -110,6 +101,12 @@ SOUND_EFFECT_PATTERN = re.compile(
 
 
 @dataclass
+class TranslationResponseItem:
+    id: str
+    translation: str
+
+
+@dataclass
 class ValidationResult:
     valid: bool = True
     reasons: list[str] = field(default_factory=list)
@@ -124,92 +121,270 @@ class ValidationResult:
         self.warnings.append(warning)
 
 
-def extract_numbered_lines(
+def strip_json_code_fence(
     response: str,
-) -> list[tuple[int, str]]:
+) -> str:
     """
-    LLMレスポンスから番号付き翻訳行を抽出する。
+    LLMが付加したJSONコードフェンスだけを除去する。
 
-    対応形式:
-        1. 翻訳文
-        1) 翻訳文
-        [1] 翻訳文
-
-    番号のない行は抽出しない。
+    プロンプトではコードフェンスを禁止しているが、
+    正しいJSON本体を回収できる場合は許容する。
     """
-    results: list[tuple[int, str]] = []
+    stripped = response.strip()
 
-    for raw_line in response.splitlines():
-        line = raw_line.strip()
+    stripped = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        stripped,
+        flags=re.IGNORECASE,
+    )
 
-        if not line:
+    stripped = re.sub(
+        r"\s*```$",
+        "",
+        stripped,
+    )
+
+    return stripped.strip()
+
+
+def parse_translation_json(
+    response: str,
+) -> tuple[
+    list[TranslationResponseItem],
+    list[str],
+]:
+    """
+    LLMレスポンスをJSON翻訳結果として解析する。
+
+    期待形式:
+        {
+          "translations": [
+            {
+              "id": "1",
+              "translation": "日本語字幕"
+            }
+          ]
+        }
+    """
+    errors: list[str] = []
+    items: list[TranslationResponseItem] = []
+
+    raw_json = strip_json_code_fence(
+        response
+    )
+
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as error:
+        return [], [
+            "Invalid JSON response: "
+            f"line={error.lineno}, "
+            f"column={error.colno}, "
+            f"message={error.msg}"
+        ]
+
+    if not isinstance(payload, dict):
+        return [], [
+            "Invalid JSON root: expected object"
+        ]
+
+    actual_root_keys = set(
+        payload.keys()
+    )
+
+    expected_root_keys = {
+        "translations",
+    }
+
+    if actual_root_keys != expected_root_keys:
+        errors.append(
+            "Invalid JSON root keys: "
+            f"expected={sorted(expected_root_keys)}, "
+            f"actual={sorted(actual_root_keys)}"
+        )
+
+    translations = payload.get(
+        "translations"
+    )
+
+    if not isinstance(translations, list):
+        errors.append(
+            "Invalid translations: expected array"
+        )
+
+        return [], errors
+
+    for position, item in enumerate(
+        translations,
+        start=1,
+    ):
+        if not isinstance(item, dict):
+            errors.append(
+                "Invalid translation item: "
+                f"position={position}, "
+                "expected=object"
+            )
+
             continue
 
-        match = NUMBERED_LINE_PATTERN.match(line)
+        required_item_keys = {
+            "id",
+            "translation",
+        }
 
-        if not match:
+        actual_item_keys = set(
+            item.keys()
+        )
+
+        missing_item_keys = (
+            required_item_keys
+            - actual_item_keys
+        )
+
+        if missing_item_keys:
+            errors.append(
+                "Missing translation item keys: "
+                f"position={position}, "
+                f"missing={sorted(missing_item_keys)}, "
+                f"actual={sorted(actual_item_keys)}"
+            )
+
             continue
 
-        number_text = match.group(1) or match.group(2)
-        translated_text = match.group(3).strip()
+        item_id = item.get("id")
+        translation = item.get(
+            "translation"
+        )
 
-        if not number_text or not translated_text:
+        if isinstance(item_id, bool):
+            errors.append(
+                "Invalid translation id: "
+                f"position={position}, "
+                "expected=string or integer"
+            )
+
             continue
 
-        results.append(
-            (
-                int(number_text),
-                translated_text,
+        if isinstance(item_id, int):
+            normalized_id = str(item_id)
+        elif isinstance(item_id, str):
+            normalized_id = item_id.strip()
+        else:
+            errors.append(
+                "Invalid translation id: "
+                f"position={position}, "
+                "expected=string or integer"
+            )
+
+            continue
+
+        if not normalized_id:
+            errors.append(
+                "Empty translation id: "
+                f"position={position}"
+            )
+
+            continue
+
+        if not isinstance(translation, str):
+            errors.append(
+                "Invalid translation text: "
+                f"id={normalized_id!r}, "
+                "expected=string"
+            )
+
+            continue
+
+        normalized_translation = (
+            translation.strip()
+        )
+
+        if not normalized_translation:
+            errors.append(
+                "Empty translation: "
+                f"id={normalized_id!r}"
+            )
+
+            continue
+
+        items.append(
+            TranslationResponseItem(
+                id=normalized_id,
+                translation=normalized_translation,
             )
         )
 
-    return results
+    return items, errors
 
 
-def validate_number_sequence(
-    numbered_lines: list[tuple[int, str]],
-    expected_count: int,
-) -> str | None:
+def validate_translation_ids(
+    items: list[TranslationResponseItem],
+    expected_ids: list[str],
+) -> list[str]:
     """
-    番号が1からexpected_countまで連続しているか検証する。
+    JSONレスポンスのIDが入力targetと完全に対応するか検証する。
     """
-    actual_numbers = [
-        number
-        for number, _ in numbered_lines
+    errors: list[str] = []
+
+    actual_ids = [
+        item.id
+        for item in items
     ]
 
-    expected_numbers = list(
-        range(1, expected_count + 1)
+    duplicate_ids = sorted(
+        item_id
+        for item_id, count
+        in Counter(actual_ids).items()
+        if count > 1
     )
 
-    if actual_numbers == expected_numbers:
-        return None
+    if duplicate_ids:
+        errors.append(
+            "Duplicate translation IDs: "
+            f"{duplicate_ids}"
+        )
 
-    return (
-        "Invalid translation numbering: "
-        f"expected_count={expected_count}, "
-        f"actual_count={len(actual_numbers)}, "
-        f"actual_last={actual_numbers[-1] if actual_numbers else None}"
+    actual_id_set = set(
+        actual_ids
     )
 
-
-def validate_output_count(
-    translated_texts: list[str],
-    expected_count: int,
-) -> str | None:
-    """
-    翻訳件数が翻訳対象件数と一致するか検証する。
-    """
-    actual_count = len(translated_texts)
-
-    if actual_count == expected_count:
-        return None
-
-    return (
-        "Translation count mismatch: "
-        f"expected={expected_count}, "
-        f"actual={actual_count}"
+    expected_id_set = set(
+        expected_ids
     )
+
+    missing_ids = [
+        item_id
+        for item_id in expected_ids
+        if item_id not in actual_id_set
+    ]
+
+    if missing_ids:
+        errors.append(
+            "Missing translation IDs: "
+            f"{missing_ids}"
+        )
+
+    unexpected_ids = [
+        item_id
+        for item_id in actual_ids
+        if item_id not in expected_id_set
+    ]
+
+    if unexpected_ids:
+        errors.append(
+            "Unexpected translation IDs: "
+            f"{unexpected_ids}"
+        )
+
+    if actual_ids != expected_ids:
+        errors.append(
+            "Invalid translation ID order: "
+            f"expected={expected_ids}, "
+            f"actual={actual_ids}"
+        )
+
+    return errors
 
 
 def validate_response_size(
@@ -218,13 +393,13 @@ def validate_response_size(
     *,
     max_lines_per_subtitle: int = DEFAULT_MAX_LINES_PER_SUBTITLE,
     max_chars_per_subtitle: int = DEFAULT_MAX_CHARS_PER_SUBTITLE,
+    response_overhead_lines: int = DEFAULT_JSON_RESPONSE_OVERHEAD_LINES,
 ) -> list[str]:
     """
     LLMレスポンスが異常に長くないか検証する。
 
-    30字幕の場合の既定値:
-        最大行数: 120
-        最大文字数: 6000
+    JSONのルート・配列部分には固定行数が必要なため、
+    字幕件数に応じた上限へJSON構造分の余白を加える。
     """
     errors: list[str] = []
 
@@ -233,6 +408,7 @@ def validate_response_size(
 
     max_line_count = (
         expected_count * max_lines_per_subtitle
+        + response_overhead_lines
     )
     max_char_count = (
         expected_count * max_chars_per_subtitle
@@ -609,24 +785,38 @@ def contains_garbled_latin(
 def validate_translation_response(
     response: str,
     *,
-    expected_count: int,
+    expected_ids: list[str],
     source_texts: list[str] | None = None,
     glossary_entries: Mapping[str, str] | None = None,
     repeat_threshold: int = DEFAULT_REPEAT_THRESHOLD,
     incomplete_threshold: int = DEFAULT_INCOMPLETE_THRESHOLD,
 ) -> ValidationResult:
     """
-    LLMの翻訳レスポンス全体を検証する。
+    LLMのJSON翻訳レスポンス全体を検証する。
+
+    期待形式:
+        {
+          "translations": [
+            {
+              "id": "入力targetのid",
+              "translation": "日本語字幕"
+            }
+          ]
+        }
 
     正常な場合:
         result.valid == True
-        result.translated_texts に翻訳結果が入る
+        result.translated_texts にID順の翻訳結果が入る
 
     異常な場合:
         result.valid == False
         result.reasons に理由が入る
     """
     result = ValidationResult()
+
+    expected_count = len(
+        expected_ids
+    )
 
     if not response.strip():
         result.add_error(
@@ -640,38 +830,42 @@ def validate_translation_response(
     ):
         result.add_error(error)
 
-    numbered_lines = extract_numbered_lines(
-        response
+    items, parse_errors = (
+        parse_translation_json(
+            response
+        )
     )
 
-    numbering_error = validate_number_sequence(
-        numbered_lines,
-        expected_count,
+    for error in parse_errors:
+        result.add_error(error)
+
+    # JSON構造が壊れている場合、
+    # IDと原文の対応関係を保証できないため、
+    # 後続の検証へ進まない。
+    if parse_errors:
+        return result
+
+    id_errors = validate_translation_ids(
+        items,
+        expected_ids,
     )
 
-    if numbering_error:
-        result.add_error(numbering_error)
+    for error in id_errors:
+        result.add_error(error)
+
+    # IDの欠落・重複・追加・並び替えがある場合、
+    # 原文と訳文の対応関係を保証できない。
+    if id_errors:
+        return result
 
     translated_texts = [
-        translated_text
-        for _, translated_text in numbered_lines
+        item.translation
+        for item in items
     ]
 
-    result.translated_texts = translated_texts
-
-    count_error = validate_output_count(
-        translated_texts,
-        expected_count,
+    result.translated_texts = (
+        translated_texts
     )
-
-    if count_error:
-        result.add_error(count_error)
-
-    # 件数または番号が壊れている場合、
-    # 原文と訳文の対応関係を保証できないため、
-    # 用語・内容の検証へ進まない。
-    if numbering_error or count_error:
-        return result
 
     joined_text = "\n".join(
         translated_texts
