@@ -19,7 +19,10 @@ from lib.srt import (
     parse_srt,
     write_structured_srt,
 )
-from lib.text import cleanup_ocr_text
+from lib.text import (
+    cleanup_ocr_text,
+    is_suspicious_ocr_text,
+)
 from lib.translation_validation import (
     validate_translation_response,
 )
@@ -67,6 +70,54 @@ def format_context(blocks: list[SrtBlock]) -> str:
 
     return "\n".join(lines)
 
+
+def build_ocr_noise_instruction(
+    target_blocks: list[SrtBlock],
+) -> str:
+    """
+    翻訳対象内のOCR破損候補を検出し、
+    チャンク内番号でLLMへ通知する。
+    """
+    suspicious_indexes = [
+        index
+        for index, block in enumerate(
+            target_blocks,
+            start=1,
+        )
+        if is_suspicious_ocr_text(
+            block.text
+        )
+    ]
+
+    if not suspicious_indexes:
+        return ""
+
+    numbers = ", ".join(
+        str(index)
+        for index in suspicious_indexes
+    )
+
+    print(
+        "OCR Noise Candidates: "
+        f"{numbers}"
+    )
+
+    return f"""
+
+【OCR破損の可能性がある字幕】
+
+対象番号: {numbers}
+
+これらの字幕にはOCRで壊れた英字列が含まれる可能性がある。
+
+* 壊れた英字列を人名、地名、セリフとして推測しない
+* 意味不明な文字列をカタカナへ音写しない
+* 理解できる部分だけ翻訳する
+* 判読できない部分は「（判読不能）」とする
+* 原文にない意味を追加しない
+"""
+
+
 def build_prompt(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
@@ -74,7 +125,7 @@ def build_prompt(
     style_name: str = DEFAULT_STYLE_NAME,
     glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> str:
-    return build_translation_prompt(
+    base_prompt = build_translation_prompt(
         target_count=len(target_blocks),
         before_context=format_context(before_context),
         target_text=extract_text_lines(target_blocks),
@@ -82,6 +133,18 @@ def build_prompt(
         style_name=style_name,
         glossary_name=glossary_name,
     )
+
+    ocr_noise_instruction = (
+        build_ocr_noise_instruction(
+            target_blocks
+        )
+    )
+
+    return (
+        base_prompt
+        + ocr_noise_instruction
+    )
+
 
 def build_retry_instruction(
     errors: list[str],

@@ -17,6 +17,32 @@ SPEAKER_LABEL_PATTERN = re.compile(
     re.VERBOSE,
 )
 
+LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
+NORMAL_ENGLISH_WORD_PATTERN = re.compile(
+    r"^[A-Za-z]+(?:'[A-Za-z]+)?$"
+)
+KNOWN_OCR_NOISE_PATTERNS = (
+    re.compile(
+        r"\beRe\s+Are\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bSSeS\s+elke\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bTee\s+Ole\s+mite\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bVVNsKomCIAcM\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bHil\s+I['’]?m\b",
+        re.IGNORECASE,
+    ),
+)
 
 def remove_speaker_label(line: str) -> str:
     """
@@ -76,3 +102,23 @@ def cleanup_ocr_text(text: str) -> str:
     cleaned = normalize_whitespace(cleaned)
 
     return cleaned
+
+
+def is_suspicious_ocr_text(
+    text: str,
+) -> bool:
+    """
+    既知のOCR破損文字列が含まれるか判定する。
+
+    Phase 1では誤検知を避けるため、
+    実際に確認済みのパターンだけを対象にする。
+    """
+    normalized = text.replace(
+        "\n",
+        " ",
+    )
+
+    return any(
+        pattern.search(normalized)
+        for pattern in KNOWN_OCR_NOISE_PATTERNS
+    )
