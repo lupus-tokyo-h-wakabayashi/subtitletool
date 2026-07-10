@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -38,10 +39,10 @@ TRANSLATION_DEBUG_DIR = Path(
 )
 
 # 実際に翻訳する字幕数
-CHUNK_SIZE = 20
+CHUNK_SIZE = 10
 
 # 翻訳対象の前後に参考として渡す字幕数
-CONTEXT_SIZE = 10
+CONTEXT_SIZE = 15
 
 
 def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
@@ -70,6 +71,42 @@ def format_context(blocks: list[SrtBlock]) -> str:
         lines.append(f"[{block.number}] {text}")
 
     return "\n".join(lines)
+
+
+def normalize_translation_text(
+    text: str,
+) -> str:
+    """
+    翻訳文内の字幕改行記号を空白へ変換する。
+
+    半角スラッシュは前後に空白がある場合だけ対象とし、
+    24/7、km/h、URLなどは維持する。
+    """
+    normalized = re.sub(
+        r"(?:\s+/\s+|\s*／\s*)",
+        " ",
+        text,
+    )
+
+    normalized = re.sub(
+        r"[ \t]+",
+        " ",
+        normalized,
+    )
+
+    return normalized.strip()
+
+
+def normalize_translation_texts(
+    translated_texts: list[str],
+) -> list[str]:
+    """
+    翻訳済み字幕をSRT保存用に一括正規化する。
+    """
+    return [
+        normalize_translation_text(text)
+        for text in translated_texts
+    ]
 
 
 def build_ocr_noise_instruction(
@@ -252,8 +289,13 @@ def translate_chunk(
             model=model,
         )
 
+        display_response = "\n".join(
+            normalize_translation_text(line)
+            for line in response.splitlines()
+        )
+
         print("=" * 80)
-        print(response)
+        print(display_response)
         print("=" * 80)
 
         validation = validate_translation_response(
@@ -273,7 +315,9 @@ def translate_chunk(
                 print(f"  - {warning}")
 
         if validation.valid:
-            return validation.translated_texts
+            return normalize_translation_texts(
+                validation.translated_texts
+            )
 
         failed_path = save_failed_translation_response(
             response,
