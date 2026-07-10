@@ -1,3 +1,7 @@
+# Local translation prompts
+config/prompts/*.txt
+!config/prompts/*.example.txt
+
 # Python
 __pycache__/
 *.pyc
