@@ -4,6 +4,7 @@ from pathlib import Path
 
 from lib.ollama import generate
 from lib.progress import ProgressTracker, format_duration
+from lib.prompt import build_translation_prompt
 from lib.srt import (
     SrtBlock,
     apply_translations,
@@ -13,22 +14,6 @@ from lib.srt import (
     write_structured_srt,
 )
 from lib.text import cleanup_ocr_text
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-DEFAULT_PROMPT_PATH = (
-    PROJECT_ROOT
-    / "config"
-    / "prompts"
-    / "translate.txt"
-)
-
-EXAMPLE_PROMPT_PATH = (
-    PROJECT_ROOT
-    / "config"
-    / "prompts"
-    / "translate.example.txt"
-)
 
 MODEL = "qwen3:14b"
 
@@ -64,84 +49,20 @@ def format_context(blocks: list[SrtBlock]) -> str:
 
     return "\n".join(lines)
 
-def load_prompt_template(
-    prompt_path: str | Path | None = None,
-) -> str:
-    if prompt_path is not None:
-        path = Path(prompt_path).expanduser().resolve()
-    elif DEFAULT_PROMPT_PATH.exists():
-        path = DEFAULT_PROMPT_PATH
-    else:
-        path = EXAMPLE_PROMPT_PATH
-
-    if not path.exists():
-        raise FileNotFoundError(
-            "Translation prompt was not found. "
-            f"Expected: {DEFAULT_PROMPT_PATH} "
-            f"or {EXAMPLE_PROMPT_PATH}"
-        )
-
-    template = path.read_text(
-        encoding="utf-8",
-        errors="strict",
-    ).strip()
-
-    required_placeholders = {
-        "{target_count}",
-        "{glossary}",
-        "{before_context}",
-        "{target_text}",
-        "{after_context}",
-    }
-
-    missing = [
-        placeholder
-        for placeholder in required_placeholders
-        if placeholder not in template
-    ]
-
-    if missing:
-        raise RuntimeError(
-            "Translation prompt is missing placeholders: "
-            + ", ".join(missing)
-        )
-
-    return template
-
-def build_glossary_text() -> str:
-    glossary = {
-        "Stargate": "スターゲイト",
-        "Destiny": "デスティニー",
-        "Colonel Young": "ヤング大佐",
-        "Eli": "イーライ",
-        "Rush": "ラッシュ博士",
-        "Chloe": "クロエ",
-        "Scott": "スコット",
-        "Lieutenant": "中尉",
-        "Senator": "上院議員",
-        "Icarus Base": "イカロス基地",
-        "Ancient": "古代種族",
-    }
-
-    return "\n".join(
-        f"- {source} = {target}"
-        for source, target in glossary.items()
-    )
-
 def build_prompt(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
     after_context: list[SrtBlock],
-    prompt_path: str | Path | None = None,
+    style_name: str = "stargate",
+    glossary_name: str = "stargate",
 ) -> str:
-    template = load_prompt_template(prompt_path)
-
-    return template.format(
+    return build_translation_prompt(
         target_count=len(target_blocks),
-        glossary=build_glossary_text(),
         before_context=format_context(before_context),
         target_text=extract_text_lines(target_blocks),
         after_context=format_context(after_context),
+        style_name=style_name,
+        glossary_name=glossary_name,
     )
 
 

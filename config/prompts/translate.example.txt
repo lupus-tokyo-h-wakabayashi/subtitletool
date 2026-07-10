@@ -36,6 +36,9 @@
 【用語】
 {glossary}
 
+【作品・字幕スタイル】
+{style}
+
 【直前の参考文脈・出力禁止】
 {before_context}
 
