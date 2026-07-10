@@ -12,6 +12,7 @@ from lib.srt import (
     parse_srt,
     write_structured_srt,
 )
+from lib.text import cleanup_ocr_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,6 +38,19 @@ CHUNK_SIZE = 30
 # 翻訳対象の前後に参考として渡す字幕数
 CONTEXT_SIZE = 15
 
+def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
+    """
+    字幕番号とタイムコードを維持し、
+    AIへ渡す本文だけOCR前処理する。
+    """
+    return [
+        SrtBlock(
+            number=block.number,
+            timestamp=block.timestamp,
+            text=cleanup_ocr_text(block.text),
+        )
+        for block in blocks
+    ]
 
 def format_context(blocks: list[SrtBlock]) -> str:
     if not blocks:
@@ -219,9 +233,21 @@ def translate_srt(
         before_start = max(0, start - context_size)
         after_end = min(total_blocks, end + context_size)
 
-        before_context = source_blocks[before_start:start]
-        target_blocks = source_blocks[start:end]
-        after_context = source_blocks[end:after_end]
+        # 元字幕は、翻訳失敗時のフォールバック用に保持する
+        source_target_blocks = source_blocks[start:end]
+
+        # AIへ渡す字幕だけOCR前処理する
+        before_context = cleanup_blocks(
+            source_blocks[before_start:start]
+        )
+
+        target_blocks = cleanup_blocks(
+            source_target_blocks
+        )
+
+        after_context = cleanup_blocks(
+            source_blocks[end:after_end]
+        )
 
         chunk_start = time.monotonic()
 
@@ -240,7 +266,7 @@ def translate_srt(
         )
 
         translated_blocks = apply_translations(
-            target_blocks,
+            source_target_blocks,
             translated_texts,
         )
 
