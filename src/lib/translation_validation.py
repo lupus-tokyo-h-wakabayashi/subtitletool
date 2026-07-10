@@ -5,7 +5,11 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-
+from lib.text import (
+    CHINESE_SPECIFIC_PATTERN,
+    DEFAULT_ALLOWED_LATIN_TERMS,
+    find_suspicious_latin_sequences,
+)
 
 # 英語の文として残っている可能性が高い単語。
 # 固有名詞や略語だけを英語残存と誤判定しないため、
@@ -29,33 +33,11 @@ ENGLISH_SENTENCE_PATTERN = re.compile(
 
 ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]{2,}")
 
-# 日本語にも漢字があるため、CJK範囲全体では判定しない。
-# 実際に混入が確認された簡体字・中国語固有表現を中心に検出する。
-#
-# 誤検知が判明した文字は、この集合から外すこと。
-CHINESE_SPECIFIC_PATTERN = re.compile(
-    r"[这们为发经进过还让从个里边开关车话说时对与于后会动语]"
-)
-
 LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
 
-# 字幕内に残っても異常とは限らない英字表記。
-# 必要に応じて作品別の語彙を追加する。
-ALLOWED_LATIN_TERMS = {
-    "AI",
-    "DNA",
-    "F",
-    "SG",
-    "TJ",
-    "T",
-    "J",
-    "Stargate",
-    "Destiny",
-    "Icarus",
-    "Johansen",
-    "Armstrong",
-    "Wallace",
-}
+ALLOWED_LATIN_TERMS = (
+    DEFAULT_ALLOWED_LATIN_TERMS
+)
 
 DEFAULT_REPEAT_THRESHOLD = 5
 DEFAULT_MAX_LINES_PER_SUBTITLE = 6
@@ -687,15 +669,40 @@ def find_repeated_lines(
     return repeated
 
 
-def contains_chinese_specific_characters(
-    text: str,
-) -> bool:
+def find_chinese_specific_characters(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+) -> list[str]:
     """
-    日本語字幕へ簡体字などが混入していないか検出する。
+    日本語字幕へ混入した簡体字・中国語固有文字を、
+    字幕IDと本文を含めて検出する。
     """
-    return bool(
-        CHINESE_SPECIFIC_PATTERN.search(text)
-    )
+    violations: list[str] = []
+
+    for subtitle_id, translated_text in zip(
+        subtitle_ids,
+        translated_texts,
+        strict=True,
+    ):
+        matched_characters = sorted(
+            set(
+                CHINESE_SPECIFIC_PATTERN.findall(
+                    translated_text
+                )
+            )
+        )
+
+        if not matched_characters:
+            continue
+
+        violations.append(
+            "Chinese-specific characters detected: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"characters={''.join(matched_characters)!r}, "
+            f"text={translated_text!r}"
+        )
+
+    return violations
 
 
 def normalize_latin_term(
@@ -740,46 +747,84 @@ def contains_untranslated_english(
     )
 
 
-def contains_garbled_latin(
-    text: str,
-) -> bool:
+def find_untranslated_english_violations(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+) -> list[str]:
     """
-    OCR由来と思われる不自然な英字列を検出する。
-
-    例:
-        VVNsKomCIAcM
-        MimElomIElaie
-
-    完全な判定はできないため、
-    長く、かつ大文字・小文字が不自然に混ざる語を対象とする。
+    OCR破損候補を除外した上で、
+    字幕単位に未翻訳英文を検出する。
     """
-    allowed_normalized = {
-        normalize_latin_term(term)
-        for term in ALLOWED_LATIN_TERMS
-    }
+    violations: list[str] = []
 
-    for token in LATIN_TOKEN_PATTERN.findall(text):
-        if normalize_latin_term(token) in allowed_normalized:
-            continue
-
-        if len(token) < 8:
-            continue
-
-        upper_count = sum(
-            character.isupper()
-            for character in token
-        )
-        lower_count = sum(
-            character.islower()
-            for character in token
+    for subtitle_id, translated_text in zip(
+        subtitle_ids,
+        translated_texts,
+        strict=True,
+    ):
+        ocr_sequences = (
+            find_suspicious_latin_sequences(
+                translated_text,
+                allowed_terms=ALLOWED_LATIN_TERMS,
+            )
         )
 
-        # 通常の固有名詞は先頭だけ大文字であることが多い。
-        # 大文字が2文字以上かつ小文字も2文字以上なら疑わしい。
-        if upper_count >= 2 and lower_count >= 2:
-            return True
+        text_for_check = translated_text
 
-    return False
+        for sequence in ocr_sequences:
+            text_for_check = (
+                text_for_check.replace(
+                    sequence,
+                    "",
+                )
+            )
+
+        if not contains_untranslated_english(
+            text_for_check
+        ):
+            continue
+
+        violations.append(
+            "Untranslated English sentence detected: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"text={translated_text!r}"
+        )
+
+    return violations
+
+
+def find_garbled_latin_violations(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+) -> list[str]:
+    """
+    字幕ごとにOCR破損英字列を検出する。
+    """
+    violations: list[str] = []
+
+    for subtitle_id, translated_text in zip(
+        subtitle_ids,
+        translated_texts,
+        strict=True,
+    ):
+        sequences = (
+            find_suspicious_latin_sequences(
+                translated_text,
+                allowed_terms=ALLOWED_LATIN_TERMS,
+            )
+        )
+
+        if not sequences:
+            continue
+
+        violations.append(
+            "Garbled Latin text detected: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"sequences={sequences!r}, "
+            f"text={translated_text!r}"
+        )
+
+    return violations
 
 
 def validate_translation_response(
@@ -867,29 +912,40 @@ def validate_translation_response(
         translated_texts
     )
 
-    joined_text = "\n".join(
-        translated_texts
+    garbled_latin_violations = (
+        find_garbled_latin_violations(
+            translated_texts,
+            expected_ids,
+        )
     )
 
-    if contains_chinese_specific_characters(
-        joined_text
-    ):
+    for violation in garbled_latin_violations[:10]:
+        result.add_error(violation)
+
+    if len(garbled_latin_violations) > 10:
         result.add_error(
-            "Chinese-specific characters detected"
+            "Additional garbled Latin violations: "
+            f"{len(garbled_latin_violations) - 10}"
         )
 
-    if contains_untranslated_english(
-        joined_text
-    ):
-        result.add_error(
-            "Untranslated English sentence detected"
+    untranslated_english_violations = (
+        find_untranslated_english_violations(
+            translated_texts,
+            expected_ids,
         )
+    )
 
-    if contains_garbled_latin(
-        joined_text
+    for violation in (
+        untranslated_english_violations[:10]
     ):
+        result.add_error(violation)
+
+    if len(
+        untranslated_english_violations
+    ) > 10:
         result.add_error(
-            "Garbled Latin text detected"
+            "Additional untranslated English violations: "
+            f"{len(untranslated_english_violations) - 10}"
         )
 
     repeated_lines = find_repeated_lines(

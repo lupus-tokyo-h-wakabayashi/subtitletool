@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ast
 import json
 import re
 import time
@@ -26,6 +27,8 @@ from lib.srt import (
 from lib.text import (
     cleanup_ocr_text,
     is_suspicious_ocr_text,
+    mask_chinese_ocr_text,
+    mask_suspicious_latin_sequences,
 )
 from lib.translation_validation import (
     source_contains_glossary_term,
@@ -252,7 +255,212 @@ def build_retry_instruction(
 * translationの代わりにtextを使用しない
 * 複数字幕を1つのtranslationへ結合しない
 * context_beforeとcontext_afterは出力しない
-* JSONの前後へ説明やコードブロックを追加しない
+* JSONの前後へ説明やMarkdownコードブロックを追加しない
+* 英文をそのまま出力しない
+* 中国語を出力しない
+* 同じ字幕を繰り返さない
+"""
+
+
+def extract_chinese_error_ids(
+    errors: list[str],
+) -> set[str]:
+    """
+    中国語混入エラーから対象字幕IDを抽出する。
+    """
+    subtitle_ids: set[str] = set()
+
+    pattern = re.compile(
+        r"subtitle_id=(?P<quote>['\"])"
+        r"(?P<id>.+?)"
+        r"(?P=quote)"
+    )
+
+    for error in errors:
+        if not error.startswith(
+            "Chinese-specific characters detected:"
+        ):
+            continue
+
+        match = pattern.search(error)
+
+        if not match:
+            continue
+
+        subtitle_ids.add(
+            match.group("id")
+        )
+
+    return subtitle_ids
+
+
+def extract_garbled_latin_errors(
+    errors: list[str],
+) -> dict[str, list[str]]:
+    """
+    OCR英字破損エラーから字幕IDと文字列を抽出する。
+    """
+    results: dict[str, list[str]] = {}
+
+    pattern = re.compile(
+        r"subtitle_id=(?P<quote>['\"])"
+        r"(?P<id>.+?)"
+        r"(?P=quote), "
+        r"sequences=(?P<sequences>\[.*?\]), "
+        r"text="
+    )
+
+    for error in errors:
+        if not error.startswith(
+            "Garbled Latin text detected:"
+        ):
+            continue
+
+        match = pattern.search(error)
+
+        if not match:
+            continue
+
+        raw_sequences = match.group(
+            "sequences"
+        )
+
+        try:
+            sequences = ast.literal_eval(
+                raw_sequences
+            )
+        except (
+            SyntaxError,
+            ValueError,
+        ):
+            continue
+
+        if not isinstance(sequences, list):
+            continue
+
+        if not all(
+            isinstance(sequence, str)
+            for sequence in sequences
+        ):
+            continue
+
+        results[match.group("id")] = (
+            sequences
+        )
+
+    return results
+
+
+def build_chinese_retry_blocks(
+    target_blocks: list[SrtBlock],
+    errors: list[str],
+) -> list[SrtBlock]:
+    """
+    中国語混入エラーが出た字幕だけ、
+    再試行用入力の中国語OCR文字列をマスクする。
+    """
+    error_ids = extract_chinese_error_ids(
+        errors
+    )
+
+    if not error_ids:
+        return target_blocks
+
+    return [
+        SrtBlock(
+            number=block.number,
+            timestamp=block.timestamp,
+            text=(
+                mask_chinese_ocr_text(block.text)
+                if block.number in error_ids
+                else block.text
+            ),
+        )
+        for block in target_blocks
+    ]
+
+
+def build_chinese_retry_instruction(
+    errors: list[str],
+) -> str:
+    """
+    中国語混入エラーから対象字幕ID・文字・本文を抽出し、
+    再翻訳時に具体的な修正指示を追加する。
+    """
+    chinese_errors = [
+        error
+        for error in errors
+        if error.startswith(
+            "Chinese-specific characters detected:"
+        )
+    ]
+
+    if not chinese_errors:
+        return ""
+
+    details = "\n".join(
+        f"* {error}"
+        for error in chinese_errors
+    )
+
+    return f"""
+
+【中国語OCR混入の修正】
+
+以下の字幕には中国語文字またはOCR破損文字列が残っている。
+
+{details}
+
+必ず次を守ること。
+
+* エラーに記載されたsubtitle_idのtranslationを修正する
+* charactersに記載された中国語文字を1文字も残さない
+* 中国語文字列を固有名詞として保持しない
+* 中国語文字列をカタカナへ音写しない
+* 文脈から意味を判断し、自然な日本語へ置き換える
+* 文脈から判別できない場合は「（判読不能）」へ置き換える
+* 前回と同じ中国語入りtranslationを再利用しない
+"""
+
+
+def build_latin_ocr_retry_instruction(
+    errors: list[str],
+) -> str:
+    """
+    OCR英字破損の再試行指示を生成する。
+    """
+    ocr_errors = [
+        error
+        for error in errors
+        if error.startswith(
+            "Garbled Latin text detected:"
+        )
+    ]
+
+    if not ocr_errors:
+        return ""
+
+    details = "\n".join(
+        f"* {error}"
+        for error in ocr_errors
+    )
+
+    return f"""
+
+【英字OCR破損の修正】
+
+以下の字幕にはOCRで壊れた英字列が残っている。
+
+{details}
+
+必ず次を守ること。
+
+* sequencesに記載された文字列をtranslationへ残さない
+* 壊れた文字列を人名、地名、固有名詞として推測しない
+* 壊れた文字列をカタカナへ音写しない
+* 文脈から意味を判断できる場合だけ自然な日本語へ置き換える
+* 判断できない場合は「（判読不能）」とする
+* 前回と同じOCR文字列を再利用しない
 """
 
 
@@ -403,14 +611,6 @@ def translate_chunk(
 ) -> list[str]:
     last_errors: list[str] = []
 
-    base_prompt = build_prompt(
-        before_context,
-        target_blocks,
-        after_context,
-        style_name=style_name,
-        glossary_name=glossary_name,
-    )
-
     glossary_instruction = (
         build_required_glossary_instruction(
             target_blocks,
@@ -418,22 +618,49 @@ def translate_chunk(
         )
     )
 
-    base_prompt += glossary_instruction
-
     for attempt in range(
         1,
         MAX_TRANSLATION_ATTEMPTS + 1,
     ):
-        prompt = base_prompt
+        retry_target_blocks = target_blocks
+
+        if attempt > 1:
+            retry_target_blocks = (
+                build_chinese_retry_blocks(
+                    target_blocks,
+                    last_errors,
+                )
+            )
+
+            retry_target_blocks = (
+                build_latin_ocr_retry_blocks(
+                    retry_target_blocks,
+                    last_errors,
+                )
+            )
+
+        prompt = build_prompt(
+            before_context,
+            retry_target_blocks,
+            after_context,
+            style_name=style_name,
+            glossary_name=glossary_name,
+        )
+
+        prompt += glossary_instruction
 
         if attempt > 1:
             prompt += build_retry_instruction(
                 last_errors
             )
 
-            # 再試行指示の末尾でも、対象チャンク内の
-            # 全用語を改めて固定する。
-            prompt += glossary_instruction
+            prompt += build_chinese_retry_instruction(
+                last_errors
+            )
+
+            prompt += build_latin_ocr_retry_instruction(
+                last_errors
+            )
 
         response = generate(
             prompt,
@@ -545,6 +772,42 @@ def validate_resume_blocks(
                 f"input={source_block.timestamp!r}, "
                 f"output={translated_block.timestamp!r}"
             )
+
+
+def build_latin_ocr_retry_blocks(
+    target_blocks: list[SrtBlock],
+    errors: list[str],
+) -> list[SrtBlock]:
+    """
+    OCR英字破損が出た字幕だけ、
+    該当文字列を再試行入力でマスクする。
+    """
+    error_details = (
+        extract_garbled_latin_errors(
+            errors
+        )
+    )
+
+    if not error_details:
+        return target_blocks
+
+    return [
+        SrtBlock(
+            number=block.number,
+            timestamp=block.timestamp,
+            text=(
+                mask_suspicious_latin_sequences(
+                    block.text,
+                    sequences=error_details[
+                        block.number
+                    ],
+                )
+                if block.number in error_details
+                else block.text
+            ),
+        )
+        for block in target_blocks
+    ]
 
 
 def translate_srt(

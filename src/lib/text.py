@@ -43,6 +43,49 @@ KNOWN_OCR_NOISE_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+CHINESE_SPECIFIC_PATTERN = re.compile(
+    r"[这些们为发经进过还让从个里边开关车话说时对与于后会动语]+"
+)
+DEFAULT_ALLOWED_LATIN_TERMS = {
+    "AI",
+    "DNA",
+    "F",
+    "SG",
+    "TJ",
+    "T",
+    "J",
+    "Stargate",
+    "Destiny",
+    "Icarus",
+    "Johansen",
+    "Armstrong",
+    "Wallace",
+    "Rush",
+    "Eli",
+    "Scott",
+    "Chloe",
+    "Young",
+}
+LATIN_SEQUENCE_PATTERN = re.compile(
+    r"(?<![A-Za-z])"
+    r"[A-Za-z][A-Za-z'-]*"
+    r"(?:[ \t]+[A-Za-z][A-Za-z'-]*)+"
+    r"(?![A-Za-z])"
+)
+
+
+def mask_chinese_ocr_text(
+    text: str,
+) -> str:
+    """
+    OCR由来と考えられる中国語固有文字列を
+    判読不能マーカーへ置換する。
+    """
+    return CHINESE_SPECIFIC_PATTERN.sub(
+        "（OCR判読不能）",
+        text,
+    )
+
 
 def remove_speaker_label(line: str) -> str:
     """
@@ -104,15 +147,169 @@ def cleanup_ocr_text(text: str) -> str:
     return cleaned
 
 
+def normalize_latin_token(
+    token: str,
+) -> str:
+    """
+    英字語の比較用表記へ正規化する。
+    """
+    return re.sub(
+        r"[^A-Za-z0-9]",
+        "",
+        token,
+    ).upper()
+
+
+def is_suspicious_latin_sequence(
+    sequence: str,
+    *,
+    allowed_terms: set[str] | None = None,
+) -> bool:
+    """
+    複数語の英字列がOCR破損らしいか判定する。
+    """
+    allowed = {
+        normalize_latin_token(term)
+        for term in (
+            allowed_terms
+            or DEFAULT_ALLOWED_LATIN_TERMS
+        )
+    }
+
+    words = LATIN_TOKEN_PATTERN.findall(
+        sequence
+    )
+
+    if len(words) < 2:
+        return False
+
+    unknown_words = [
+        word
+        for word in words
+        if normalize_latin_token(word)
+        not in allowed
+    ]
+
+    if not unknown_words:
+        return False
+
+    short_words = sum(
+        len(word) <= 2
+        for word in words
+    )
+
+    unusual_case_words = sum(
+        any(character.isupper() for character in word)
+        and any(character.islower() for character in word)
+        and not (
+            word[0].isupper()
+            and word[1:].islower()
+        )
+        for word in words
+    )
+
+    internal_upper_words = sum(
+        word.isupper()
+        and len(word) >= 2
+        for word in words[1:]
+    )
+
+    all_unknown = (
+        len(unknown_words)
+        == len(words)
+    )
+
+    return (
+        unusual_case_words > 0
+        or internal_upper_words > 0
+        or short_words >= 2
+        or (
+            all_unknown
+            and len(words) >= 3
+        )
+    )
+
+
+def find_suspicious_latin_sequences(
+    text: str,
+    *,
+    allowed_terms: set[str] | None = None,
+) -> list[str]:
+    """
+    OCR破損の可能性が高い複数語の英字列を抽出する。
+    """
+    normalized = text.replace(
+        "\n",
+        " ",
+    )
+
+    results: list[str] = []
+
+    for match in LATIN_SEQUENCE_PATTERN.finditer(
+        normalized
+    ):
+        sequence = match.group(0).strip()
+
+        if not is_suspicious_latin_sequence(
+            sequence,
+            allowed_terms=allowed_terms,
+        ):
+            continue
+
+        results.append(sequence)
+
+    for pattern in KNOWN_OCR_NOISE_PATTERNS:
+        for match in pattern.finditer(normalized):
+            sequence = match.group(0).strip()
+
+            if sequence not in results:
+                results.append(sequence)
+
+    return results
+
+
+def mask_suspicious_latin_sequences(
+    text: str,
+    *,
+    sequences: list[str] | None = None,
+) -> str:
+    """
+    OCR破損候補の英字列を判読不能へ置換する。
+    """
+    targets = (
+        sequences
+        if sequences is not None
+        else find_suspicious_latin_sequences(
+            text
+        )
+    )
+
+    masked = text
+
+    for sequence in sorted(
+        targets,
+        key=len,
+        reverse=True,
+    ):
+        masked = masked.replace(
+            sequence,
+            "（判読不能）",
+        )
+
+    return masked
+
+
 def is_suspicious_ocr_text(
     text: str,
 ) -> bool:
     """
-    既知のOCR破損文字列が含まれるか判定する。
-
-    Phase 1では誤検知を避けるため、
-    実際に確認済みのパターンだけを対象にする。
+    OCR破損文字列が含まれる可能性を判定する。
     """
+    if find_suspicious_latin_sequences(
+        text
+    ):
+        return True
+
     normalized = text.replace(
         "\n",
         " ",
