@@ -2,6 +2,14 @@
 config/prompts/*.txt
 !config/prompts/*.example.txt
 
+# Local glossaries
+config/glossary/*.txt
+!config/glossary/*.example.txt
+
+# Local translation styles
+config/styles/*.txt
+!config/styles/*.example.txt
+
 # Python
 __pycache__/
 *.pyc
