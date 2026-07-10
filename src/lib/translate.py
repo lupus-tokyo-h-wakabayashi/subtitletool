@@ -1,27 +1,45 @@
 #!/usr/bin/env python3
 import time
+from datetime import datetime
 from pathlib import Path
 
 from lib.ollama import generate
-from lib.progress import ProgressTracker, format_duration
-from lib.prompt import build_translation_prompt
+from lib.progress import (
+    ProgressTracker,
+    format_duration,
+)
+from lib.prompt import (
+    build_translation_prompt,
+    load_glossary_entries,
+)
 from lib.srt import (
     SrtBlock,
     apply_translations,
     extract_text_lines,
-    parse_numbered_translation,
     parse_srt,
     write_structured_srt,
 )
 from lib.text import cleanup_ocr_text
+from lib.translation_validation import (
+    validate_translation_response,
+)
 
 MODEL = "qwen3:14b"
 
+# 再試行用
+MAX_TRANSLATION_ATTEMPTS = 3
+TRANSLATION_DEBUG_DIR = Path(
+    "/tmp/subtitletool"
+)
+
 # 実際に翻訳する字幕数
-CHUNK_SIZE = 30
+CHUNK_SIZE = 20
 
 # 翻訳対象の前後に参考として渡す字幕数
-CONTEXT_SIZE = 15
+CONTEXT_SIZE = 10
+
+DEFAULT_STYLE_NAME = "stargate"
+DEFAULT_GLOSSARY_NAME = "stargate"
 
 def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
     """
@@ -53,8 +71,8 @@ def build_prompt(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
     after_context: list[SrtBlock],
-    style_name: str = "stargate",
-    glossary_name: str = "stargate",
+    style_name: str = DEFAULT_STYLE_NAME,
+    glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> str:
     return build_translation_prompt(
         target_count=len(target_blocks),
@@ -65,43 +83,165 @@ def build_prompt(
         glossary_name=glossary_name,
     )
 
+def build_retry_instruction(
+    errors: list[str],
+) -> str:
+    error_text = "\n".join(
+        f"* {error}"
+        for error in errors
+    )
+
+
+    return f"""
+
+【前回の出力は検証に失敗したため再翻訳する】
+
+前回は以下の問題が検出された。
+
+{error_text}
+
+次の規則を必ず守ること。
+
+* 翻訳対象の字幕だけを出力する
+* 出力は必ず指定件数と同じ件数にする
+* 各行は「1. 翻訳文」の形式にする
+* 番号は1から始まる連番にする
+* 各番号は対応する原文1件だけを翻訳し、複数字幕を結合しない
+* 原文の字幕を別の番号へ移動しない
+* 前半の翻訳を後半で繰り返さない
+* 直前・直後の参考文脈を出力しない
+* 英文をそのまま出力しない
+* 中国語を出力しない
+* 同じ字幕を繰り返さない
+* 解説、話者ラベル、補足を追加しない
+* 不明なOCR文字列を勝手に補完しない
+* 分からない文字列が含まれていても、レスポンス全体を反復させない
+"""
+
+def save_failed_translation_response(
+    response: str,
+    *,
+    chunk_start: int,
+    chunk_end: int,
+    attempt: int,
+) -> Path:
+    TRANSLATION_DEBUG_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    timestamp = datetime.now().strftime(
+        "%Y%m%d-%H%M%S-%f"
+    )
+
+    output_path = TRANSLATION_DEBUG_DIR / (
+        "failed-translation-"
+        f"{chunk_start}-{chunk_end}-"
+        f"attempt-{attempt}-"
+        f"{timestamp}.txt"
+    )
+
+    output_path.write_text(
+        response,
+        encoding="utf-8",
+    )
+
+    return output_path
 
 def translate_chunk(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
     after_context: list[SrtBlock],
     model: str,
+    *,
+    chunk_start: int,
+    chunk_end: int,
+    glossary_entries: dict[str, str],
+    style_name: str = DEFAULT_STYLE_NAME,
+    glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> list[str]:
-    prompt = build_prompt(
+    expected_count = len(target_blocks)
+    last_errors: list[str] = []
+
+    base_prompt = build_prompt(
         before_context,
         target_blocks,
         after_context,
+        style_name=style_name,
+        glossary_name=glossary_name,
     )
 
-    response = generate(prompt, model=model)
+    for attempt in range(
+        1,
+        MAX_TRANSLATION_ATTEMPTS + 1,
+    ):
+        prompt = base_prompt
 
-    translations = parse_numbered_translation(
-        response,
-        len(target_blocks),
+        if attempt > 1:
+            prompt += build_retry_instruction(
+                last_errors
+            )
+
+        response = generate(
+            prompt,
+            model=model,
+        )
+
+        print("=" * 80)
+        print(response)
+        print("=" * 80)
+
+        validation = validate_translation_response(
+            response,
+            expected_count=expected_count,
+            source_texts=[
+                block.text
+                for block in target_blocks
+            ],
+            glossary_entries=glossary_entries,
+        )
+
+        if validation.warnings:
+            print("Validation Warnings:")
+
+            for warning in validation.warnings:
+                print(f"  - {warning}")
+
+        if validation.valid:
+            return validation.translated_texts
+
+        failed_path = save_failed_translation_response(
+            response,
+            chunk_start=chunk_start,
+            chunk_end=chunk_end,
+            attempt=attempt,
+        )
+
+        last_errors = validation.reasons
+
+        print(
+           "Translation validation failed "
+           f"(attempt {attempt}/"
+           f"{MAX_TRANSLATION_ATTEMPTS})"
+        )
+
+        print("Validation Errors:")
+
+        for reason in last_errors:
+           print(f"  - {reason}")
+
+        print(f"Saved response: {failed_path}")
+
+        if attempt < MAX_TRANSLATION_ATTEMPTS:
+            print("Retrying translation...")
+
+    raise RuntimeError(
+        "Translation failed after "
+        f"{MAX_TRANSLATION_ATTEMPTS} attempts "
+        f"for subtitles "
+        f"{chunk_start}-{chunk_end}: "
+        + "; ".join(last_errors)
     )
-
-    fixed = []
-
-    for block, translated in zip(target_blocks, translations):
-        text = translated.strip()
-
-        # モデルが翻訳を返さなかった場合は原文を保持
-        if not text or text in {
-            "（空白）",
-            "(blank)",
-            "blank",
-            "空白",
-        }:
-            text = block.text
-
-        fixed.append(text)
-
-    return fixed
 
 
 def translate_srt(
@@ -124,7 +264,13 @@ def translate_srt(
     source_blocks = parse_srt(input_srt)
 
     if not source_blocks:
-        raise RuntimeError(f"No valid subtitle blocks: {input_srt}")
+        raise RuntimeError(
+            f"No valid subtitle blocks: {input_srt}"
+        )
+
+    glossary_entries = load_glossary_entries(
+        DEFAULT_GLOSSARY_NAME
+    )
 
     translated_all: list[SrtBlock] = []
 
@@ -154,7 +300,8 @@ def translate_srt(
         before_start = max(0, start - context_size)
         after_end = min(total_blocks, end + context_size)
 
-        # 元字幕は、翻訳失敗時のフォールバック用に保持する
+        # タイムコードと元の字幕構造を維持するため、
+        # OCR前処理前の対象ブロックを保持する
         source_target_blocks = source_blocks[start:end]
 
         # AIへ渡す字幕だけOCR前処理する
@@ -184,6 +331,9 @@ def translate_srt(
             target_blocks,
             after_context,
             model,
+            chunk_start=start + 1,
+            chunk_end=end,
+            glossary_entries=glossary_entries,
         )
 
         translated_blocks = apply_translations(
