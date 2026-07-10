@@ -1,0 +1,38 @@
+#!/usr/bin/env fish
+
+set COMMAND $argv[1]
+
+switch $COMMAND
+    case scan
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/scan.py $argv[2..-1]
+
+    case translate
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/translate.py $argv[2..-1]
+
+    case make
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/make.py $argv[2..-1]
+
+    case extract
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/extract.py $argv[2..-1]
+
+    case ocr
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/ocr.py $argv[2..-1]
+
+    case mux
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/mux.py $argv[2..-1]
+
+    case '*'
+        echo "Usage:"
+        echo "  subtitletool scan input.mkv"
+        echo "  subtitletool translate input.eng.srt [output.ja.srt]"
+        echo "  subtitletool make input.mkv"
+        echo "  subtitletool extract input.mkv"
+        echo "  subtitletool ocr input.eng.sup [output.eng.srt]"
+        echo "  subtitletool mux input.mkv [input.ja.srt] [output.ja.mkv]"
+end

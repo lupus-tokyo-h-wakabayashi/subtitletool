@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+
+# VSCode
+.vscode/
+
+# JetBrains
+.idea/
+
+# macOS
+.DS_Store
+
+# build
+*.log
+
+# generated subtitles
+*.eng.sup
+*.eng.srt
+*.ja.srt
+*.ja.mkv
+
+# temp
+work/
+output/
+
+# python
+.venv/
