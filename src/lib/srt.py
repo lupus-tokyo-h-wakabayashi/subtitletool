@@ -11,6 +11,103 @@ class SrtBlock:
     text: str
 
 
+@dataclass
+class ParsedSubtitleText:
+    speaker: str | None
+    text: str
+
+
+SPEAKER_PATTERNS = (
+    # [DANIEL] This is the Stargate.
+    re.compile(
+        r"^\s*"
+        r"\[(?P<speaker>[A-Za-z][A-Za-z0-9 ._'’-]{0,40})\]"
+        r"\s*"
+        r"(?P<text>.+)"
+        r"$"
+    ),
+
+    # DANIEL: This is the Stargate.
+    re.compile(
+        r"^\s*"
+        r"(?P<speaker>[A-Z][A-Z0-9 ._'’-]{1,40})"
+        r":\s*"
+        r"(?P<text>.+)"
+        r"$"
+    ),
+
+    # Daniel: This is the Stargate.
+    re.compile(
+        r"^\s*"
+        r"(?P<speaker>[A-Z][A-Za-z0-9 ._'’-]{1,40})"
+        r":\s*"
+        r"(?P<text>.+)"
+        r"$"
+    ),
+)
+
+
+NON_SPEAKER_LABELS = {
+    "NOTE",
+    "NOTES",
+    "WARNING",
+    "LOCATION",
+    "SCENE",
+    "MUSIC",
+    "SFX",
+}
+
+
+def parse_speaker_from_text(
+    text: str,
+) -> ParsedSubtitleText:
+    """
+    字幕本文の先頭に明示された話者名を抽出する。
+
+    対応形式:
+        [DANIEL] This is the Stargate.
+        DANIEL: This is the Stargate.
+        Daniel: This is the Stargate.
+
+    話者を推測せず、
+    明示されている場合だけspeakerへ設定する。
+    """
+    normalized = text.strip()
+
+    for pattern in SPEAKER_PATTERNS:
+        match = pattern.fullmatch(normalized)
+
+        if not match:
+            continue
+
+        speaker = match.group(
+            "speaker"
+        ).strip()
+
+        body = match.group(
+            "text"
+        ).strip()
+
+        if (
+            not speaker
+            or not body
+        ):
+            continue
+
+        if speaker.upper() in NON_SPEAKER_LABELS:
+            continue
+
+        return ParsedSubtitleText(
+            speaker=speaker,
+            text=body,
+        )
+
+    return ParsedSubtitleText(
+        speaker=None,
+        text=normalized,
+    )
+
+
 def parse_srt(path: str | Path) -> list[SrtBlock]:
     path = Path(path).expanduser().resolve()
     raw = path.read_text(encoding="utf-8", errors="replace").strip()
