@@ -6,6 +6,9 @@ from lib.ffprobe import subtitle_count
 from lib.mux_plan import (
     build_mux_plan,
 )
+from lib.mux_validation import (
+    validate_mux_output,
+)
 
 
 def run(cmd: list[str]) -> None:
@@ -71,4 +74,36 @@ def mux_japanese_srt(
 
     run(cmd)
 
-    return output_mkv
+    validation = validate_mux_output(
+        mux_plan.input_mkv,
+        mux_plan.output_mkv,
+        added_language=(
+            mux_plan.added_language
+        ),
+        added_title=(
+            mux_plan.added_title
+        ),
+    )
+
+    if validation.warnings:
+        print()
+        print("Mux Validation Warnings:")
+
+        for warning in validation.warnings:
+            print(f"  - {warning}")
+
+    if not validation.valid:
+        details = "\n".join(
+            f"  - {error}"
+            for error in validation.errors
+        )
+
+        raise RuntimeError(
+            "Mux validation failed:\n"
+            f"{details}"
+        )
+
+    print()
+    print("Mux Validation: OK")
+
+    return mux_plan.output_mkv
