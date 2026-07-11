@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 from lib.prompt import (
@@ -5,6 +7,10 @@ from lib.prompt import (
 )
 from lib.srt import (
     SrtBlock,
+    parse_speaker_from_text,
+)
+from lib.text import (
+    is_suspicious_ocr_text,
 )
 
 
