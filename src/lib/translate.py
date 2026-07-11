@@ -5,14 +5,15 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-
 from lib.ollama import generate
 from lib.progress import (
     ProgressTracker,
     format_duration,
 )
-from lib.prompt import (
+from lib.config import (
     resolve_profile_config,
+)
+from lib.prompt import (
     DEFAULT_GLOSSARY_NAME,
     DEFAULT_STYLE_NAME,
     build_translation_prompt,
@@ -27,6 +28,7 @@ from lib.srt import (
 )
 from lib.text import (
     cleanup_ocr_text,
+    find_suspicious_latin_sequences,
     is_suspicious_ocr_text,
     mask_chinese_ocr_text,
     mask_suspicious_latin_sequences,
@@ -35,13 +37,22 @@ from lib.translation_validation import (
     source_contains_glossary_term,
     validate_translation_response,
 )
+from lib.noise import (
+    NoiseDictionary,
+    NoiseEntry,
+    append_noise_candidates,
+    apply_noise_dictionary_to_text,
+    load_noise_dictionary,
+)
+
 
 MODEL = "qwen3:14b"
 
 # 再試行用
 MAX_TRANSLATION_ATTEMPTS = 3
-TRANSLATION_DEBUG_DIR = Path(
-    "/tmp/subtitletool"
+TRANSLATION_DEBUG_DIR = (
+    Path("~/tmp/subtitletool")
+    .expanduser()
 )
 
 # 実際に翻訳する字幕数
@@ -61,6 +72,27 @@ def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
             number=block.number,
             timestamp=block.timestamp,
             text=cleanup_ocr_text(block.text),
+        )
+        for block in blocks
+    ]
+
+
+def apply_noise_to_blocks(
+        blocks: list[SrtBlock],
+        noise_dictionary: NoiseDictionary,
+) -> list[SrtBlock]:
+    """
+    字幕番号とタイムコードを維持し、
+    本文だけへnoise辞書を適用する。
+    """
+    return [
+        SrtBlock(
+            number=block.number,
+            timestamp=block.timestamp,
+            text=apply_noise_dictionary_to_text(
+                block.text,
+                noise_dictionary,
+            ),
         )
         for block in blocks
     ]
@@ -169,6 +201,35 @@ def normalize_translation_texts(
         normalize_translation_text(text)
         for text in translated_texts
     ]
+
+
+def extract_noise_candidates_from_blocks(
+        blocks: list[SrtBlock],
+) -> list[str]:
+    """
+    翻訳前字幕からOCR英字破損候補を抽出する。
+
+    同じ候補は1件にまとめ、
+    字幕の出現順を維持する。
+    """
+    candidates: list[str] = []
+
+    for block in blocks:
+        sequences = (
+            find_suspicious_latin_sequences(
+                block.text
+            )
+        )
+
+        for sequence in sequences:
+            if sequence in candidates:
+                continue
+
+            candidates.append(
+                sequence
+            )
+
+    return candidates
 
 
 def build_ocr_noise_instruction(
@@ -450,6 +511,33 @@ def extract_garbled_latin_errors(
         )
 
     return results
+
+
+def extract_garbled_latin_candidates(
+        errors: list[str],
+) -> list[str]:
+    """
+    OCR英字破損エラーから、
+    noise辞書へ保存する候補文字列を抽出する。
+    """
+    error_details = (
+        extract_garbled_latin_errors(
+            errors
+        )
+    )
+
+    candidates: list[str] = []
+
+    for sequences in error_details.values():
+        for sequence in sequences:
+            if sequence in candidates:
+                continue
+
+            candidates.append(
+                sequence
+            )
+
+    return candidates
 
 
 def build_chinese_retry_blocks(
@@ -862,11 +950,30 @@ def translate_chunk(
     chunk_start: int,
     chunk_end: int,
     glossary_entries: dict[str, str],
+    noise_dictionary: NoiseDictionary,
     style_name: str = DEFAULT_STYLE_NAME,
     glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> list[str]:
     last_errors: list[str] = []
     last_translated_texts: list[str] = []
+
+    input_noise_candidates = (
+        extract_noise_candidates_from_blocks(
+            target_blocks
+        )
+    )
+
+    saved_input_noise_entries = (
+        append_noise_candidates(
+            noise_dictionary,
+            input_noise_candidates,
+        )
+    )
+
+    print_saved_noise_candidates(
+        saved_input_noise_entries,
+        noise_dictionary,
+    )
 
     glossary_instruction = (
         build_required_glossary_instruction(
@@ -991,6 +1098,22 @@ def translate_chunk(
         )
 
         last_errors = validation.reasons
+
+        noise_candidates = (
+            extract_garbled_latin_candidates(
+                last_errors
+            )
+        )
+
+        added_noise_entries = append_noise_candidates(
+            noise_dictionary,
+            noise_candidates,
+        )
+
+        print_saved_noise_candidates(
+            added_noise_entries,
+            noise_dictionary,
+        )
 
         if (
             len(validation.translated_texts)
@@ -1132,6 +1255,45 @@ def print_profile_resolution(
         )
 
 
+def print_saved_noise_candidates(
+        entries: list[NoiseEntry],
+        noise_dictionary: NoiseDictionary,
+) -> None:
+    """
+    今回noise.local.jsonへ保存した候補を表示する。
+    """
+    if not entries:
+        return
+
+    print("Noise Candidates Saved:")
+
+    for entry in entries:
+        print(
+            f"  - {entry.source}"
+        )
+
+    print(
+        "Noise Candidate File: "
+        f"{noise_dictionary.local_path}"
+    )
+
+
+def print_noise_dictionary_summary(
+        noise_dictionary: NoiseDictionary,
+) -> None:
+    """
+    読み込んだnoise辞書の概要を表示する。
+    """
+    print(
+        "Noise       : "
+        f"{len(noise_dictionary.entries)} entries"
+    )
+    print(
+        "Noise Local : "
+        f"{'Yes' if noise_dictionary.local_loaded else 'No'}"
+    )
+
+
 def translate_srt(
     input_srt: str | Path,
     output_srt: str | Path,
@@ -1180,6 +1342,10 @@ def translate_srt(
         profile_config.resolved_profile
     )
 
+    noise_dictionary = load_noise_dictionary(
+        profile_config
+    )
+
     source_blocks = parse_srt(
         input_path
     )
@@ -1226,6 +1392,10 @@ def translate_srt(
             profile_config.fallback_used,
         )
 
+        print_noise_dictionary_summary(
+            noise_dictionary
+        )
+
         print(f"Subtitles   : {total_blocks}")
         print(f"Output      : {output_path}")
         print("========================================")
@@ -1264,6 +1434,10 @@ def translate_srt(
         profile_config.requested_profile,
         resolved_profile,
         profile_config.fallback_used,
+    )
+
+    print_noise_dictionary_summary(
+        noise_dictionary
     )
 
     print(f"Style       : {resolved_profile}")
@@ -1321,8 +1495,11 @@ def translate_srt(
             ]
         )
 
-        target_blocks = cleanup_blocks(
-            source_target_blocks
+        target_blocks = apply_noise_to_blocks(
+            cleanup_blocks(
+                source_target_blocks
+            ),
+            noise_dictionary,
         )
 
         after_context = cleanup_blocks(
@@ -1351,6 +1528,7 @@ def translate_srt(
             chunk_start=start + 1,
             chunk_end=end,
             glossary_entries=glossary_entries,
+            noise_dictionary=noise_dictionary,
             style_name=resolved_profile,
             glossary_name=resolved_profile,
         )
