@@ -35,3 +35,4 @@ output/
 
 # python
 .venv/
+.pytest_cache/
