@@ -29,11 +29,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--profile",
+        default=None,
+        help=(
+            "Translation profile name. "
+            "Uses default when omitted."
+        ),
+    )
+
+    parser.add_argument(
         "--style",
         default=None,
         help=(
-            "Legacy translation profile option. "
-            "Must match --glossary when specified."
+            "Legacy profile option. "
+            "Must match --glossary."
         ),
     )
 
@@ -41,8 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--glossary",
         default=None,
         help=(
-            "Legacy translation profile option. "
-            "Must match --style when specified."
+            "Legacy profile option. "
+            "Must match --style."
         ),
     )
 
@@ -94,6 +103,8 @@ def main() -> None:
     print("========================================")
     print(f"Input   : {input_srt}")
     print(f"Output  : {output_srt}")
+    if args.profile is not None:
+        print(f"Profile : {args.profile}")
     if args.style is not None:
         print(f"Style   : {args.style}")
     if args.glossary is not None:
@@ -103,6 +114,7 @@ def main() -> None:
     result = translate_srt(
         input_srt,
         output_srt,
+        profile_name=args.profile,
         style_name=args.style,
         glossary_name=args.glossary,
     )
