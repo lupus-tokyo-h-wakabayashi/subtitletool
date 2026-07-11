@@ -73,3 +73,55 @@ def find_best_english_pgs_subtitle(input_path: str | Path) -> dict | None:
 
 def subtitle_count(input_path: str | Path) -> int:
     return len(subtitle_streams(input_path))
+
+
+def stream_language(
+    stream: dict,
+) -> str:
+    """
+    ストリームの言語コードを取得する。
+    """
+    return str(
+        stream.get(
+            "tags",
+            {},
+        ).get(
+            "language",
+            "",
+        )
+    )
+
+
+def stream_title(
+    stream: dict,
+) -> str:
+    """
+    ストリームタイトルを取得する。
+    """
+    return str(
+        stream.get(
+            "tags",
+            {},
+        ).get(
+            "title",
+            "",
+        )
+    )
+
+
+def stream_disposition(
+    stream: dict,
+    name: str,
+) -> bool:
+    """
+    disposition属性を取得する。
+    """
+    return bool(
+        stream.get(
+            "disposition",
+            {},
+        ).get(
+            name,
+            0,
+        )
+    )
