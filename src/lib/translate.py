@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-import json
-import re
-import time
+
 from pathlib import Path
 
 from lib.config import (
@@ -30,6 +28,54 @@ CHUNK_SIZE = 10
 
 # 翻訳対象の前後に参考として渡す字幕数
 CONTEXT_SIZE = 15
+
+
+def resolve_requested_profile(
+    profile_name: str | None,
+    style_name: str | None,
+    glossary_name: str | None,
+) -> str | None:
+    """
+    profile指定と旧style/glossary指定を統一する。
+
+    移行期間中のみstyle/glossaryも受け付ける。
+    """
+    requested_profile = profile_name
+
+    legacy_profile_specified = (
+        style_name is not None
+        or glossary_name is not None
+    )
+
+    if not legacy_profile_specified:
+        return requested_profile
+
+    if style_name != glossary_name:
+        raise ValueError(
+            "Style and glossary profiles must match "
+            "during migration: "
+            f"style={style_name!r}, "
+            f"glossary={glossary_name!r}"
+        )
+
+    legacy_profile = style_name
+
+    if (
+        requested_profile is not None
+        and legacy_profile is not None
+        and requested_profile != legacy_profile
+    ):
+        raise ValueError(
+            "Profile conflicts with legacy options: "
+            f"profile={requested_profile!r}, "
+            f"style={style_name!r}, "
+            f"glossary={glossary_name!r}"
+        )
+
+    if requested_profile is None:
+        requested_profile = legacy_profile
+
+    return requested_profile
 
 
 def translate_srt(
@@ -65,38 +111,11 @@ def translate_srt(
             f"SRT not found: {input_path}"
         )
 
-    requested_profile = profile_name
-
-    legacy_profile_specified = (
-        style_name is not None
-        or glossary_name is not None
+    requested_profile = resolve_requested_profile(
+        profile_name=profile_name,
+        style_name=style_name,
+        glossary_name=glossary_name,
     )
-
-    if legacy_profile_specified:
-        if style_name != glossary_name:
-            raise ValueError(
-                "Style and glossary profiles must match "
-                "during migration: "
-                f"style={style_name!r}, "
-                f"glossary={glossary_name!r}"
-            )
-
-        legacy_profile = style_name
-
-        if (
-            requested_profile is not None
-            and legacy_profile is not None
-            and requested_profile != legacy_profile
-        ):
-            raise ValueError(
-                "Profile conflicts with legacy options: "
-                f"profile={requested_profile!r}, "
-                f"style={style_name!r}, "
-                f"glossary={glossary_name!r}"
-            )
-
-        if requested_profile is None:
-            requested_profile = legacy_profile
 
     profile_config = resolve_profile_config(
         requested_profile
