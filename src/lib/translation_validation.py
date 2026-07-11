@@ -1,21 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-
-
-# LLMへ要求している番号形式。
-#
-# 許可例:
-#   1. 翻訳文
-#   1) 翻訳文
-#   [1] 翻訳文
-#
-# 番号の後ろに本文が必要。
-NUMBERED_LINE_PATTERN = re.compile(
-    r"^\s*(?:\[(\d+)\]|(\d+)[.)])\s*(.+?)\s*$"
+from lib.text import (
+    CHINESE_SPECIFIC_PATTERN,
+    DEFAULT_ALLOWED_LATIN_TERMS,
+    find_suspicious_latin_sequences,
 )
 
 # 英語の文として残っている可能性が高い単語。
@@ -40,36 +33,14 @@ ENGLISH_SENTENCE_PATTERN = re.compile(
 
 ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]{2,}")
 
-# 日本語にも漢字があるため、CJK範囲全体では判定しない。
-# 実際に混入が確認された簡体字・中国語固有表現を中心に検出する。
-#
-# 誤検知が判明した文字は、この集合から外すこと。
-CHINESE_SPECIFIC_PATTERN = re.compile(
-    r"[这们为发经进过还让从个里边开关车话说时对与于后会动语]"
-)
-
 LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
 
-# 字幕内に残っても異常とは限らない英字表記。
-# 必要に応じて作品別の語彙を追加する。
-ALLOWED_LATIN_TERMS = {
-    "AI",
-    "DNA",
-    "F",
-    "SG",
-    "TJ",
-    "T",
-    "J",
-    "Stargate",
-    "Destiny",
-    "Icarus",
-    "Johansen",
-    "Armstrong",
-    "Wallace",
-}
+ALLOWED_LATIN_TERMS = (
+    DEFAULT_ALLOWED_LATIN_TERMS
+)
 
 DEFAULT_REPEAT_THRESHOLD = 5
-DEFAULT_MAX_LINES_PER_SUBTITLE = 4
+DEFAULT_MAX_LINES_PER_SUBTITLE = 6
 DEFAULT_MAX_CHARS_PER_SUBTITLE = 200
 
 DEFAULT_INCOMPLETE_THRESHOLD = 3
@@ -78,6 +49,8 @@ DEFAULT_MINIMUM_SOURCE_LENGTH = 8
 DEFAULT_MINIMUM_LENGTH_RATIO = 0.15
 DEFAULT_MAXIMUM_LENGTH_RATIO = 4.0
 DEFAULT_MAXIMUM_SEGMENTS = 4
+
+DEFAULT_JSON_RESPONSE_OVERHEAD_LINES = 5
 
 NUMBER_PATTERN = re.compile(r"\d+")
 
@@ -110,106 +83,306 @@ SOUND_EFFECT_PATTERN = re.compile(
 
 
 @dataclass
+class TranslationResponseItem:
+    id: str
+    translation: str
+
+
+@dataclass
 class ValidationResult:
     valid: bool = True
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     translated_texts: list[str] = field(default_factory=list)
+    failed_ids: set[str] = field(default_factory=set)
+    requires_full_retry: bool = False
 
-    def add_error(self, reason: str) -> None:
+    def add_error(
+        self,
+        reason: str,
+        *,
+        subtitle_id: str | None = None,
+        requires_full_retry: bool = False,
+    ) -> None:
         self.valid = False
         self.reasons.append(reason)
+
+        if subtitle_id is not None:
+            self.failed_ids.add(
+                subtitle_id
+            )
+
+        if requires_full_retry:
+            self.requires_full_retry = True
 
     def add_warning(self, warning: str) -> None:
         self.warnings.append(warning)
 
 
-def extract_numbered_lines(
+def strip_json_code_fence(
     response: str,
-) -> list[tuple[int, str]]:
+) -> str:
     """
-    LLMレスポンスから番号付き翻訳行を抽出する。
+    LLMが付加したJSONコードフェンスだけを除去する。
 
-    対応形式:
-        1. 翻訳文
-        1) 翻訳文
-        [1] 翻訳文
-
-    番号のない行は抽出しない。
+    プロンプトではコードフェンスを禁止しているが、
+    正しいJSON本体を回収できる場合は許容する。
     """
-    results: list[tuple[int, str]] = []
+    stripped = response.strip()
 
-    for raw_line in response.splitlines():
-        line = raw_line.strip()
+    stripped = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        stripped,
+        flags=re.IGNORECASE,
+    )
 
-        if not line:
+    stripped = re.sub(
+        r"\s*```$",
+        "",
+        stripped,
+    )
+
+    return stripped.strip()
+
+
+def parse_translation_json(
+    response: str,
+) -> tuple[
+    list[TranslationResponseItem],
+    list[str],
+]:
+    """
+    LLMレスポンスをJSON翻訳結果として解析する。
+
+    期待形式:
+        {
+          "translations": [
+            {
+              "id": "1",
+              "translation": "日本語字幕"
+            }
+          ]
+        }
+    """
+    errors: list[str] = []
+    items: list[TranslationResponseItem] = []
+
+    raw_json = strip_json_code_fence(
+        response
+    )
+
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as error:
+        return [], [
+            "Invalid JSON response: "
+            f"line={error.lineno}, "
+            f"column={error.colno}, "
+            f"message={error.msg}"
+        ]
+
+    if not isinstance(payload, dict):
+        return [], [
+            "Invalid JSON root: expected object"
+        ]
+
+    actual_root_keys = set(
+        payload.keys()
+    )
+
+    expected_root_keys = {
+        "translations",
+    }
+
+    if actual_root_keys != expected_root_keys:
+        errors.append(
+            "Invalid JSON root keys: "
+            f"expected={sorted(expected_root_keys)}, "
+            f"actual={sorted(actual_root_keys)}"
+        )
+
+    translations = payload.get(
+        "translations"
+    )
+
+    if not isinstance(translations, list):
+        errors.append(
+            "Invalid translations: expected array"
+        )
+
+        return [], errors
+
+    for position, item in enumerate(
+        translations,
+        start=1,
+    ):
+        if not isinstance(item, dict):
+            errors.append(
+                "Invalid translation item: "
+                f"position={position}, "
+                "expected=object"
+            )
+
             continue
 
-        match = NUMBERED_LINE_PATTERN.match(line)
+        required_item_keys = {
+            "id",
+            "translation",
+        }
 
-        if not match:
+        actual_item_keys = set(
+            item.keys()
+        )
+
+        missing_item_keys = (
+            required_item_keys
+            - actual_item_keys
+        )
+
+        if missing_item_keys:
+            errors.append(
+                "Missing translation item keys: "
+                f"position={position}, "
+                f"missing={sorted(missing_item_keys)}, "
+                f"actual={sorted(actual_item_keys)}"
+            )
+
             continue
 
-        number_text = match.group(1) or match.group(2)
-        translated_text = match.group(3).strip()
+        item_id = item.get("id")
+        translation = item.get(
+            "translation"
+        )
 
-        if not number_text or not translated_text:
+        if isinstance(item_id, bool):
+            errors.append(
+                "Invalid translation id: "
+                f"position={position}, "
+                "expected=string or integer"
+            )
+
             continue
 
-        results.append(
-            (
-                int(number_text),
-                translated_text,
+        if isinstance(item_id, int):
+            normalized_id = str(item_id)
+        elif isinstance(item_id, str):
+            normalized_id = item_id.strip()
+        else:
+            errors.append(
+                "Invalid translation id: "
+                f"position={position}, "
+                "expected=string or integer"
+            )
+
+            continue
+
+        if not normalized_id:
+            errors.append(
+                "Empty translation id: "
+                f"position={position}"
+            )
+
+            continue
+
+        if not isinstance(translation, str):
+            errors.append(
+                "Invalid translation text: "
+                f"id={normalized_id!r}, "
+                "expected=string"
+            )
+
+            continue
+
+        normalized_translation = (
+            translation.strip()
+        )
+
+        if not normalized_translation:
+            errors.append(
+                "Empty translation: "
+                f"id={normalized_id!r}"
+            )
+
+            continue
+
+        items.append(
+            TranslationResponseItem(
+                id=normalized_id,
+                translation=normalized_translation,
             )
         )
 
-    return results
+    return items, errors
 
 
-def validate_number_sequence(
-    numbered_lines: list[tuple[int, str]],
-    expected_count: int,
-) -> str | None:
+def validate_translation_ids(
+    items: list[TranslationResponseItem],
+    expected_ids: list[str],
+) -> list[str]:
     """
-    番号が1からexpected_countまで連続しているか検証する。
+    JSONレスポンスのIDが入力targetと完全に対応するか検証する。
     """
-    actual_numbers = [
-        number
-        for number, _ in numbered_lines
+    errors: list[str] = []
+
+    actual_ids = [
+        item.id
+        for item in items
     ]
 
-    expected_numbers = list(
-        range(1, expected_count + 1)
+    duplicate_ids = sorted(
+        item_id
+        for item_id, count
+        in Counter(actual_ids).items()
+        if count > 1
     )
 
-    if actual_numbers == expected_numbers:
-        return None
+    if duplicate_ids:
+        errors.append(
+            "Duplicate translation IDs: "
+            f"{duplicate_ids}"
+        )
 
-    return (
-        "Invalid translation numbering: "
-        f"expected_count={expected_count}, "
-        f"actual_count={len(actual_numbers)}, "
-        f"actual_last={actual_numbers[-1] if actual_numbers else None}"
+    actual_id_set = set(
+        actual_ids
     )
 
-
-def validate_output_count(
-    translated_texts: list[str],
-    expected_count: int,
-) -> str | None:
-    """
-    翻訳件数が翻訳対象件数と一致するか検証する。
-    """
-    actual_count = len(translated_texts)
-
-    if actual_count == expected_count:
-        return None
-
-    return (
-        "Translation count mismatch: "
-        f"expected={expected_count}, "
-        f"actual={actual_count}"
+    expected_id_set = set(
+        expected_ids
     )
+
+    missing_ids = [
+        item_id
+        for item_id in expected_ids
+        if item_id not in actual_id_set
+    ]
+
+    if missing_ids:
+        errors.append(
+            "Missing translation IDs: "
+            f"{missing_ids}"
+        )
+
+    unexpected_ids = [
+        item_id
+        for item_id in actual_ids
+        if item_id not in expected_id_set
+    ]
+
+    if unexpected_ids:
+        errors.append(
+            "Unexpected translation IDs: "
+            f"{unexpected_ids}"
+        )
+
+    if actual_ids != expected_ids:
+        errors.append(
+            "Invalid translation ID order: "
+            f"expected={expected_ids}, "
+            f"actual={actual_ids}"
+        )
+
+    return errors
 
 
 def validate_response_size(
@@ -218,13 +391,13 @@ def validate_response_size(
     *,
     max_lines_per_subtitle: int = DEFAULT_MAX_LINES_PER_SUBTITLE,
     max_chars_per_subtitle: int = DEFAULT_MAX_CHARS_PER_SUBTITLE,
+    response_overhead_lines: int = DEFAULT_JSON_RESPONSE_OVERHEAD_LINES,
 ) -> list[str]:
     """
     LLMレスポンスが異常に長くないか検証する。
 
-    30字幕の場合の既定値:
-        最大行数: 120
-        最大文字数: 6000
+    JSONのルート・配列部分には固定行数が必要なため、
+    字幕件数に応じた上限へJSON構造分の余白を加える。
     """
     errors: list[str] = []
 
@@ -233,6 +406,7 @@ def validate_response_size(
 
     max_line_count = (
         expected_count * max_lines_per_subtitle
+        + response_overhead_lines
     )
     max_char_count = (
         expected_count * max_chars_per_subtitle
@@ -511,15 +685,40 @@ def find_repeated_lines(
     return repeated
 
 
-def contains_chinese_specific_characters(
-    text: str,
-) -> bool:
+def find_chinese_specific_characters(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+) -> list[str]:
     """
-    日本語字幕へ簡体字などが混入していないか検出する。
+    日本語字幕へ混入した簡体字・中国語固有文字を、
+    字幕IDと本文を含めて検出する。
     """
-    return bool(
-        CHINESE_SPECIFIC_PATTERN.search(text)
-    )
+    violations: list[str] = []
+
+    for subtitle_id, translated_text in zip(
+        subtitle_ids,
+        translated_texts,
+        strict=True,
+    ):
+        matched_characters = sorted(
+            set(
+                CHINESE_SPECIFIC_PATTERN.findall(
+                    translated_text
+                )
+            )
+        )
+
+        if not matched_characters:
+            continue
+
+        violations.append(
+            "Chinese-specific characters detected: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"characters={''.join(matched_characters)!r}, "
+            f"text={translated_text!r}"
+        )
+
+    return violations
 
 
 def normalize_latin_term(
@@ -564,69 +763,121 @@ def contains_untranslated_english(
     )
 
 
-def contains_garbled_latin(
-    text: str,
-) -> bool:
+def find_untranslated_english_violations(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+) -> list[str]:
     """
-    OCR由来と思われる不自然な英字列を検出する。
-
-    例:
-        VVNsKomCIAcM
-        MimElomIElaie
-
-    完全な判定はできないため、
-    長く、かつ大文字・小文字が不自然に混ざる語を対象とする。
+    OCR破損候補を除外した上で、
+    字幕単位に未翻訳英文を検出する。
     """
-    allowed_normalized = {
-        normalize_latin_term(term)
-        for term in ALLOWED_LATIN_TERMS
-    }
+    violations: list[str] = []
 
-    for token in LATIN_TOKEN_PATTERN.findall(text):
-        if normalize_latin_term(token) in allowed_normalized:
-            continue
-
-        if len(token) < 8:
-            continue
-
-        upper_count = sum(
-            character.isupper()
-            for character in token
-        )
-        lower_count = sum(
-            character.islower()
-            for character in token
+    for subtitle_id, translated_text in zip(
+        subtitle_ids,
+        translated_texts,
+        strict=True,
+    ):
+        ocr_sequences = (
+            find_suspicious_latin_sequences(
+                translated_text,
+                allowed_terms=ALLOWED_LATIN_TERMS,
+            )
         )
 
-        # 通常の固有名詞は先頭だけ大文字であることが多い。
-        # 大文字が2文字以上かつ小文字も2文字以上なら疑わしい。
-        if upper_count >= 2 and lower_count >= 2:
-            return True
+        text_for_check = translated_text
 
-    return False
+        for sequence in ocr_sequences:
+            text_for_check = (
+                text_for_check.replace(
+                    sequence,
+                    "",
+                )
+            )
+
+        if not contains_untranslated_english(
+            text_for_check
+        ):
+            continue
+
+        violations.append(
+            "Untranslated English sentence detected: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"text={translated_text!r}"
+        )
+
+    return violations
+
+
+def find_garbled_latin_violations(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+) -> list[str]:
+    """
+    字幕ごとにOCR破損英字列を検出する。
+    """
+    violations: list[str] = []
+
+    for subtitle_id, translated_text in zip(
+        subtitle_ids,
+        translated_texts,
+        strict=True,
+    ):
+        sequences = (
+            find_suspicious_latin_sequences(
+                translated_text,
+                allowed_terms=ALLOWED_LATIN_TERMS,
+            )
+        )
+
+        if not sequences:
+            continue
+
+        violations.append(
+            "Garbled Latin text detected: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"sequences={sequences!r}, "
+            f"text={translated_text!r}"
+        )
+
+    return violations
 
 
 def validate_translation_response(
     response: str,
     *,
-    expected_count: int,
+    expected_ids: list[str],
     source_texts: list[str] | None = None,
     glossary_entries: Mapping[str, str] | None = None,
     repeat_threshold: int = DEFAULT_REPEAT_THRESHOLD,
     incomplete_threshold: int = DEFAULT_INCOMPLETE_THRESHOLD,
 ) -> ValidationResult:
     """
-    LLMの翻訳レスポンス全体を検証する。
+    LLMのJSON翻訳レスポンス全体を検証する。
+
+    期待形式:
+        {
+          "translations": [
+            {
+              "id": "入力targetのid",
+              "translation": "日本語字幕"
+            }
+          ]
+        }
 
     正常な場合:
         result.valid == True
-        result.translated_texts に翻訳結果が入る
+        result.translated_texts にID順の翻訳結果が入る
 
     異常な場合:
         result.valid == False
         result.reasons に理由が入る
     """
     result = ValidationResult()
+
+    expected_count = len(
+        expected_ids
+    )
 
     if not response.strip():
         result.add_error(
@@ -640,62 +891,77 @@ def validate_translation_response(
     ):
         result.add_error(error)
 
-    numbered_lines = extract_numbered_lines(
-        response
+    items, parse_errors = (
+        parse_translation_json(
+            response
+        )
     )
 
-    numbering_error = validate_number_sequence(
-        numbered_lines,
-        expected_count,
-    )
+    for error in parse_errors:
+        result.add_error(error)
 
-    if numbering_error:
-        result.add_error(numbering_error)
-
-    translated_texts = [
-        translated_text
-        for _, translated_text in numbered_lines
-    ]
-
-    result.translated_texts = translated_texts
-
-    count_error = validate_output_count(
-        translated_texts,
-        expected_count,
-    )
-
-    if count_error:
-        result.add_error(count_error)
-
-    # 件数または番号が壊れている場合、
-    # 原文と訳文の対応関係を保証できないため、
-    # 用語・内容の検証へ進まない。
-    if numbering_error or count_error:
+    # JSON構造が壊れている場合、
+    # IDと原文の対応関係を保証できないため、
+    # 後続の検証へ進まない。
+    if parse_errors:
         return result
 
-    joined_text = "\n".join(
+    id_errors = validate_translation_ids(
+        items,
+        expected_ids,
+    )
+
+    for error in id_errors:
+        result.add_error(error)
+
+    # IDの欠落・重複・追加・並び替えがある場合、
+    # 原文と訳文の対応関係を保証できない。
+    if id_errors:
+        return result
+
+    translated_texts = [
+        item.translation
+        for item in items
+    ]
+
+    result.translated_texts = (
         translated_texts
     )
 
-    if contains_chinese_specific_characters(
-        joined_text
-    ):
+    garbled_latin_violations = (
+        find_garbled_latin_violations(
+            translated_texts,
+            expected_ids,
+        )
+    )
+
+    for violation in garbled_latin_violations[:10]:
+        result.add_error(violation)
+
+    if len(garbled_latin_violations) > 10:
         result.add_error(
-            "Chinese-specific characters detected"
+            "Additional garbled Latin violations: "
+            f"{len(garbled_latin_violations) - 10}"
         )
 
-    if contains_untranslated_english(
-        joined_text
-    ):
-        result.add_error(
-            "Untranslated English sentence detected"
+    untranslated_english_violations = (
+        find_untranslated_english_violations(
+            translated_texts,
+            expected_ids,
         )
+    )
 
-    if contains_garbled_latin(
-        joined_text
+    for violation in (
+        untranslated_english_violations[:10]
     ):
+        result.add_error(violation)
+
+    if len(
+        untranslated_english_violations
+    ) > 10:
         result.add_error(
-            "Garbled Latin text detected"
+            "Additional untranslated English violations: "
+            f"{len(untranslated_english_violations) - 10}"
         )
 
     repeated_lines = find_repeated_lines(
@@ -719,17 +985,18 @@ def validate_translation_response(
             find_glossary_violations(
                 source_texts,
                 translated_texts,
+                expected_ids,
                 glossary_entries,
             )
         )
 
         # 再試行プロンプトが極端に長くならないよう、
-        # ログへ追加する件数を制限する。
+        # エラーへ追加する件数を制限する。
         for violation in glossary_violations[:10]:
-            result.add_warning(violation)
+            result.add_error(violation)
 
         if len(glossary_violations) > 10:
-            result.add_warning(
+            result.add_error(
                 "Additional glossary violations: "
                 f"{len(glossary_violations) - 10}"
             )
@@ -866,6 +1133,7 @@ def source_contains_glossary_term(
 def find_glossary_violations(
     source_texts: list[str],
     translated_texts: list[str],
+    subtitle_ids: list[str],
     glossary_entries: Mapping[str, str],
 ) -> list[str]:
     """
@@ -874,16 +1142,15 @@ def find_glossary_violations(
     """
     violations: list[str] = []
 
-    for index, (
+    for (
+        subtitle_id,
         source_text,
         translated_text,
-    ) in enumerate(
-        zip(
-            source_texts,
-            translated_texts,
-            strict=True,
-        ),
-        start=1,
+    ) in zip(
+        subtitle_ids,
+        source_texts,
+        translated_texts,
+        strict=True,
     ):
         for source_term, expected_term in (
             glossary_entries.items()
@@ -899,7 +1166,7 @@ def find_glossary_violations(
 
             violations.append(
                 "Glossary violation: "
-                f"subtitle={index}, "
+                f"subtitle_id={subtitle_id!r}, "
                 f"source_term={source_term!r}, "
                 f"expected={expected_term!r}, "
                 f"actual={translated_text!r}"
