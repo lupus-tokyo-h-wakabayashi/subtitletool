@@ -1,1 +1,3 @@
+# Default glossary
+
 # Format: English = Japanese

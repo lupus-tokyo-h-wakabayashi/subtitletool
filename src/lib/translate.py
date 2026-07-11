@@ -12,6 +12,7 @@ from lib.progress import (
     format_duration,
 )
 from lib.prompt import (
+    resolve_profile_config,
     DEFAULT_GLOSSARY_NAME,
     DEFAULT_STYLE_NAME,
     build_translation_prompt,
@@ -1102,6 +1103,35 @@ def build_latin_ocr_retry_blocks(
     ]
 
 
+def print_profile_resolution(
+    requested_profile: str | None,
+    resolved_profile: str,
+    fallback_used: bool,
+) -> None:
+    """
+    profile解決結果を表示する。
+    """
+    requested_text = (
+        requested_profile
+        if requested_profile is not None
+        else DEFAULT_STYLE_NAME
+    )
+
+    print(
+        f"Profile Req : {requested_text}"
+    )
+    print(
+        f"Profile Use : {resolved_profile}"
+    )
+
+    if fallback_used:
+        print(
+            "Warning     : "
+            f"Profile {requested_text!r} was not found. "
+            f"Using {resolved_profile!r}."
+        )
+
+
 def translate_srt(
     input_srt: str | Path,
     output_srt: str | Path,
@@ -1111,69 +1141,114 @@ def translate_srt(
     style_name: str = DEFAULT_STYLE_NAME,
     glossary_name: str = DEFAULT_GLOSSARY_NAME,
 ) -> Path:
-    input_srt = Path(input_srt).expanduser().resolve()
-    output_srt = Path(output_srt).expanduser().resolve()
+    input_path = (
+        Path(input_srt)
+        .expanduser()
+        .resolve()
+    )
 
-    if input_srt == output_srt:
+    output_path = (
+        Path(output_srt)
+        .expanduser()
+        .resolve()
+    )
+
+    if input_path == output_path:
         raise ValueError(
             "Input and output SRT paths must be different: "
-            f"{input_srt}"
+            f"{input_path}"
         )
 
-    if not input_srt.exists():
+    if not input_path.is_file():
         raise FileNotFoundError(
-            f"SRT not found: {input_srt}"
+            f"SRT not found: {input_path}"
         )
 
-    source_blocks = parse_srt(input_srt)
+    if style_name != glossary_name:
+        raise ValueError(
+            "Style and glossary profiles must match "
+            "during profile migration: "
+            f"style={style_name!r}, "
+            f"glossary={glossary_name!r}"
+        )
+
+    profile_config = resolve_profile_config(
+        style_name
+    )
+
+    resolved_profile = (
+        profile_config.resolved_profile
+    )
+
+    source_blocks = parse_srt(
+        input_path
+    )
 
     if not source_blocks:
         raise RuntimeError(
-            f"No valid subtitle blocks: {input_srt}"
+            "No valid subtitle blocks: "
+            f"{input_path}"
         )
 
-    translated_all: list[SrtBlock] = []
+    translated_blocks_all: list[SrtBlock] = []
 
-    if output_srt.exists():
-        translated_all = parse_srt(output_srt)
+    if output_path.exists():
+        translated_blocks_all = parse_srt(
+            output_path
+        )
 
-        if not translated_all:
+        if not translated_blocks_all:
             raise RuntimeError(
                 "Resume failed: output SRT exists "
                 "but contains no valid subtitle blocks: "
-                f"{output_srt}"
+                f"{output_path}"
             )
 
         validate_resume_blocks(
             source_blocks,
-            translated_all,
+            translated_blocks_all,
         )
 
     total_blocks = len(source_blocks)
-    resume_start = len(translated_all)
+    resume_start = len(
+        translated_blocks_all
+    )
 
     if resume_start == total_blocks:
         print()
         print("========================================")
         print("Translation Already Complete")
         print("========================================")
+
+        print_profile_resolution(
+            profile_config.requested_profile,
+            resolved_profile,
+            profile_config.fallback_used,
+        )
+
         print(f"Subtitles   : {total_blocks}")
-        print(f"Output      : {output_srt}")
+        print(f"Output      : {output_path}")
         print("========================================")
 
-        return output_srt
+        return output_path
 
     glossary_entries = load_glossary_entries(
-        glossary_name
+        resolved_profile
     )
 
-    remaining_blocks = total_blocks - resume_start
+    remaining_blocks = (
+        total_blocks - resume_start
+    )
 
     remaining_chunks = (
-        remaining_blocks + chunk_size - 1
+        remaining_blocks
+        + chunk_size
+        - 1
     ) // chunk_size
 
-    translation_start = time.monotonic()
+    translation_started_at = (
+        time.monotonic()
+    )
 
     progress = ProgressTracker(
         total_chunks=remaining_chunks
@@ -1184,16 +1259,23 @@ def translate_srt(
     print("Translation Start")
     print("========================================")
     print(f"Model       : {model}")
-    print(f"Style       : {style_name}")
-    print(f"Glossary    : {glossary_name}")
+
+    print_profile_resolution(
+        profile_config.requested_profile,
+        resolved_profile,
+        profile_config.fallback_used,
+    )
+
+    print(f"Style       : {resolved_profile}")
+    print(f"Glossary    : {resolved_profile}")
     print(f"Subtitles   : {total_blocks}")
     print(f"Chunk Size  : {chunk_size}")
     print(
-        f"Context     : "
+        "Context     : "
         f"{context_size} before / after"
     )
     print(
-        f"Resume      : "
+        "Resume      : "
         f"{'Yes' if resume_start else 'No'}"
     )
     print(f"Completed   : {resume_start}")
@@ -1201,12 +1283,14 @@ def translate_srt(
     print(f"Chunks Left : {remaining_chunks}")
     print("========================================")
 
+    chunk_starts = range(
+        resume_start,
+        total_blocks,
+        chunk_size,
+    )
+
     for chunk_number, start in enumerate(
-        range(
-            resume_start,
-            total_blocks,
-            chunk_size,
-        ),
+        chunk_starts,
         start=1,
     ):
         end = min(
@@ -1225,14 +1309,16 @@ def translate_srt(
         )
 
         # タイムコードと元の字幕構造を維持するため、
-        # OCR前処理前の対象ブロックを保持する
-        source_target_blocks = source_blocks[
-            start:end
-        ]
+        # OCR前処理前の翻訳対象を保持する。
+        source_target_blocks = (
+            source_blocks[start:end]
+        )
 
-        # AIへ渡す字幕だけOCR前処理する
+        # AIへ渡す字幕本文だけOCR前処理する。
         before_context = cleanup_blocks(
-            source_blocks[before_start:start]
+            source_blocks[
+                before_start:start
+            ]
         )
 
         target_blocks = cleanup_blocks(
@@ -1240,10 +1326,12 @@ def translate_srt(
         )
 
         after_context = cleanup_blocks(
-            source_blocks[end:after_end]
+            source_blocks[
+                end:after_end
+            ]
         )
 
-        chunk_start = time.monotonic()
+        chunk_started_at = time.monotonic()
 
         print()
         print(
@@ -1263,108 +1351,121 @@ def translate_srt(
             chunk_start=start + 1,
             chunk_end=end,
             glossary_entries=glossary_entries,
-            style_name=style_name,
-            glossary_name=glossary_name,
+            style_name=resolved_profile,
+            glossary_name=resolved_profile,
         )
 
-        translated_blocks = apply_translations(
-            source_target_blocks,
-            translated_texts,
+        translated_chunk_blocks = (
+            apply_translations(
+                source_target_blocks,
+                translated_texts,
+            )
         )
 
-        translated_all.extend(
-            translated_blocks
+        translated_blocks_all.extend(
+            translated_chunk_blocks
+        )
+
+        # 各チャンク終了時に途中保存する。
+        write_structured_srt(
+            output_path,
+            translated_blocks_all,
+        )
+
+        chunk_elapsed = (
+            time.monotonic()
+            - chunk_started_at
+        )
+
+        progress.add(
+            chunk_elapsed
+        )
+
+        elapsed = (
+            time.monotonic()
+            - translation_started_at
+        )
+
+        translated_count = len(
+            translated_blocks_all
         )
 
         overall_progress = (
-            len(translated_all)
+            translated_count
             / total_blocks
             * 100
         )
 
-        # 各チャンク終了時に途中保存
-        write_structured_srt(
-            output_srt,
-            translated_all,
-        )
-
-        chunk_elapsed = (
-            time.monotonic() - chunk_start
-        )
-
-        progress.add(chunk_elapsed)
-
-        elapsed = (
-            time.monotonic()
-            - translation_start
-        )
-
         print(
-            f"Session     : "
+            "Session     : "
             f"{progress.progress_percent:5.1f}%"
         )
         print(
-            f"Progress    : "
+            "Progress    : "
             f"{overall_progress:5.1f}% "
-            f"({len(translated_all)}/{total_blocks})"
+            f"({translated_count}/{total_blocks})"
         )
         print(
-            f"Chunk Time  : "
+            "Chunk Time  : "
             f"{format_duration(chunk_elapsed)}"
         )
         print(
-            f"Average     : "
+            "Average     : "
             f"{progress.average_seconds:.1f} "
             "sec/chunk"
         )
         print(
-            f"Elapsed     : "
+            "Elapsed     : "
             f"{format_duration(elapsed)}"
         )
         print(
-            f"ETA         : "
+            "ETA         : "
             f"{format_duration(progress.eta_seconds)}"
         )
 
     total_elapsed = (
         time.monotonic()
-        - translation_start
+        - translation_started_at
     )
 
-    if len(translated_all) != total_blocks:
+    translated_count = len(
+        translated_blocks_all
+    )
+
+    if translated_count != total_blocks:
         raise RuntimeError(
             "Subtitle count mismatch: "
             f"source={total_blocks}, "
-            f"translated={len(translated_all)}"
+            f"translated={translated_count}"
         )
 
     print()
     print("========================================")
     print("Translation Complete")
     print("========================================")
-    print(f"Subtitles   : {len(translated_all)}")
+    print(f"Subtitles   : {translated_count}")
     print(
-        f"Chunks      : "
+        "Chunks      : "
         f"{progress.completed_chunks}"
     )
     print(
-        f"Total Time  : "
+        "Total Time  : "
         f"{format_duration(total_elapsed)}"
     )
     print(
-        f"Average     : "
+        "Average     : "
         f"{progress.average_seconds:.1f} "
         "sec/chunk"
     )
     print(
-        f"Fastest     : "
+        "Fastest     : "
         f"{progress.fastest_seconds:.1f} sec"
     )
     print(
-        f"Slowest     : "
+        "Slowest     : "
         f"{progress.slowest_seconds:.1f} sec"
     )
-    print(f"Output      : {output_srt}")
+    print(f"Output      : {output_path}")
     print("========================================")
 
-    return output_srt
+    return output_path
