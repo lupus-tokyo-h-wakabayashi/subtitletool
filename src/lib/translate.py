@@ -6,12 +6,10 @@ from datetime import datetime
 from pathlib import Path
 
 from lib.config import (
-    DEFAULT_PROFILE_NAME,
     resolve_profile_config,
 )
 from lib.noise import (
     NoiseDictionary,
-    NoiseEntry,
     append_noise_candidates,
     apply_noise_dictionary_to_text,
     load_noise_dictionary,
@@ -24,7 +22,6 @@ from lib.ocr_retry import (
 from lib.ollama import generate
 from lib.progress import (
     ProgressTracker,
-    format_duration,
 )
 from lib.prompt import (
     build_translation_prompt,
@@ -52,6 +49,14 @@ from lib.text import (
     cleanup_ocr_text,
     find_suspicious_latin_sequences,
     is_suspicious_ocr_text,
+)
+from lib.translation_output import (
+    print_chunk_start,
+    print_saved_noise_candidates,
+    print_translation_already_complete,
+    print_translation_complete,
+    print_translation_progress,
+    print_translation_start,
 )
 from lib.translation_validation import (
     validate_translation_response,
@@ -594,74 +599,6 @@ def validate_resume_blocks(
             )
 
 
-def print_profile_resolution(
-    requested_profile: str | None,
-    resolved_profile: str,
-    fallback_used: bool,
-) -> None:
-    """
-    profile解決結果を表示する。
-    """
-    requested_text = (
-        requested_profile
-        if requested_profile is not None
-        else DEFAULT_PROFILE_NAME
-    )
-
-    print(
-        f"Profile Req : {requested_text}"
-    )
-    print(
-        f"Profile Use : {resolved_profile}"
-    )
-
-    if fallback_used:
-        print(
-            "Warning     : "
-            f"Profile {requested_text!r} was not found. "
-            f"Using {resolved_profile!r}."
-        )
-
-
-def print_saved_noise_candidates(
-    entries: list[NoiseEntry],
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    """
-    今回noise.local.jsonへ保存した候補を表示する。
-    """
-    if not entries:
-        return
-
-    print("Noise Candidates Saved:")
-
-    for entry in entries:
-        print(
-            f"  - {entry.source}"
-        )
-
-    print(
-        "Noise Candidate File: "
-        f"{noise_dictionary.local_path}"
-    )
-
-
-def print_noise_dictionary_summary(
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    """
-    読み込んだnoise辞書の概要を表示する。
-    """
-    print(
-        "Noise       : "
-        f"{len(noise_dictionary.entries)} entries"
-    )
-    print(
-        "Noise Local : "
-        f"{'Yes' if noise_dictionary.local_loaded else 'No'}"
-    )
-
-
 def translate_srt(
     input_srt: str | Path,
     output_srt: str | Path,
@@ -775,24 +712,18 @@ def translate_srt(
     )
 
     if resume_start == total_blocks:
-        print()
-        print("========================================")
-        print("Translation Already Complete")
-        print("========================================")
-
-        print_profile_resolution(
-            profile_config.requested_profile,
-            resolved_profile,
-            profile_config.fallback_used,
+        print_translation_already_complete(
+            requested_profile=(
+                profile_config.requested_profile
+            ),
+            resolved_profile=resolved_profile,
+            fallback_used=(
+                profile_config.fallback_used
+            ),
+            noise_dictionary=noise_dictionary,
+            subtitle_count=total_blocks,
+            output_path=output_path,
         )
-
-        print_noise_dictionary_summary(
-            noise_dictionary
-        )
-
-        print(f"Subtitles   : {total_blocks}")
-        print(f"Output      : {output_path}")
-        print("========================================")
 
         return output_path
 
@@ -818,37 +749,23 @@ def translate_srt(
         total_chunks=remaining_chunks
     )
 
-    print()
-    print("========================================")
-    print("Translation Start")
-    print("========================================")
-    print(f"Model       : {model}")
-
-    print_profile_resolution(
-        profile_config.requested_profile,
-        resolved_profile,
-        profile_config.fallback_used,
+    print_translation_start(
+        model=model,
+        requested_profile=(
+            profile_config.requested_profile
+        ),
+        resolved_profile=resolved_profile,
+        fallback_used=(
+            profile_config.fallback_used
+        ),
+        noise_dictionary=noise_dictionary,
+        total_blocks=total_blocks,
+        chunk_size=chunk_size,
+        context_size=context_size,
+        resume_start=resume_start,
+        remaining_blocks=remaining_blocks,
+        remaining_chunks=remaining_chunks,
     )
-
-    print_noise_dictionary_summary(
-        noise_dictionary
-    )
-
-    print(f"Profile     : {resolved_profile}")
-    print(f"Subtitles   : {total_blocks}")
-    print(f"Chunk Size  : {chunk_size}")
-    print(
-        "Context     : "
-        f"{context_size} before / after"
-    )
-    print(
-        "Resume      : "
-        f"{'Yes' if resume_start else 'No'}"
-    )
-    print(f"Completed   : {resume_start}")
-    print(f"Remaining   : {remaining_blocks}")
-    print(f"Chunks Left : {remaining_chunks}")
-    print("========================================")
 
     chunk_starts = range(
         resume_start,
@@ -903,14 +820,18 @@ def translate_srt(
 
         chunk_started_at = time.monotonic()
 
-        print()
-        print(
-            f"[{chunk_number}/{remaining_chunks}] "
-            f"Translating "
-            f"{start + 1}-{end} / {total_blocks} "
-            f"(context: "
-            f"{len(before_context)} + "
-            f"{len(after_context)})"
+        print_chunk_start(
+            chunk_number=chunk_number,
+            remaining_chunks=remaining_chunks,
+            start=start,
+            end=end,
+            total_blocks=total_blocks,
+            before_context_count=len(
+                before_context
+            ),
+            after_context_count=len(
+                after_context
+            ),
         )
 
         translated_texts = translate_chunk(
@@ -960,37 +881,12 @@ def translate_srt(
             translated_blocks_all
         )
 
-        overall_progress = (
-            translated_count
-            / total_blocks
-            * 100
-        )
-
-        print(
-            "Session     : "
-            f"{progress.progress_percent:5.1f}%"
-        )
-        print(
-            "Progress    : "
-            f"{overall_progress:5.1f}% "
-            f"({translated_count}/{total_blocks})"
-        )
-        print(
-            "Chunk Time  : "
-            f"{format_duration(chunk_elapsed)}"
-        )
-        print(
-            "Average     : "
-            f"{progress.average_seconds:.1f} "
-            "sec/chunk"
-        )
-        print(
-            "Elapsed     : "
-            f"{format_duration(elapsed)}"
-        )
-        print(
-            "ETA         : "
-            f"{format_duration(progress.eta_seconds)}"
+        print_translation_progress(
+            progress=progress,
+            translated_count=translated_count,
+            total_blocks=total_blocks,
+            chunk_elapsed=chunk_elapsed,
+            elapsed=elapsed,
         )
 
     total_elapsed = (
@@ -1009,33 +905,11 @@ def translate_srt(
             f"translated={translated_count}"
         )
 
-    print()
-    print("========================================")
-    print("Translation Complete")
-    print("========================================")
-    print(f"Subtitles   : {translated_count}")
-    print(
-        "Chunks      : "
-        f"{progress.completed_chunks}"
+    print_translation_complete(
+        translated_count=translated_count,
+        progress=progress,
+        total_elapsed=total_elapsed,
+        output_path=output_path,
     )
-    print(
-        "Total Time  : "
-        f"{format_duration(total_elapsed)}"
-    )
-    print(
-        "Average     : "
-        f"{progress.average_seconds:.1f} "
-        "sec/chunk"
-    )
-    print(
-        "Fastest     : "
-        f"{progress.fastest_seconds:.1f} sec"
-    )
-    print(
-        "Slowest     : "
-        f"{progress.slowest_seconds:.1f} sec"
-    )
-    print(f"Output      : {output_path}")
-    print("========================================")
 
     return output_path
