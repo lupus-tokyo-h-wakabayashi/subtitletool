@@ -34,6 +34,9 @@ from lib.translation_output import (
     print_translation_progress,
     print_translation_start,
 )
+from lib.translation_resume import (
+    load_resume_blocks,
+)
 
 MODEL = "qwen3:14b"
 
@@ -78,46 +81,6 @@ def apply_noise_to_blocks(
         )
         for block in blocks
     ]
-
-
-def validate_resume_blocks(
-    source_blocks: list[SrtBlock],
-    translated_blocks: list[SrtBlock],
-) -> None:
-    """
-    途中保存されたSRTが、入力SRTの先頭部分と一致するか確認する。
-
-    本文は翻訳後なので比較しない。
-    字幕番号とタイムコードだけを比較する。
-    """
-    if len(translated_blocks) > len(source_blocks):
-        raise RuntimeError(
-            "Resume failed: "
-            "output SRT contains more subtitles than input SRT. "
-            f"input={len(source_blocks)}, "
-            f"output={len(translated_blocks)}"
-        )
-
-    for index, translated_block in enumerate(
-        translated_blocks
-    ):
-        source_block = source_blocks[index]
-
-        if translated_block.number != source_block.number:
-            raise RuntimeError(
-                "Resume failed: subtitle number mismatch "
-                f"at position {index + 1}. "
-                f"input={source_block.number}, "
-                f"output={translated_block.number}"
-            )
-
-        if translated_block.timestamp != source_block.timestamp:
-            raise RuntimeError(
-                "Resume failed: timestamp mismatch "
-                f"at subtitle {source_block.number}. "
-                f"input={source_block.timestamp!r}, "
-                f"output={translated_block.timestamp!r}"
-            )
 
 
 def translate_srt(
@@ -208,24 +171,10 @@ def translate_srt(
             f"{input_path}"
         )
 
-    translated_blocks_all: list[SrtBlock] = []
-
-    if output_path.exists():
-        translated_blocks_all = parse_srt(
-            output_path
-        )
-
-        if not translated_blocks_all:
-            raise RuntimeError(
-                "Resume failed: output SRT exists "
-                "but contains no valid subtitle blocks: "
-                f"{output_path}"
-            )
-
-        validate_resume_blocks(
-            source_blocks,
-            translated_blocks_all,
-        )
+    translated_blocks_all = load_resume_blocks(
+        source_blocks,
+        output_path,
+    )
 
     total_blocks = len(source_blocks)
     resume_start = len(
