@@ -6,6 +6,8 @@ config/*/
 config/default/*.local.*
 config/*/*.local.*
 
+# Temporary files
+tmp/
 
 # Python
 __pycache__/

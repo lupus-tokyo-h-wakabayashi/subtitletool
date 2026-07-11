@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import sys
+
+import argparse
 from pathlib import Path
 
 from lib.extract import extract_english_pgs
@@ -9,12 +10,40 @@ from lib.pgstosrt import ocr_sup_to_srt
 from lib.translate import translate_srt
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: subtitletool make input.mkv")
-        sys.exit(1)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Extract English subtitles, translate them, "
+            "and mux Japanese subtitles into an MKV file."
+        )
+    )
 
-    input_mkv = Path(sys.argv[1]).expanduser().resolve()
+    parser.add_argument(
+        "input_mkv",
+        help="Input MKV file",
+    )
+
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help=(
+            "Translation profile name. "
+            "Uses default when omitted."
+        ),
+    )
+
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    input_mkv = (
+        Path(args.input_mkv)
+        .expanduser()
+        .resolve()
+    )
 
     if not input_mkv.exists():
         print(f"Not found: {input_mkv}")
@@ -33,11 +62,19 @@ def main():
     print(f"ENG   : {eng_srt}")
     print(f"JPN   : {ja_srt}")
     print(f"Output: {output_mkv}")
+
+    if args.profile is not None:
+        print(f"Profile: {args.profile}")
+
     print("========================================")
 
     extract_english_pgs(input_mkv, sup_path)
     ocr_sup_to_srt(sup_path, eng_srt)
-    translate_srt(eng_srt, ja_srt)
+    translate_srt(
+        eng_srt,
+        ja_srt,
+        profile_name=args.profile,
+    )
     mux_japanese_srt(input_mkv, ja_srt, output_mkv)
 
     print()
