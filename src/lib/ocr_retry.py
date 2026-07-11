@@ -155,6 +155,38 @@ def build_chinese_retry_blocks(
     ]
 
 
+def mask_chinese_translation_errors(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    errors: list[str],
+) -> list[str]:
+    """
+    中国語混入エラーが出た翻訳結果だけ、
+    中国語固有文字を判読不能表記へ置換する。
+    """
+    error_ids = extract_chinese_error_ids(
+        errors
+    )
+
+    if not error_ids:
+        return translated_texts
+
+    return [
+        (
+            mask_chinese_ocr_text(
+                translation
+            )
+            if block.number in error_ids
+            else translation
+        )
+        for block, translation in zip(
+            target_blocks,
+            translated_texts,
+            strict=True,
+        )
+    ]
+
+
 def build_latin_ocr_retry_blocks(
     target_blocks: list[SrtBlock],
     errors: list[str],

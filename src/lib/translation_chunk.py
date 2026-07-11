@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from lib.ocr_retry import (
     build_chinese_retry_blocks,
     build_latin_ocr_retry_blocks,
     extract_garbled_latin_candidates,
+    mask_chinese_translation_errors,
 )
 from lib.ollama import generate
 from lib.retry import (
@@ -41,9 +43,16 @@ from lib.translation_validation import (
 
 MAX_TRANSLATION_ATTEMPTS = 3
 
+PROJECT_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parents[2]
+)
+
 TRANSLATION_DEBUG_DIR = (
-    Path("~/tmp/subtitletool")
-    .expanduser()
+    PROJECT_ROOT
+    / "tmp"
+    / "subtitletool"
 )
 
 
@@ -340,6 +349,73 @@ def translate_chunk(
 
         if attempt < MAX_TRANSLATION_ATTEMPTS:
             print("Retrying translation...")
+
+        chinese_only_errors = (
+            bool(last_errors)
+            and all(
+            error.startswith(
+                "Chinese-specific characters detected:"
+            )
+            for error in last_errors
+        )
+        )
+
+    if (
+        chinese_only_errors
+        and len(last_translated_texts)
+        == len(target_blocks)
+    ):
+        corrected_texts = (
+            mask_chinese_translation_errors(
+                target_blocks,
+                last_translated_texts,
+                last_errors,
+            )
+        )
+
+        corrected_response = json.dumps(
+            {
+                "translations": [
+                    {
+                        "id": block.number,
+                        "translation": translation,
+                    }
+                    for block, translation in zip(
+                        target_blocks,
+                        corrected_texts,
+                        strict=True,
+                    )
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        corrected_validation = (
+            validate_translation_response(
+                corrected_response,
+                expected_ids=[
+                    block.number
+                    for block in target_blocks
+                ],
+                source_texts=[
+                    block.text
+                    for block in target_blocks
+                ],
+                glossary_entries=glossary_entries,
+            )
+        )
+
+        if corrected_validation.valid:
+            print(
+                "Chinese translation fallback applied:"
+            )
+
+            for error in last_errors:
+                print(f"  - {error}")
+
+            return normalize_translation_texts(
+                corrected_validation.translated_texts
+            )
 
     raise RuntimeError(
         "Translation failed after "
