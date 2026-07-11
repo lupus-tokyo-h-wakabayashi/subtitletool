@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+
 from lib.text import (
     CHINESE_SPECIFIC_PATTERN,
     DEFAULT_ALLOWED_LATIN_TERMS,
@@ -458,7 +459,6 @@ def normalized_text_length(
     return len(normalized)
 
 
-
 def find_length_ratio_violations(
     source_texts: list[str],
     translated_texts: list[str],
@@ -473,8 +473,8 @@ def find_length_ratio_violations(
     violations: list[str] = []
 
     for index, (
-        source_text,
-        translated_text,
+            source_text,
+            translated_text,
     ) in enumerate(
         zip(
             source_texts,
@@ -519,8 +519,8 @@ def find_number_mismatches(
     violations: list[str] = []
 
     for index, (
-        source_text,
-        translated_text,
+            source_text,
+            translated_text,
     ) in enumerate(
         zip(
             source_texts,
@@ -560,8 +560,8 @@ def find_effect_format_violations(
     violations: list[str] = []
 
     for index, (
-        source_text,
-        translated_text,
+            source_text,
+            translated_text,
     ) in enumerate(
         zip(
             source_texts,
@@ -744,10 +744,10 @@ def contains_untranslated_english(
         word
         for word in words
         if normalize_latin_term(word)
-        not in {
-            normalize_latin_term(term)
-            for term in ALLOWED_LATIN_TERMS
-        }
+           not in {
+               normalize_latin_term(term)
+               for term in ALLOWED_LATIN_TERMS
+           }
     ]
 
     if len(suspicious_words) < 2:
@@ -924,7 +924,8 @@ def validate_translation_response(
     )
     chinese_violations = (
         find_chinese_specific_characters(
-            translated_texts, expected_ids,
+            translated_texts,
+            expected_ids,
         )
     )
 
@@ -939,13 +940,6 @@ def validate_translation_response(
             "character violations: "
             f"{len(chinese_violations) - 10}"
         )
-
-    garbled_latin_violations = (
-        find_garbled_latin_violations(
-            translated_texts,
-            expected_ids,
-        )
-    )
 
     garbled_latin_violations = (
         find_garbled_latin_violations(
@@ -1162,9 +1156,9 @@ def find_glossary_violations(
     violations: list[str] = []
 
     for (
-        subtitle_id,
-        source_text,
-        translated_text,
+            subtitle_id,
+            source_text,
+            translated_text,
     ) in zip(
         subtitle_ids,
         source_texts,
@@ -1192,6 +1186,7 @@ def find_glossary_violations(
             )
 
     return violations
+
 
 def normalize_translation_ending(
     text: str,
@@ -1231,10 +1226,10 @@ def is_incomplete_translation(
     # 疑問文・感嘆文は文として完結している。
     if raw_text.endswith(
         (
-            "？",
-            "?",
-            "！",
-            "!",
+                "？",
+                "?",
+                "！",
+                "!",
         )
     ):
         return False

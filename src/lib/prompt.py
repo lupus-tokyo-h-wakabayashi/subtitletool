@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+
 from lib.config import (
     DEFAULT_PROFILE_NAME,
     resolve_profile_config,
 )
 
-
 DEFAULT_PROMPT_NAME = "translate"
-DEFAULT_STYLE_NAME = "default"
-DEFAULT_GLOSSARY_NAME = "default"
 
 
 def read_config_file(path: Path) -> str:
@@ -19,7 +17,9 @@ def read_config_file(path: Path) -> str:
     ).strip()
 
     if not text:
-        raise RuntimeError(f"Config file is empty: {path}")
+        raise RuntimeError(
+            f"Config file is empty: {path}"
+        )
 
     return text
 
@@ -71,7 +71,7 @@ def load_prompt_template(
 
 
 def load_glossary(
-    glossary_name: str = DEFAULT_GLOSSARY_NAME,
+    profile_name: str | None = None,
 ) -> str:
     """
     指定profileの用語集を読み込む。
@@ -79,7 +79,7 @@ def load_glossary(
     profileが存在しない場合はdefaultへフォールバックする。
     """
     config = resolve_profile_config(
-        glossary_name
+        profile_name
     )
 
     return read_config_file(
@@ -128,7 +128,7 @@ def parse_glossary_entries(
 
 
 def load_glossary_entries(
-    glossary_name: str = DEFAULT_GLOSSARY_NAME,
+    profile_name: str | None = None,
 ) -> dict[str, str]:
     """
     指定profileの用語集を検証用辞書として読み込む。
@@ -137,7 +137,7 @@ def load_glossary_entries(
     それ以外のprofileは有効な用語が1件以上必要。
     """
     config = resolve_profile_config(
-        glossary_name
+        profile_name
     )
 
     glossary_text = read_config_file(
@@ -163,7 +163,7 @@ def load_glossary_entries(
 
 
 def load_style(
-    style_name: str = DEFAULT_STYLE_NAME,
+    profile_name: str | None = None,
 ) -> str:
     """
     指定profileの字幕スタイルを読み込む。
@@ -171,7 +171,7 @@ def load_style(
     defaultと指定profileの連結は行わない。
     """
     config = resolve_profile_config(
-        style_name
+        profile_name
     )
 
     return read_config_file(
@@ -183,20 +183,19 @@ def build_translation_prompt(
     *,
     target_count: int,
     request_json: str,
+    profile_name: str | None = None,
     prompt_name: str = DEFAULT_PROMPT_NAME,
-    glossary_name: str = DEFAULT_GLOSSARY_NAME,
-    style_name: str = DEFAULT_STYLE_NAME,
 ) -> str:
     template = load_prompt_template(
         prompt_name
     )
 
     glossary = load_glossary(
-        glossary_name
+        profile_name
     )
 
     style = load_style(
-        style_name
+        profile_name
     )
 
     return template.format(

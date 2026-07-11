@@ -7,7 +7,6 @@ from typing import Any
 
 from lib.config import ProfileConfig
 
-
 SUPPORTED_NOISE_VERSION = 1
 
 VALID_NOISE_ACTIONS = {
@@ -318,12 +317,12 @@ def apply_noise_dictionary_to_text(
         entry
         for entry in noise_dictionary.entries.values()
         if (
-                entry.status == "confirmed"
-                and entry.action in {
-                    "mask",
-                    "replace",
-                }
-                and entry.source in text
+            entry.status == "confirmed"
+            and entry.action in {
+                "mask",
+                "replace",
+            }
+            and entry.source in text
         )
     ]
 
@@ -386,7 +385,7 @@ def load_noise_dictionary(
 
 
 def serialize_noise_entry(
-        entry: NoiseEntry,
+    entry: NoiseEntry,
 ) -> dict[str, str]:
     """
     NoiseEntryをJSON保存用辞書へ変換する。
@@ -431,14 +430,14 @@ def write_noise_entries(
         )
         + "\n",
         encoding="utf-8",
-        )
+    )
 
     temporary_path.replace(path)
 
 
 def append_noise_candidates(
-        noise_dictionary: NoiseDictionary,
-        sources: list[str],
+    noise_dictionary: NoiseDictionary,
+    sources: list[str],
 ) -> list[NoiseEntry]:
     """
     未登録のOCRノイズ候補をnoise.local.jsonへ追記する。

@@ -5,17 +5,24 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+
+from lib.config import (
+    DEFAULT_PROFILE_NAME,
+    resolve_profile_config,
+)
+from lib.noise import (
+    NoiseDictionary,
+    NoiseEntry,
+    append_noise_candidates,
+    apply_noise_dictionary_to_text,
+    load_noise_dictionary,
+)
 from lib.ollama import generate
 from lib.progress import (
     ProgressTracker,
     format_duration,
 )
-from lib.config import (
-    resolve_profile_config,
-)
 from lib.prompt import (
-    DEFAULT_GLOSSARY_NAME,
-    DEFAULT_STYLE_NAME,
     build_translation_prompt,
     load_glossary_entries,
 )
@@ -37,14 +44,6 @@ from lib.translation_validation import (
     source_contains_glossary_term,
     validate_translation_response,
 )
-from lib.noise import (
-    NoiseDictionary,
-    NoiseEntry,
-    append_noise_candidates,
-    apply_noise_dictionary_to_text,
-    load_noise_dictionary,
-)
-
 
 MODEL = "qwen3:14b"
 
@@ -78,8 +77,8 @@ def cleanup_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
 
 
 def apply_noise_to_blocks(
-        blocks: list[SrtBlock],
-        noise_dictionary: NoiseDictionary,
+    blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
 ) -> list[SrtBlock]:
     """
     字幕番号とタイムコードを維持し、
@@ -204,7 +203,7 @@ def normalize_translation_texts(
 
 
 def extract_noise_candidates_from_blocks(
-        blocks: list[SrtBlock],
+    blocks: list[SrtBlock],
 ) -> list[str]:
     """
     翻訳前字幕からOCR英字破損候補を抽出する。
@@ -279,8 +278,7 @@ def build_prompt(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
     after_context: list[SrtBlock],
-    style_name: str = DEFAULT_STYLE_NAME,
-    glossary_name: str = DEFAULT_GLOSSARY_NAME,
+    profile_name: str,
 ) -> str:
     request_json = build_translation_request_json(
         before_context,
@@ -291,8 +289,7 @@ def build_prompt(
     base_prompt = build_translation_prompt(
         target_count=len(target_blocks),
         request_json=request_json,
-        style_name=style_name,
-        glossary_name=glossary_name,
+        profile_name=profile_name,
     )
 
     ocr_noise_instruction = (
@@ -502,8 +499,8 @@ def extract_garbled_latin_errors(
                 raw_sequences
             )
         except (
-            SyntaxError,
-            ValueError,
+                SyntaxError,
+                ValueError,
         ):
             continue
 
@@ -524,7 +521,7 @@ def extract_garbled_latin_errors(
 
 
 def extract_garbled_latin_candidates(
-        errors: list[str],
+    errors: list[str],
 ) -> list[str]:
     """
     OCR英字破損エラーから、
@@ -961,8 +958,7 @@ def translate_chunk(
     chunk_end: int,
     glossary_entries: dict[str, str],
     noise_dictionary: NoiseDictionary,
-    style_name: str = DEFAULT_STYLE_NAME,
-    glossary_name: str = DEFAULT_GLOSSARY_NAME,
+    profile_name: str,
 ) -> list[str]:
     last_errors: list[str] = []
     last_translated_texts: list[str] = []
@@ -1017,8 +1013,7 @@ def translate_chunk(
             before_context,
             retry_target_blocks,
             after_context,
-            style_name=style_name,
-            glossary_name=glossary_name,
+            profile_name=profile_name,
         )
 
         prompt += glossary_instruction
@@ -1247,7 +1242,7 @@ def print_profile_resolution(
     requested_text = (
         requested_profile
         if requested_profile is not None
-        else DEFAULT_STYLE_NAME
+        else DEFAULT_PROFILE_NAME
     )
 
     print(
@@ -1266,8 +1261,8 @@ def print_profile_resolution(
 
 
 def print_saved_noise_candidates(
-        entries: list[NoiseEntry],
-        noise_dictionary: NoiseDictionary,
+    entries: list[NoiseEntry],
+    noise_dictionary: NoiseDictionary,
 ) -> None:
     """
     今回noise.local.jsonへ保存した候補を表示する。
@@ -1289,7 +1284,7 @@ def print_saved_noise_candidates(
 
 
 def print_noise_dictionary_summary(
-        noise_dictionary: NoiseDictionary,
+    noise_dictionary: NoiseDictionary,
 ) -> None:
     """
     読み込んだnoise辞書の概要を表示する。
@@ -1310,8 +1305,9 @@ def translate_srt(
     model: str = MODEL,
     chunk_size: int = CHUNK_SIZE,
     context_size: int = CONTEXT_SIZE,
-    style_name: str = DEFAULT_STYLE_NAME,
-    glossary_name: str = DEFAULT_GLOSSARY_NAME,
+    profile_name: str | None = None,
+    style_name: str | None = None,
+    glossary_name: str | None = None,
 ) -> Path:
     input_path = (
         Path(input_srt)
@@ -1336,16 +1332,41 @@ def translate_srt(
             f"SRT not found: {input_path}"
         )
 
-    if style_name != glossary_name:
-        raise ValueError(
-            "Style and glossary profiles must match "
-            "during profile migration: "
-            f"style={style_name!r}, "
-            f"glossary={glossary_name!r}"
-        )
+    requested_profile = profile_name
+
+    legacy_profile_specified = (
+        style_name is not None
+        or glossary_name is not None
+    )
+
+    if legacy_profile_specified:
+        if style_name != glossary_name:
+            raise ValueError(
+                "Style and glossary profiles must match "
+                "during migration: "
+                f"style={style_name!r}, "
+                f"glossary={glossary_name!r}"
+            )
+
+        legacy_profile = style_name
+
+        if (
+            requested_profile is not None
+            and legacy_profile is not None
+            and requested_profile != legacy_profile
+        ):
+            raise ValueError(
+                "Profile conflicts with legacy options: "
+                f"profile={requested_profile!r}, "
+                f"style={style_name!r}, "
+                f"glossary={glossary_name!r}"
+            )
+
+        if requested_profile is None:
+            requested_profile = legacy_profile
 
     profile_config = resolve_profile_config(
-        style_name
+        requested_profile
     )
 
     resolved_profile = (
@@ -1424,7 +1445,7 @@ def translate_srt(
         remaining_blocks
         + chunk_size
         - 1
-    ) // chunk_size
+    )
 
     translation_started_at = (
         time.monotonic()
@@ -1450,8 +1471,7 @@ def translate_srt(
         noise_dictionary
     )
 
-    print(f"Style       : {resolved_profile}")
-    print(f"Glossary    : {resolved_profile}")
+    print(f"Profile     : {resolved_profile}")
     print(f"Subtitles   : {total_blocks}")
     print(f"Chunk Size  : {chunk_size}")
     print(
@@ -1539,8 +1559,7 @@ def translate_srt(
             chunk_end=end,
             glossary_entries=glossary_entries,
             noise_dictionary=noise_dictionary,
-            style_name=resolved_profile,
-            glossary_name=resolved_profile,
+            profile_name=resolved_profile,
         )
 
         translated_chunk_blocks = (

@@ -3,10 +3,6 @@
 import argparse
 from pathlib import Path
 
-from lib.prompt import (
-    DEFAULT_GLOSSARY_NAME,
-    DEFAULT_STYLE_NAME,
-)
 from lib.translate import translate_srt
 
 
@@ -34,19 +30,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--style",
-        default=DEFAULT_STYLE_NAME,
+        default=None,
         help=(
-            "Translation style configuration name "
-            f"(default: {DEFAULT_STYLE_NAME})"
+            "Legacy translation profile option. "
+            "Must match --glossary when specified."
         ),
     )
 
     parser.add_argument(
         "--glossary",
-        default=DEFAULT_GLOSSARY_NAME,
+        default=None,
         help=(
-            "Glossary configuration name "
-            f"(default: {DEFAULT_GLOSSARY_NAME})"
+            "Legacy translation profile option. "
+            "Must match --style when specified."
         ),
     )
 
@@ -98,8 +94,10 @@ def main() -> None:
     print("========================================")
     print(f"Input   : {input_srt}")
     print(f"Output  : {output_srt}")
-    print(f"Style   : {args.style}")
-    print(f"Glossary: {args.glossary}")
+    if args.style is not None:
+        print(f"Style   : {args.style}")
+    if args.glossary is not None:
+        print(f"Glossary: {args.glossary}")
     print("========================================")
 
     result = translate_srt(
