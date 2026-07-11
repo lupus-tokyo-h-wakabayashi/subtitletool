@@ -40,6 +40,13 @@ ALLOWED_LATIN_TERMS = (
     DEFAULT_ALLOWED_LATIN_TERMS
 )
 
+UNREADABLE_MARKERS = (
+    "（判読不能）",
+    "(判読不能)",
+)
+
+MAX_ENGLISH_WORDS_WITH_UNREADABLE_MARKER = 3
+
 DEFAULT_REPEAT_THRESHOLD = 5
 DEFAULT_MAX_LINES_PER_SUBTITLE = 6
 DEFAULT_MAX_CHARS_PER_SUBTITLE = 200
@@ -729,6 +736,7 @@ def contains_untranslated_english(
     英文が未翻訳のまま残っている可能性を検出する。
 
     英字があるだけではNGにしない。
+
     例:
         T.J.
         SG-1
@@ -737,24 +745,45 @@ def contains_untranslated_english(
 
     英単語が複数存在し、英文で頻出する語も含まれる場合に
     未翻訳英文と判定する。
+
+    判読不能表記が含まれ、残った英単語が短い断片だけの場合は、
+    OCR破損の残骸として許可する。
     """
-    words = ENGLISH_WORD_PATTERN.findall(text)
+    words = ENGLISH_WORD_PATTERN.findall(
+        text
+    )
+
+    allowed_terms = {
+        normalize_latin_term(term)
+        for term in ALLOWED_LATIN_TERMS
+    }
 
     suspicious_words = [
         word
         for word in words
         if normalize_latin_term(word)
-           not in {
-               normalize_latin_term(term)
-               for term in ALLOWED_LATIN_TERMS
-           }
+           not in allowed_terms
     ]
 
     if len(suspicious_words) < 2:
         return False
 
+    has_unreadable_marker = any(
+        marker in text
+        for marker in UNREADABLE_MARKERS
+    )
+
+    if (
+        has_unreadable_marker
+        and len(suspicious_words)
+        <= MAX_ENGLISH_WORDS_WITH_UNREADABLE_MARKER
+    ):
+        return False
+
     return bool(
-        ENGLISH_SENTENCE_PATTERN.search(text)
+        ENGLISH_SENTENCE_PATTERN.search(
+            text
+        )
     )
 
 
