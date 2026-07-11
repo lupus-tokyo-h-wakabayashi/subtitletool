@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+
 from lib.text import (
     CHINESE_SPECIFIC_PATTERN,
     DEFAULT_ALLOWED_LATIN_TERMS,
@@ -235,16 +236,11 @@ def parse_translation_json(
             item.keys()
         )
 
-        missing_item_keys = (
-            required_item_keys
-            - actual_item_keys
-        )
-
-        if missing_item_keys:
+        if actual_item_keys != required_item_keys:
             errors.append(
-                "Missing translation item keys: "
+                "Invalid translation item keys: "
                 f"position={position}, "
-                f"missing={sorted(missing_item_keys)}, "
+                f"expected={sorted(required_item_keys)}, "
                 f"actual={sorted(actual_item_keys)}"
             )
 
@@ -463,7 +459,6 @@ def normalized_text_length(
     return len(normalized)
 
 
-
 def find_length_ratio_violations(
     source_texts: list[str],
     translated_texts: list[str],
@@ -478,8 +473,8 @@ def find_length_ratio_violations(
     violations: list[str] = []
 
     for index, (
-        source_text,
-        translated_text,
+            source_text,
+            translated_text,
     ) in enumerate(
         zip(
             source_texts,
@@ -524,8 +519,8 @@ def find_number_mismatches(
     violations: list[str] = []
 
     for index, (
-        source_text,
-        translated_text,
+            source_text,
+            translated_text,
     ) in enumerate(
         zip(
             source_texts,
@@ -565,8 +560,8 @@ def find_effect_format_violations(
     violations: list[str] = []
 
     for index, (
-        source_text,
-        translated_text,
+            source_text,
+            translated_text,
     ) in enumerate(
         zip(
             source_texts,
@@ -749,10 +744,10 @@ def contains_untranslated_english(
         word
         for word in words
         if normalize_latin_term(word)
-        not in {
-            normalize_latin_term(term)
-            for term in ALLOWED_LATIN_TERMS
-        }
+           not in {
+               normalize_latin_term(term)
+               for term in ALLOWED_LATIN_TERMS
+           }
     ]
 
     if len(suspicious_words) < 2:
@@ -927,6 +922,24 @@ def validate_translation_response(
     result.translated_texts = (
         translated_texts
     )
+    chinese_violations = (
+        find_chinese_specific_characters(
+            translated_texts,
+            expected_ids,
+        )
+    )
+
+    for violation in chinese_violations[:10]:
+        result.add_error(
+            violation
+        )
+
+    if len(chinese_violations) > 10:
+        result.add_error(
+            "Additional Chinese-specific "
+            "character violations: "
+            f"{len(chinese_violations) - 10}"
+        )
 
     garbled_latin_violations = (
         find_garbled_latin_violations(
@@ -1143,9 +1156,9 @@ def find_glossary_violations(
     violations: list[str] = []
 
     for (
-        subtitle_id,
-        source_text,
-        translated_text,
+            subtitle_id,
+            source_text,
+            translated_text,
     ) in zip(
         subtitle_ids,
         source_texts,
@@ -1173,6 +1186,7 @@ def find_glossary_violations(
             )
 
     return violations
+
 
 def normalize_translation_ending(
     text: str,
@@ -1212,10 +1226,10 @@ def is_incomplete_translation(
     # 疑問文・感嘆文は文として完結している。
     if raw_text.endswith(
         (
-            "？",
-            "?",
-            "！",
-            "!",
+                "？",
+                "?",
+                "！",
+                "!",
         )
     ):
         return False

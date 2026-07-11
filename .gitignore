@@ -1,14 +1,11 @@
-# Local translation prompts
-config/prompts/*.txt
-!config/prompts/*.example.txt
+# Profile-specific settings are local
+config/*/
+!config/default/
 
-# Local glossaries
-config/glossary/*.txt
-!config/glossary/*.example.txt
+# Automatically updated local dictionaries
+config/default/*.local.*
+config/*/*.local.*
 
-# Local translation styles
-config/styles/*.txt
-!config/styles/*.example.txt
 
 # Python
 __pycache__/
