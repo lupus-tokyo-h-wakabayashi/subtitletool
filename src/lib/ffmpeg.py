@@ -3,6 +3,9 @@ import subprocess
 from pathlib import Path
 
 from lib.ffprobe import subtitle_count
+from lib.mux_plan import (
+    build_mux_plan,
+)
 
 
 def run(cmd: list[str]) -> None:
@@ -36,6 +39,15 @@ def mux_japanese_srt(
 
     added_subtitle_index = subtitle_count(input_mkv)
 
+    mux_plan = build_mux_plan(
+        input_mkv=input_mkv,
+        input_srt=ja_srt,
+        output_mkv=output_mkv,
+        existing_subtitle_count=(
+            added_subtitle_index
+        ),
+    )
+
     cmd = [
         "ffmpeg",
         "-y",
@@ -49,12 +61,12 @@ def mux_japanese_srt(
         "-c", "copy",
 
         # 追加される字幕だけSRTとしてmux
-        f"-c:s:{added_subtitle_index}", "srt",
+        f"-c:s:{mux_plan.added_subtitle_index}", "srt",
 
-        f"-metadata:s:s:{added_subtitle_index}", "language=jpn",
-        f"-metadata:s:s:{added_subtitle_index}", "title=Japanese AI",
+        f"-metadata:s:s:{mux_plan.added_subtitle_index}", "language=jpn",
+        f"-metadata:s:s:{mux_plan.added_subtitle_index}", "title=Japanese AI",
 
-        str(output_mkv),
+        str(mux_plan.output_mkv),
     ]
 
     run(cmd)
