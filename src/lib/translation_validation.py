@@ -235,16 +235,11 @@ def parse_translation_json(
             item.keys()
         )
 
-        missing_item_keys = (
-            required_item_keys
-            - actual_item_keys
-        )
-
-        if missing_item_keys:
+        if actual_item_keys != required_item_keys:
             errors.append(
-                "Missing translation item keys: "
+                "Invalid translation item keys: "
                 f"position={position}, "
-                f"missing={sorted(missing_item_keys)}, "
+                f"expected={sorted(required_item_keys)}, "
                 f"actual={sorted(actual_item_keys)}"
             )
 
@@ -926,6 +921,30 @@ def validate_translation_response(
 
     result.translated_texts = (
         translated_texts
+    )
+    chinese_violations = (
+        find_chinese_specific_characters(
+            translated_texts, expected_ids,
+        )
+    )
+
+    for violation in chinese_violations[:10]:
+        result.add_error(
+            violation
+        )
+
+    if len(chinese_violations) > 10:
+        result.add_error(
+            "Additional Chinese-specific "
+            "character violations: "
+            f"{len(chinese_violations) - 10}"
+        )
+
+    garbled_latin_violations = (
+        find_garbled_latin_violations(
+            translated_texts,
+            expected_ids,
+        )
     )
 
     garbled_latin_violations = (

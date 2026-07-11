@@ -267,8 +267,8 @@ def merge_noise_entries(
 
 
 def apply_noise_entry(
-        text: str,
-        entry: NoiseEntry,
+    text: str,
+    entry: NoiseEntry,
 ) -> str:
     """
     確認済みのnoise辞書エントリを文字列へ適用する。
@@ -305,8 +305,8 @@ def apply_noise_entry(
 
 
 def apply_noise_dictionary_to_text(
-        text: str,
-        noise_dictionary: NoiseDictionary,
+    text: str,
+    noise_dictionary: NoiseDictionary,
 ) -> str:
     """
     noise辞書を文字列へ適用する。
@@ -400,8 +400,8 @@ def serialize_noise_entry(
 
 
 def write_noise_entries(
-        path: Path,
-        entries: list[NoiseEntry],
+    path: Path,
+    entries: list[NoiseEntry],
 ) -> None:
     """
     noise辞書をJSONとして安全に保存する。

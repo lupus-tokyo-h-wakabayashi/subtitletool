@@ -349,7 +349,17 @@ def build_retry_instruction(
 
 STRUCTURAL_ERROR_PREFIXES = (
     "Invalid JSON response:",
+    "Invalid JSON root:",
+    "Invalid JSON root keys:",
     "Invalid translations:",
+    "Invalid translation item:",
+    "Invalid translation item keys:",
+    "Missing translation item keys:",
+    "Unexpected translation item keys:",
+    "Invalid translation id:",
+    "Empty translation id:",
+    "Invalid translation text:",
+    "Empty translation:",
     "Translation count mismatch:",
     "Duplicate translation IDs:",
     "Missing translation IDs:",
