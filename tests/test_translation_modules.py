@@ -1,6 +1,11 @@
-import pytest
+from pathlib import Path
 
+import pytest
 from lib.noise import (
+    NoiseDictionary,
+    NoiseEntry,
+    find_confirmed_noise_sequences,
+    find_suspicious_latin_sequences,
     is_valid_noise_candidate,
     normalize_noise_candidate,
 )
@@ -18,6 +23,21 @@ from lib.translation_prompt import (
 from lib.translation_resume import (
     load_resume_blocks,
 )
+
+
+def build_test_noise_dictionary(
+    entries: list[NoiseEntry],
+) -> NoiseDictionary:
+    return NoiseDictionary(
+        profile_name="test",
+        entries={
+            entry.source: entry
+            for entry in entries
+        },
+        official_path=Path("noise.json"),
+        local_path=Path("noise.local.json"),
+        local_loaded=False,
+    )
 
 
 def test_build_request_item_parses_speaker() -> None:
@@ -296,3 +316,68 @@ def test_is_valid_noise_candidate_rejects_invalid_values() -> None:
         assert not is_valid_noise_candidate(
             source
         )
+
+
+def test_find_confirmed_noise_sequences() -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            [
+                NoiseEntry(
+                    source="eRe Are",
+                    replacement="（判読不能）",
+                    action="mask",
+                    status="confirmed",
+                ),
+            ]
+        )
+    )
+
+    assert find_confirmed_noise_sequences(
+        "Before eRe   Are after",
+        noise_dictionary,
+    ) == [
+               "eRe   Are",
+           ]
+
+
+def test_find_confirmed_noise_sequences_ignores_candidate() -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            [
+                NoiseEntry(
+                    source="eRe Are",
+                    replacement="（判読不能）",
+                    action="mask",
+                    status="candidate",
+                ),
+            ]
+        )
+    )
+
+    assert find_confirmed_noise_sequences(
+        "Before eRe Are after",
+        noise_dictionary,
+    ) == []
+
+
+def test_find_suspicious_latin_sequences_combines_dictionary_and_heuristic() -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            [
+                NoiseEntry(
+                    source="eRe Are",
+                    replacement="（判読不能）",
+                    action="mask",
+                    status="confirmed",
+                ),
+            ]
+        )
+    )
+
+    assert find_suspicious_latin_sequences(
+        "eRe Are and AbCdEfGhIj",
+        noise_dictionary,
+    ) == [
+               "eRe Are",
+               "AbCdEfGhIj",
+           ]

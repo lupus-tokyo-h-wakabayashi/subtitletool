@@ -9,6 +9,7 @@ from typing import Any
 from lib.config import ProfileConfig
 from lib.text import (
     DEFAULT_ALLOWED_LATIN_TERMS,
+    find_heuristic_latin_noise_sequences,
     normalize_latin_token,
 )
 
@@ -311,6 +312,126 @@ def apply_noise_entry(
         f"source={entry.source!r}, "
         f"action={entry.action!r}"
     )
+
+
+def build_noise_source_pattern(
+    source: str,
+) -> re.Pattern[str]:
+    """
+    noise辞書のsourceを検索用パターンへ変換する。
+
+    source自体は正規表現として扱わず、
+    空白数と大文字小文字の差だけを吸収する。
+    """
+    parts = re.split(
+        r"\s+",
+        source.strip(),
+    )
+
+    expression = r"\s+".join(
+        re.escape(part)
+        for part in parts
+        if part
+    )
+
+    return re.compile(
+        expression,
+        re.IGNORECASE,
+    )
+
+
+def find_confirmed_noise_sequences(
+    text: str,
+    noise_dictionary: NoiseDictionary,
+) -> list[str]:
+    """
+    confirmedのnoise辞書と一致する文字列を、
+    本文中の出現順で返す。
+    """
+    matches: list[
+        tuple[int, str]
+    ] = []
+
+    for entry in (
+        noise_dictionary.entries.values()
+    ):
+        if entry.status != "confirmed":
+            continue
+
+        if entry.action not in {
+            "mask",
+            "replace",
+            "warn",
+        }:
+            continue
+
+        pattern = build_noise_source_pattern(
+            entry.source
+        )
+
+        for match in pattern.finditer(text):
+            matches.append(
+                (
+                    match.start(),
+                    match.group(0),
+                )
+            )
+
+    matches.sort(
+        key=lambda item: item[0]
+    )
+
+    results: list[str] = []
+
+    for _, sequence in matches:
+        if sequence in results:
+            continue
+
+        results.append(sequence)
+
+    return results
+
+
+def find_suspicious_latin_sequences(
+    text: str,
+    noise_dictionary: NoiseDictionary,
+    *,
+    allowed_terms: set[str] | None = None,
+) -> list[str]:
+    """
+    confirmed辞書と汎用ヒューリスティックを使って、
+    OCR破損候補を抽出する。
+    """
+    dictionary_sequences = (
+        find_confirmed_noise_sequences(
+            text,
+            noise_dictionary,
+        )
+    )
+
+    heuristic_sequences = (
+        find_heuristic_latin_noise_sequences(
+            text,
+            allowed_terms=allowed_terms,
+        )
+    )
+
+    candidates: list[str] = []
+
+    for sequence in [
+        *dictionary_sequences,
+        *heuristic_sequences,
+    ]:
+        if sequence in candidates:
+            continue
+
+        candidates.append(sequence)
+
+    candidates.sort(
+        key=lambda sequence: text.find(sequence)
+    )
+
+    return candidates
 
 
 def apply_noise_dictionary_to_text(

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import re
 
-
 # PGS字幕に含まれる話者ラベル。
 # SCOTT:, MAN 1:, WOMAN 2:, DR. RUSH: などを対象にする。
 SPEAKER_LABEL_PATTERN = re.compile(
@@ -229,6 +228,54 @@ def normalize_latin_token(
         "",
         token,
     ).upper()
+
+
+def find_heuristic_latin_noise_sequences(
+    text: str,
+    *,
+    allowed_terms: set[str] | None = None,
+) -> list[str]:
+    """
+    辞書を使用せず、文字列構造だけから
+    OCR破損の可能性が高い英字列を抽出する。
+
+    対象:
+        - 不自然な大小文字混在の長い英字列
+    """
+    normalized = text.replace(
+        "\n",
+        " ",
+    )
+
+    allowed = {
+        normalize_latin_token(term)
+        for term in (
+            allowed_terms
+            or DEFAULT_ALLOWED_LATIN_TERMS
+        )
+    }
+
+    results: list[str] = []
+
+    for match in (
+        SUSPICIOUS_MIXED_CASE_TOKEN_PATTERN.finditer(
+            normalized
+        )
+    ):
+        token = match.group(0)
+
+        if normalize_latin_token(token) in allowed:
+            continue
+
+        if not is_suspicious_mixed_case_token(
+            token
+        ):
+            continue
+
+        if token not in results:
+            results.append(token)
+
+    return results
 
 
 def find_suspicious_latin_sequences(
