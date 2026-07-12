@@ -1,4 +1,77 @@
 {
   "version": 1,
-  "entries": []
+  "entries": [
+    {
+      "source": "eRe Are",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "SSeS elke",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "Tee Ole mite",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "VVNsKomCIAcM",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "Hil I'm",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "b ATT oe",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "Mim elom i elaie",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "WV iaiac-lalmia",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "davial qatar lan mellem",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "CTL EA rare",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "Sy (aU owe Ste",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    },
+    {
+      "source": "Mee Wm O)(oto IU Ke",
+      "replacement": "（判読不能）",
+      "action": "mask",
+      "status": "confirmed"
+    }
+  ]
 }

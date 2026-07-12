@@ -9,9 +9,6 @@ from lib.srt import (
     SrtBlock,
     parse_speaker_from_text,
 )
-from lib.text import (
-    is_suspicious_ocr_text,
-)
 
 
 def build_request_item(
@@ -84,20 +81,12 @@ def build_translation_request_json(
 
 
 def build_ocr_noise_instruction(
-    target_blocks: list[SrtBlock],
+    suspicious_ids: list[str],
 ) -> str:
     """
-    翻訳対象内のOCR破損候補を検出し、
-    チャンク内番号でLLMへ通知する。
+    OCR破損候補がある字幕IDを
+    LLMへ通知する指示文を生成する。
     """
-    suspicious_ids = [
-        block.number
-        for block in target_blocks
-        if is_suspicious_ocr_text(
-            block.text
-        )
-    ]
-
     if not suspicious_ids:
         return ""
 
@@ -131,6 +120,7 @@ def build_prompt(
     target_blocks: list[SrtBlock],
     after_context: list[SrtBlock],
     profile_name: str,
+    ocr_noise_instruction: str = "",
 ) -> str:
     request_json = build_translation_request_json(
         before_context,
@@ -142,12 +132,6 @@ def build_prompt(
         target_count=len(target_blocks),
         request_json=request_json,
         profile_name=profile_name,
-    )
-
-    ocr_noise_instruction = (
-        build_ocr_noise_instruction(
-            target_blocks
-        )
     )
 
     return (

@@ -29,13 +29,11 @@ from lib.retry import (
     has_structural_validation_error,
 )
 from lib.srt import SrtBlock
-from lib.text import (
-    find_suspicious_latin_sequences,
-)
 from lib.translation_output import (
     print_saved_noise_candidates,
 )
 from lib.translation_prompt import (
+    build_ocr_noise_instruction,
     build_prompt,
 )
 from lib.translation_validation import (
@@ -124,6 +122,28 @@ def extract_noise_candidates_from_blocks(
     return candidates
 
 
+def find_noise_candidate_ids(
+    blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> list[str]:
+    """
+    OCR破損候補を含む字幕IDを、
+    字幕の出現順で返す。
+    """
+    suspicious_ids: list[str] = []
+
+    for block in blocks:
+        if find_suspicious_latin_sequences(
+            block.text,
+            noise_dictionary,
+        ):
+            suspicious_ids.append(
+                block.number
+            )
+
+    return suspicious_ids
+
+
 def save_failed_translation_response(
     response: str,
     *,
@@ -177,6 +197,17 @@ def translate_chunk(
         )
     )
 
+    suspicious_ids = find_noise_candidate_ids(
+        target_blocks,
+        noise_dictionary,
+    )
+
+    ocr_noise_instruction = (
+        build_ocr_noise_instruction(
+            suspicious_ids
+        )
+    )
+
     saved_input_noise_entries = (
         append_noise_candidates(
             noise_dictionary,
@@ -222,6 +253,9 @@ def translate_chunk(
             retry_target_blocks,
             after_context,
             profile_name=profile_name,
+            ocr_noise_instruction=(
+                ocr_noise_instruction
+            ),
         )
 
         prompt += glossary_instruction

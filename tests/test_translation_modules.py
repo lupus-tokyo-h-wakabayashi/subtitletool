@@ -14,6 +14,7 @@ from lib.translate import (
     resolve_requested_profile,
 )
 from lib.translation_chunk import (
+    find_noise_candidate_ids,
     normalize_translation_text,
 )
 from lib.translation_prompt import (
@@ -68,29 +69,17 @@ def test_build_request_item_parses_speaker() -> None:
 
 
 def test_build_ocr_noise_instruction() -> None:
-    blocks = [
-        SrtBlock(
-            number="1",
-            timestamp=(
-                "00:00:01,000 --> "
-                "00:00:03,000"
-            ),
-            text=(
-                "Our guests have arrived. "
-                "CTL EA rare"
-            ),
-        ),
-    ]
-
-    result = (
+    instruction = (
         build_ocr_noise_instruction(
-            blocks
+            [
+                "10",
+                "12",
+            ]
         )
     )
 
-    assert "対象ID: 1" in result
-    assert "OCR破損" in result
-    assert "（判読不能）" in result
+    assert "対象ID: 10, 12" in instruction
+    assert "（判読不能）" in instruction
 
 
 def test_normalize_translation_text() -> None:
@@ -422,3 +411,70 @@ def test_validation_uses_confirmed_noise_dictionary() -> None:
         in reason
         for reason in result.reasons
     )
+
+
+def test_noise_dictionary_replaces_legacy_pattern_detection() -> None:
+    noise_dictionary = build_test_noise_dictionary(
+        [
+            NoiseEntry(
+                source="CTL EA rare",
+                replacement="（判読不能）",
+                action="mask",
+                status="confirmed",
+            ),
+        ]
+    )
+
+    assert find_suspicious_latin_sequences(
+        "Before ctl   ea   RARE after",
+        noise_dictionary,
+    ) == [
+               "ctl   ea   RARE",
+           ]
+
+
+def test_build_ocr_noise_instruction_without_ids() -> None:
+    assert build_ocr_noise_instruction(
+        []
+    ) == ""
+
+
+def test_find_noise_candidate_ids_uses_noise_dictionary() -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            [
+                NoiseEntry(
+                    source="eRe Are",
+                    replacement="（判読不能）",
+                    action="mask",
+                    status="confirmed",
+                ),
+            ]
+        )
+    )
+
+    blocks = [
+        SrtBlock(
+            number="1",
+            timestamp=(
+                "00:00:00,000 --> "
+                "00:00:01,000"
+            ),
+            text="Normal subtitle",
+        ),
+        SrtBlock(
+            number="2",
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text="Before eRe   Are after",
+        ),
+    ]
+
+    assert find_noise_candidate_ids(
+        blocks,
+        noise_dictionary,
+    ) == [
+               "2",
+           ]
