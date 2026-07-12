@@ -45,6 +45,16 @@ class TranslationTagParseResult:
     errors: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class TranslationTagProcessingResult:
+    """
+    自己評価タグの検証・除去結果。
+    """
+
+    translated_texts: tuple[str, ...]
+    errors: tuple[str, ...]
+
+
 def parse_translation_tags(
     text: str,
 ) -> TranslationTagParseResult:
@@ -213,4 +223,126 @@ def strip_translation_tags(
     return TRANSLATION_TAG_PATTERN.sub(
         "",
         text,
+    )
+
+
+def process_translation_tags(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+    *,
+    source_texts: list[str] | None,
+) -> TranslationTagProcessingResult:
+    """
+    翻訳文の自己評価タグを検証し、
+    正常な場合はタグだけを除去する。
+
+    全レベルのタグ内部は、
+    原文から一文字も変更せずコピーされている必要がある。
+
+    source_textsがない状態でタグが存在する場合は、
+    原文一致を確認できないためエラーにする。
+    """
+    if len(translated_texts) != len(
+        subtitle_ids
+    ):
+        raise ValueError(
+            "Translation tag input length mismatch: "
+            f"translated={len(translated_texts)}, "
+            f"ids={len(subtitle_ids)}"
+        )
+
+    if (
+        source_texts is not None
+        and len(source_texts)
+        != len(translated_texts)
+    ):
+        raise ValueError(
+            "Translation tag source length mismatch: "
+            f"translated={len(translated_texts)}, "
+            f"source={len(source_texts)}"
+        )
+
+    processed_texts: list[str] = []
+    errors: list[str] = []
+
+    for index, (
+            subtitle_id,
+            translated_text,
+    ) in enumerate(
+        zip(
+            subtitle_ids,
+            translated_texts,
+            strict=True,
+        )
+    ):
+        item_errors: list[str] = []
+
+        parse_result = parse_translation_tags(
+            translated_text
+        )
+
+        for error in parse_result.errors:
+            item_errors.append(
+                "Invalid translation evaluation tag: "
+                f"subtitle_id={subtitle_id!r}, "
+                f"error={error!r}, "
+                f"text={translated_text!r}"
+            )
+
+        if (
+            not parse_result.errors
+            and parse_result.tags
+            and source_texts is None
+        ):
+            item_errors.append(
+                "Translation evaluation tags require "
+                "source text: "
+                f"subtitle_id={subtitle_id!r}, "
+                f"text={translated_text!r}"
+            )
+
+        if (
+            not parse_result.errors
+            and source_texts is not None
+        ):
+            source_text = source_texts[
+                index
+            ]
+
+            for tag in parse_result.tags:
+                if tag.value in source_text:
+                    continue
+
+                item_errors.append(
+                    "Translation evaluation tag value "
+                    "not found in source: "
+                    f"subtitle_id={subtitle_id!r}, "
+                    f"level={tag.level}, "
+                    f"value={tag.value!r}, "
+                    f"source={source_text!r}"
+                )
+
+        if item_errors:
+            errors.extend(
+                item_errors
+            )
+
+            processed_texts.append(
+                translated_text
+            )
+            continue
+
+        processed_texts.append(
+            strip_translation_tags(
+                translated_text
+            )
+        )
+
+    return TranslationTagProcessingResult(
+        translated_texts=tuple(
+            processed_texts
+        ),
+        errors=tuple(
+            errors
+        ),
     )

@@ -812,3 +812,288 @@ def test_strip_translation_tags_rejects_invalid_structure(
         strip_translation_tags(
             "[5]P4X-351[/3]"
         )
+
+
+def test_validation_accepts_level_5_source_copy(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "惑星[5]P4X-351[/5]は不安定です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            (
+                "The planet P4X-351 "
+                "is unstable."
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+    assert result.translated_texts == [
+        "惑星P4X-351は不安定です。",
+    ]
+
+
+def test_validation_rejects_modified_level_5_value(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "惑星[5]P4X351[/5]は不安定です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            (
+                "The planet P4X-351 "
+                "is unstable."
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        (
+            "Translation evaluation tag value "
+            "not found in source"
+        )
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_validation_rejects_invalid_evaluation_tag_structure(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "惑星[5]P4X-351[/3]は不安定です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            (
+                "The planet P4X-351 "
+                "is unstable."
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        "Invalid translation evaluation tag"
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_validation_rejects_evaluation_tag_without_source_text(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "惑星[5]P4X-351[/5]です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        (
+            "Translation evaluation tags require "
+            "source text"
+        )
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_validation_processes_level_3_with_normal_validation(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "船名は[3]Destiny[/3]です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            "The ship is Destiny.",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+
+    assert result.translated_texts == [
+        "船名はDestinyです。",
+    ]
+
+
+def test_validation_rejects_untranslated_level_3_sentence(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "[3]the connection to the gate[/3]"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            "the connection to the gate",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        "Untranslated English sentence detected"
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_validation_applies_glossary_after_level_5_tag_removal(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "[5]SGC[/5]からの命令です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            "This is an order from SGC.",
+        ],
+        glossary_entries={
+            "SGC": "スターゲイト司令部",
+        },
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        "Glossary violation"
+        in reason
+        for reason in result.reasons
+    )

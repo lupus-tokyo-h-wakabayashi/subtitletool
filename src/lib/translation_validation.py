@@ -14,6 +14,9 @@ from lib.text import (
     CHINESE_SPECIFIC_PATTERN,
     DEFAULT_ALLOWED_LATIN_TERMS,
 )
+from lib.translation_tags import (
+    process_translation_tags,
+)
 
 # 英語の文として残っている可能性が高い単語。
 # 固有名詞や略語だけを英語残存と誤判定しないため、
@@ -956,9 +959,32 @@ def validate_translation_response(
         for item in items
     ]
 
+    tag_processing = process_translation_tags(
+        translated_texts,
+        expected_ids,
+        source_texts=source_texts,
+    )
+
+    for error in tag_processing.errors:
+        result.add_error(
+            error
+        )
+
+    if tag_processing.errors:
+        result.translated_texts = (
+            translated_texts
+        )
+
+        return result
+
+    translated_texts = list(
+        tag_processing.translated_texts
+    )
+
     result.translated_texts = (
         translated_texts
     )
+
     chinese_violations = (
         find_chinese_specific_characters(
             translated_texts,
