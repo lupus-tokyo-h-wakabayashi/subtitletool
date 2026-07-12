@@ -111,9 +111,10 @@ def test_validate_mux_probe_data_detects_subtitle_count_mismatch(
 
     assert not result.valid
     assert result.warnings == ()
-    assert result.errors == (
+    assert (
         "Subtitle stream count mismatch: "
-        "input=1, output=1, expected=2",
+        "input=1, output=1, expected=2"
+        in result.errors
     )
 
 
@@ -357,3 +358,151 @@ def test_mux_finalizes_output_after_successful_validation(
     )
 
     assert not temporary_output.exists()
+
+
+def test_validate_mux_probe_data_detects_video_codec_change(
+) -> None:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+
+    assert (
+        "Video codec sequence mismatch: "
+        "input=['hevc'], output=['h264']"
+        in result.errors
+    )
+
+
+def test_validate_mux_probe_data_detects_audio_codec_change(
+) -> None:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+
+    assert (
+        "Audio codec sequence mismatch: "
+        "input=['eac3'], output=['aac']"
+        in result.errors
+    )
+
+
+def test_validate_mux_probe_data_detects_existing_subtitle_codec_change(
+) -> None:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "subtitle",
+                "codec_name": (
+                    "hdmv_pgs_subtitle"
+                ),
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+
+    assert (
+        "Existing subtitle codec sequence "
+        "mismatch: "
+        "input=['hdmv_pgs_subtitle'], "
+        "output=['subrip']"
+        in result.errors
+    )

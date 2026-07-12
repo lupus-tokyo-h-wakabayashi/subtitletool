@@ -47,6 +47,23 @@ def streams_by_type(
     ]
 
 
+def stream_codec_names(
+    streams: list[dict],
+) -> list[str]:
+    """
+    ストリームのcodec_nameを出現順で返す。
+    """
+    return [
+        str(
+            stream.get(
+                "codec_name",
+                "",
+            )
+        )
+        for stream in streams
+    ]
+
+
 def format_duration(
     probe_data: dict,
 ) -> float | None:
@@ -126,11 +143,55 @@ def validate_mux_probe_data(
             f"output={len(output_videos)}"
         )
 
+    input_video_codecs = (
+        stream_codec_names(
+            input_videos
+        )
+    )
+
+    output_video_codecs = (
+        stream_codec_names(
+            output_videos
+        )
+    )
+
+    if (
+        output_video_codecs
+        != input_video_codecs
+    ):
+        errors.append(
+            "Video codec sequence mismatch: "
+            f"input={input_video_codecs!r}, "
+            f"output={output_video_codecs!r}"
+        )
+
     if len(output_audios) != len(input_audios):
         errors.append(
             "Audio stream count mismatch: "
             f"input={len(input_audios)}, "
             f"output={len(output_audios)}"
+        )
+
+    input_audio_codecs = (
+        stream_codec_names(
+            input_audios
+        )
+    )
+
+    output_audio_codecs = (
+        stream_codec_names(
+            output_audios
+        )
+    )
+
+    if (
+        output_audio_codecs
+        != input_audio_codecs
+    ):
+        errors.append(
+            "Audio codec sequence mismatch: "
+            f"input={input_audio_codecs!r}, "
+            f"output={output_audio_codecs!r}"
         )
 
     expected_subtitle_count = (
@@ -146,6 +207,36 @@ def validate_mux_probe_data(
             f"input={len(input_subtitles)}, "
             f"output={len(output_subtitles)}, "
             f"expected={expected_subtitle_count}"
+        )
+
+    existing_output_subtitles = (
+        output_subtitles[:-1]
+        if output_subtitles
+        else []
+    )
+
+    input_subtitle_codecs = (
+        stream_codec_names(
+            input_subtitles
+        )
+    )
+
+    output_existing_subtitle_codecs = (
+        stream_codec_names(
+            existing_output_subtitles
+        )
+    )
+
+    if (
+        output_existing_subtitle_codecs
+        != input_subtitle_codecs
+    ):
+        errors.append(
+            "Existing subtitle codec sequence "
+            "mismatch: "
+            f"input={input_subtitle_codecs!r}, "
+            "output="
+            f"{output_existing_subtitle_codecs!r}"
         )
 
     if output_subtitles:
