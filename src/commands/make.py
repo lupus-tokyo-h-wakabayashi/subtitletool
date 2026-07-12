@@ -125,40 +125,27 @@ def main() -> None:
             f"{result_mkv}"
         )
 
-    if args.keep_intermediate:
+    cleanup_result = cleanup_make_intermediate_files(
+        sup_path=sup_path,
+        eng_srt=eng_srt,
+        ja_srt=ja_srt,
+        keep_intermediate=(
+            args.keep_intermediate
+        ),
+    )
+
+    if cleanup_result is None:
         print()
         print("Cleanup: skipped")
     else:
-        cleanup_result = cleanup_make_intermediate_files(
-            sup_path=sup_path,
-            eng_srt=eng_srt,
-            ja_srt=ja_srt,
-            keep_intermediate=(
-                args.keep_intermediate
-            ),
-        )
+        print()
+        print("Cleanup:")
 
-        if cleanup_result is None:
-            print()
-            print("Cleanup: skipped")
-        else:
-            print()
-            print("Cleanup:")
+        for path in cleanup_result.deleted:
+            print(f"  Deleted: {path}")
 
-            for path in cleanup_result.deleted:
-                print(f"  Deleted: {path}")
-
-            for path in cleanup_result.missing:
-                print(f"  Missing: {path}")
-
-    print()
-    print("Cleanup:")
-
-    for path in cleanup_result.deleted:
-        print(f"  Deleted: {path}")
-
-    for path in cleanup_result.missing:
-        print(f"  Missing: {path}")
+        for path in cleanup_result.missing:
+            print(f"  Missing: {path}")
 
     print()
     print("========================================")
