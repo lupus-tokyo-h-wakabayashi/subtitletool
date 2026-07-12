@@ -24,6 +24,10 @@ from lib.translation_prompt import (
 from lib.translation_resume import (
     load_resume_blocks,
 )
+from lib.translation_tags import (
+    parse_translation_tags,
+    strip_translation_tags,
+)
 from lib.translation_validation import (
     validate_translation_response,
 )
@@ -478,3 +482,211 @@ def test_find_noise_candidate_ids_uses_noise_dictionary() -> None:
     ) == [
                "2",
            ]
+
+
+def test_parse_translation_tags_returns_values(
+) -> None:
+    result = parse_translation_tags(
+        (
+            "惑星"
+            "[5]P4X-351[/5]"
+            "と"
+            "[3]Destiny[/3]"
+            "、"
+            "[1]garbled text[/1]"
+        )
+    )
+
+    assert result.errors == ()
+
+    assert [
+               (
+                   tag.level,
+                   tag.value,
+               )
+               for tag in result.tags
+           ] == [
+               (
+                   5,
+                   "P4X-351",
+               ),
+               (
+                   3,
+                   "Destiny",
+               ),
+               (
+                   1,
+                   "garbled text",
+               ),
+           ]
+
+
+def test_strip_translation_tags_keeps_values(
+) -> None:
+    result = strip_translation_tags(
+        (
+            "惑星"
+            "[5]P4X-351[/5]"
+            "の"
+            "[3]Destiny[/3]"
+        )
+    )
+
+    assert result == (
+        "惑星P4X-351のDestiny"
+    )
+
+
+@pytest.mark.parametrize(
+    "level",
+    [
+        2,
+        4,
+        6,
+    ],
+)
+def test_parse_translation_tags_rejects_unsupported_levels(
+    level: int,
+) -> None:
+    result = parse_translation_tags(
+        (
+            f"[{level}]"
+            "P4X-351"
+            f"[/{level}]"
+        )
+    )
+
+    assert result.tags == ()
+
+    assert any(
+        (
+            "Unsupported translation tag level"
+            in error
+        )
+        for error in result.errors
+    )
+
+
+def test_parse_translation_tags_detects_missing_closing_tag(
+) -> None:
+    result = parse_translation_tags(
+        "[5]P4X-351"
+    )
+
+    assert result.tags == ()
+
+    assert result.errors == (
+        (
+            "Missing translation closing tag: "
+            "level=5, position=0"
+        ),
+    )
+
+
+def test_parse_translation_tags_detects_mismatched_closing_tag(
+) -> None:
+    result = parse_translation_tags(
+        "[5]P4X-351[/3]"
+    )
+
+    assert result.tags == ()
+
+    assert any(
+        (
+            "Mismatched translation closing tag"
+            in error
+        )
+        for error in result.errors
+    )
+
+
+def test_parse_translation_tags_detects_unexpected_closing_tag(
+) -> None:
+    result = parse_translation_tags(
+        "P4X-351[/5]"
+    )
+
+    assert result.tags == ()
+
+    assert any(
+        (
+            "Unexpected translation closing tag"
+            in error
+        )
+        for error in result.errors
+    )
+
+
+def test_parse_translation_tags_detects_nested_tags(
+) -> None:
+    result = parse_translation_tags(
+        (
+            "[5]"
+            "P4X-"
+            "[3]351[/3]"
+            "[/5]"
+        )
+    )
+
+    assert any(
+        (
+            "Nested translation tag"
+            in error
+        )
+        for error in result.errors
+    )
+
+
+@pytest.mark.parametrize(
+    (
+            "source",
+            "expected_error",
+    ),
+    [
+        (
+                "[1][/1]",
+                "Empty translation tag value",
+        ),
+        (
+                "[5] P4X-351[/5]",
+                (
+                    "Translation tag value has "
+                    "surrounding whitespace"
+                ),
+        ),
+        (
+                "[5]P4X-351 [/5]",
+                (
+                    "Translation tag value has "
+                    "surrounding whitespace"
+                ),
+        ),
+    ],
+)
+def test_parse_translation_tags_rejects_invalid_values(
+    source: str,
+    expected_error: str,
+) -> None:
+    result = parse_translation_tags(
+        source
+    )
+
+    assert result.tags == ()
+
+    assert any(
+        expected_error in error
+        for error in result.errors
+    )
+
+
+def test_strip_translation_tags_rejects_invalid_structure(
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Invalid translation tags"
+        ),
+    ):
+        strip_translation_tags(
+            "[5]P4X-351[/3]"
+        )
