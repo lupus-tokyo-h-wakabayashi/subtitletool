@@ -264,3 +264,96 @@ def test_mux_keeps_partial_output_when_validation_fails(
     )
 
     assert not output_mkv.exists()
+
+
+def test_mux_finalizes_output_after_successful_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_mkv = tmp_path / "movie.mkv"
+    input_srt = tmp_path / "movie.ja.srt"
+    output_mkv = tmp_path / "movie.ja.mkv"
+
+    temporary_output = (
+        output_mkv.with_name(
+            output_mkv.name
+            + ".part.mkv"
+        )
+    )
+
+    input_mkv.write_bytes(
+        b"input"
+    )
+    input_srt.write_text(
+        "subtitle",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "subtitle_count",
+        lambda path: 1,
+    )
+
+    def fake_run(
+        cmd: list[str],
+    ) -> None:
+        output_path = Path(
+            cmd[-1]
+        )
+
+        assert output_path == (
+            temporary_output.resolve()
+        )
+
+        output_path.write_bytes(
+            b"completed"
+        )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "run",
+        fake_run,
+    )
+
+    def fake_validate_mux_output(
+        input_path: str | Path,
+        output_path: str | Path,
+        **kwargs,
+    ) -> MuxValidationResult:
+        assert Path(
+            input_path
+        ) == input_mkv.resolve()
+
+        assert Path(
+            output_path
+        ) == temporary_output.resolve()
+
+        return MuxValidationResult(
+            valid=True,
+            errors=(),
+            warnings=(),
+        )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "validate_mux_output",
+        fake_validate_mux_output,
+    )
+
+    result = (
+        ffmpeg_module.mux_japanese_srt(
+            input_mkv,
+            input_srt,
+            output_mkv,
+        )
+    )
+
+    assert result == output_mkv.resolve()
+
+    assert output_mkv.is_file()
+    assert output_mkv.read_bytes() == (
+        b"completed"
+    )
+
+    assert not temporary_output.exists()
