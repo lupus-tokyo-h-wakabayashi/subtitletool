@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import lib.ffmpeg as ffmpeg_module
+import pytest
 from lib.mux_plan import (
     build_mux_plan,
 )
 from lib.mux_validation import (
+    MuxValidationResult,
     validate_mux_output,
     validate_mux_probe_data,
 )
@@ -112,3 +115,152 @@ def test_validate_mux_probe_data_detects_subtitle_count_mismatch(
         "Subtitle stream count mismatch: "
         "input=1, output=1, expected=2",
     )
+
+
+def test_mux_skips_when_final_output_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_mkv = tmp_path / "movie.mkv"
+    input_srt = tmp_path / "movie.ja.srt"
+    output_mkv = tmp_path / "movie.ja.mkv"
+
+    input_mkv.write_bytes(
+        b"input"
+    )
+    input_srt.write_text(
+        "subtitle",
+        encoding="utf-8",
+    )
+    output_mkv.write_bytes(
+        b"completed"
+    )
+
+    def fail_if_run(
+        cmd: list[str],
+    ) -> None:
+        raise AssertionError(
+            "FFmpeg must not run "
+            "when final output exists."
+        )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "run",
+        fail_if_run,
+    )
+
+    result = (
+        ffmpeg_module.mux_japanese_srt(
+            input_mkv,
+            input_srt,
+            output_mkv,
+        )
+    )
+
+    assert result == output_mkv.resolve()
+    assert output_mkv.read_bytes() == (
+        b"completed"
+    )
+
+    temporary_output = (
+        output_mkv.with_name(
+            output_mkv.name
+            + ".part.mkv"
+        )
+    )
+
+    assert not temporary_output.exists()
+
+
+def test_mux_keeps_partial_output_when_validation_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_mkv = tmp_path / "movie.mkv"
+    input_srt = tmp_path / "movie.ja.srt"
+    output_mkv = tmp_path / "movie.ja.mkv"
+
+    temporary_output = (
+        output_mkv.with_name(
+            output_mkv.name
+            + ".part.mkv"
+        )
+    )
+
+    input_mkv.write_bytes(
+        b"input"
+    )
+    input_srt.write_text(
+        "subtitle",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "subtitle_count",
+        lambda path: 1,
+    )
+
+    def fake_run(
+        cmd: list[str],
+    ) -> None:
+        output_path = Path(
+            cmd[-1]
+        )
+
+        output_path.write_bytes(
+            b"partial"
+        )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "run",
+        fake_run,
+    )
+
+    def fake_validate_mux_output(
+        input_path: str | Path,
+        output_path: str | Path,
+        **kwargs,
+    ) -> MuxValidationResult:
+        assert Path(
+            input_path
+        ) == input_mkv.resolve()
+
+        assert Path(
+            output_path
+        ) == temporary_output.resolve()
+
+        return MuxValidationResult(
+            valid=False,
+            errors=(
+                "Test validation failure",
+            ),
+            warnings=(),
+        )
+
+    monkeypatch.setattr(
+        ffmpeg_module,
+        "validate_mux_output",
+        fake_validate_mux_output,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Mux validation failed"
+        ),
+    ):
+        ffmpeg_module.mux_japanese_srt(
+            input_mkv,
+            input_srt,
+            output_mkv,
+        )
+
+    assert temporary_output.is_file()
+    assert temporary_output.read_bytes() == (
+        b"partial"
+    )
+
+    assert not output_mkv.exists()
