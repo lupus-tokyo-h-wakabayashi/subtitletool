@@ -5,6 +5,7 @@ from pathlib import Path
 
 from lib.ffprobe import (
     probe,
+    stream_disposition,
     stream_language,
     stream_title,
 )
@@ -62,6 +63,116 @@ def stream_codec_names(
         )
         for stream in streams
     ]
+
+
+def stream_languages(
+    streams: list[dict],
+) -> list[str]:
+    """
+    ストリームのlanguageを出現順で返す。
+    """
+    return [
+        stream_language(stream)
+        for stream in streams
+    ]
+
+
+def stream_titles(
+    streams: list[dict],
+) -> list[str]:
+    """
+    ストリームのtitleを出現順で返す。
+    """
+    return [
+        stream_title(stream)
+        for stream in streams
+    ]
+
+
+def stream_dispositions(
+    streams: list[dict],
+) -> list[tuple[bool, bool]]:
+    """
+    ストリームのdefault・forced属性を
+    出現順で返す。
+    """
+    return [
+        (
+            stream_disposition(
+                stream,
+                "default",
+            ),
+            stream_disposition(
+                stream,
+                "forced",
+            ),
+        )
+        for stream in streams
+    ]
+
+
+def validate_existing_stream_metadata(
+    input_streams: list[dict],
+    output_streams: list[dict],
+    *,
+    label: str,
+) -> list[str]:
+    """
+    既存ストリームの言語・タイトル・Dispositionを
+    入出力間で比較する。
+    """
+    errors: list[str] = []
+
+    input_languages = stream_languages(
+        input_streams
+    )
+    output_languages = stream_languages(
+        output_streams
+    )
+
+    if output_languages != input_languages:
+        errors.append(
+            f"{label} language sequence mismatch: "
+            f"input={input_languages!r}, "
+            f"output={output_languages!r}"
+        )
+
+    input_titles = stream_titles(
+        input_streams
+    )
+    output_titles = stream_titles(
+        output_streams
+    )
+
+    if output_titles != input_titles:
+        errors.append(
+            f"{label} title sequence mismatch: "
+            f"input={input_titles!r}, "
+            f"output={output_titles!r}"
+        )
+
+    input_dispositions = (
+        stream_dispositions(
+            input_streams
+        )
+    )
+    output_dispositions = (
+        stream_dispositions(
+            output_streams
+        )
+    )
+
+    if (
+        output_dispositions
+        != input_dispositions
+    ):
+        errors.append(
+            f"{label} disposition sequence mismatch: "
+            f"input={input_dispositions!r}, "
+            f"output={output_dispositions!r}"
+        )
+
+    return errors
 
 
 def format_duration(
@@ -165,6 +276,14 @@ def validate_mux_probe_data(
             f"output={output_video_codecs!r}"
         )
 
+    errors.extend(
+        validate_existing_stream_metadata(
+            input_videos,
+            output_videos,
+            label="Video",
+        )
+    )
+
     if len(output_audios) != len(input_audios):
         errors.append(
             "Audio stream count mismatch: "
@@ -193,6 +312,14 @@ def validate_mux_probe_data(
             f"input={input_audio_codecs!r}, "
             f"output={output_audio_codecs!r}"
         )
+
+    errors.extend(
+        validate_existing_stream_metadata(
+            input_audios,
+            output_audios,
+            label="Audio",
+        )
+    )
 
     expected_subtitle_count = (
         len(input_subtitles) + 1
@@ -238,6 +365,14 @@ def validate_mux_probe_data(
             "output="
             f"{output_existing_subtitle_codecs!r}"
         )
+
+    errors.extend(
+        validate_existing_stream_metadata(
+            input_subtitles,
+            existing_output_subtitles,
+            label="Existing subtitle",
+        )
+    )
 
     if output_subtitles:
         added_subtitle = output_subtitles[-1]

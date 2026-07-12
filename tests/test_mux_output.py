@@ -506,3 +506,186 @@ def test_validate_mux_probe_data_detects_existing_subtitle_codec_change(
         "output=['subrip']"
         in result.errors
     )
+
+
+def test_validate_mux_probe_data_detects_audio_language_change(
+) -> None:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+                "tags": {
+                    "language": "eng",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+                "tags": {
+                    "language": "jpn",
+                },
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+
+    assert (
+        "Audio language sequence mismatch: "
+        "input=['eng'], output=['jpn']"
+        in result.errors
+    )
+
+
+def test_validate_mux_probe_data_detects_audio_title_change(
+) -> None:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+                "tags": {
+                    "language": "eng",
+                    "title": "Surround 5.1",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+                "tags": {
+                    "language": "eng",
+                    "title": "Stereo",
+                },
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+
+    assert (
+        "Audio title sequence mismatch: "
+        "input=['Surround 5.1'], "
+        "output=['Stereo']"
+        in result.errors
+    )
+
+
+def test_validate_mux_probe_data_detects_existing_subtitle_disposition_change(
+) -> None:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "subtitle",
+                "codec_name": (
+                    "hdmv_pgs_subtitle"
+                ),
+                "tags": {
+                    "language": "eng",
+                },
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "subtitle",
+                "codec_name": (
+                    "hdmv_pgs_subtitle"
+                ),
+                "tags": {
+                    "language": "eng",
+                },
+                "disposition": {
+                    "default": 0,
+                    "forced": 0,
+                },
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+                "disposition": {
+                    "default": 0,
+                    "forced": 0,
+                },
+            },
+        ],
+        "format": {
+            "duration": "100.0",
+        },
+    }
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+
+    assert (
+        "Existing subtitle disposition "
+        "sequence mismatch: "
+        "input=[(True, False)], "
+        "output=[(False, False)]"
+        in result.errors
+    )
