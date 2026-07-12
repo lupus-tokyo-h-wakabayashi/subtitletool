@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from lib.config import ProfileConfig
+from lib.text import (
+    DEFAULT_ALLOWED_LATIN_TERMS,
+    normalize_latin_token,
+)
 
 SUPPORTED_NOISE_VERSION = 1
 
@@ -21,6 +26,11 @@ VALID_NOISE_STATUSES = {
     "candidate",
     "ignored",
 }
+
+MIN_NOISE_CANDIDATE_LENGTH = 4
+MAX_NOISE_CANDIDATE_LENGTH = 120
+MIN_NOISE_CANDIDATE_ASCII_LETTERS = 4
+MAX_NOISE_CANDIDATES_PER_APPEND = 20
 
 
 @dataclass(frozen=True)
@@ -384,6 +394,71 @@ def load_noise_dictionary(
     )
 
 
+def normalize_noise_candidate(
+    source: str,
+) -> str:
+    """
+    OCRノイズ候補を保存用の表記へ正規化する。
+    """
+    return re.sub(
+        r"\s+",
+        " ",
+        source,
+    ).strip()
+
+
+def is_valid_noise_candidate(
+    source: str,
+) -> bool:
+    """
+    OCRノイズ候補として保存可能か判定する。
+    """
+    normalized = normalize_noise_candidate(
+        source
+    )
+
+    if not normalized:
+        return False
+
+    if (
+        len(normalized)
+        < MIN_NOISE_CANDIDATE_LENGTH
+    ):
+        return False
+
+    if (
+        len(normalized)
+        > MAX_NOISE_CANDIDATE_LENGTH
+    ):
+        return False
+
+    ascii_letter_count = sum(
+        character.isascii()
+        and character.isalpha()
+        for character in normalized
+    )
+
+    if (
+        ascii_letter_count
+        < MIN_NOISE_CANDIDATE_ASCII_LETTERS
+    ):
+        return False
+
+    allowed_terms = {
+        normalize_latin_token(term)
+        for term in DEFAULT_ALLOWED_LATIN_TERMS
+    }
+
+    normalized_term = normalize_latin_token(
+        normalized
+    )
+
+    if normalized_term in allowed_terms:
+        return False
+
+    return True
+
+
 def serialize_noise_entry(
     entry: NoiseEntry,
 ) -> dict[str, str]:
@@ -448,9 +523,13 @@ def append_noise_candidates(
     normalized_sources: list[str] = []
 
     for source in sources:
-        normalized = source.strip()
+        normalized = normalize_noise_candidate(
+            source
+        )
 
-        if not normalized:
+        if not is_valid_noise_candidate(
+            normalized
+        ):
             continue
 
         if normalized in normalized_sources:
@@ -459,6 +538,12 @@ def append_noise_candidates(
         normalized_sources.append(
             normalized
         )
+
+        if (
+            len(normalized_sources)
+            >= MAX_NOISE_CANDIDATES_PER_APPEND
+        ):
+            break
 
     existing_sources = set(
         noise_dictionary.entries.keys()

@@ -1,5 +1,9 @@
 import pytest
 
+from lib.noise import (
+    is_valid_noise_candidate,
+    normalize_noise_candidate,
+)
 from lib.srt import SrtBlock
 from lib.translate import (
     resolve_requested_profile,
@@ -257,4 +261,38 @@ def test_load_resume_blocks_rejects_invalid_number(
         load_resume_blocks(
             source_blocks,
             output_path,
+        )
+
+
+def test_normalize_noise_candidate() -> None:
+    source = (
+        "  VViat=\n"
+        "lancom   Rom  "
+    )
+
+    assert normalize_noise_candidate(
+        source
+    ) == "VViat= lancom Rom"
+
+
+def test_is_valid_noise_candidate_accepts_ocr_noise() -> None:
+    assert is_valid_noise_candidate(
+        "VViat= lancom Rom (ele) .qi ale nce]"
+    )
+
+
+def test_is_valid_noise_candidate_rejects_invalid_values() -> None:
+    cases = [
+        "",
+        "  ",
+        "mm",
+        "[0)",
+        "12345",
+        "Stargate",
+        "FTL",
+    ]
+
+    for source in cases:
+        assert not is_valid_noise_candidate(
+            source
         )
