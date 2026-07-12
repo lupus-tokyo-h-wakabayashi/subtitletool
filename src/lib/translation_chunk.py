@@ -8,6 +8,7 @@ from pathlib import Path
 from lib.noise import (
     NoiseDictionary,
     append_noise_candidates,
+    find_suspicious_latin_sequences,
 )
 from lib.ocr_retry import (
     build_chinese_retry_blocks,
@@ -94,6 +95,7 @@ def normalize_translation_texts(
 
 def extract_noise_candidates_from_blocks(
     blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
 ) -> list[str]:
     """
     翻訳前字幕からOCR英字破損候補を抽出する。
@@ -106,7 +108,8 @@ def extract_noise_candidates_from_blocks(
     for block in blocks:
         sequences = (
             find_suspicious_latin_sequences(
-                block.text
+                block.text,
+                noise_dictionary,
             )
         )
 
@@ -169,7 +172,8 @@ def translate_chunk(
 
     input_noise_candidates = (
         extract_noise_candidates_from_blocks(
-            target_blocks
+            target_blocks,
+            noise_dictionary,
         )
     )
 
@@ -281,6 +285,7 @@ def translate_chunk(
                 block.number
                 for block in target_blocks
             ],
+            noise_dictionary=noise_dictionary,
             source_texts=[
                 block.text
                 for block in target_blocks
@@ -397,6 +402,7 @@ def translate_chunk(
                     block.number
                     for block in target_blocks
                 ],
+                noise_dictionary=noise_dictionary,
                 source_texts=[
                     block.text
                     for block in target_blocks

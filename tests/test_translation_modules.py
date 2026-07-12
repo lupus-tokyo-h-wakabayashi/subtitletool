@@ -23,6 +23,9 @@ from lib.translation_prompt import (
 from lib.translation_resume import (
     load_resume_blocks,
 )
+from lib.translation_validation import (
+    validate_translation_response,
+)
 
 
 def build_test_noise_dictionary(
@@ -381,3 +384,41 @@ def test_find_suspicious_latin_sequences_combines_dictionary_and_heuristic() -> 
                "eRe Are",
                "AbCdEfGhIj",
            ]
+
+
+def test_validation_uses_confirmed_noise_dictionary() -> None:
+    noise_dictionary = build_test_noise_dictionary(
+        [
+            NoiseEntry(
+                source="eRe Are",
+                replacement="（判読不能）",
+                action="mask",
+                status="confirmed",
+            ),
+        ]
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "これは eRe   Are です。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=["1"],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        "Garbled Latin text detected"
+        in reason
+        for reason in result.reasons
+    )

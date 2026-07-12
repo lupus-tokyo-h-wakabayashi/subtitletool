@@ -6,10 +6,13 @@ from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from lib.noise import (
+    NoiseDictionary,
+    find_suspicious_latin_sequences,
+)
 from lib.text import (
     CHINESE_SPECIFIC_PATTERN,
     DEFAULT_ALLOWED_LATIN_TERMS,
-    find_suspicious_latin_sequences,
 )
 
 # 英語の文として残っている可能性が高い単語。
@@ -790,6 +793,7 @@ def contains_untranslated_english(
 def find_untranslated_english_violations(
     translated_texts: list[str],
     subtitle_ids: list[str],
+    noise_dictionary: NoiseDictionary,
 ) -> list[str]:
     """
     OCR破損候補を除外した上で、
@@ -805,6 +809,7 @@ def find_untranslated_english_violations(
         ocr_sequences = (
             find_suspicious_latin_sequences(
                 translated_text,
+                noise_dictionary,
                 allowed_terms=ALLOWED_LATIN_TERMS,
             )
         )
@@ -836,6 +841,7 @@ def find_untranslated_english_violations(
 def find_garbled_latin_violations(
     translated_texts: list[str],
     subtitle_ids: list[str],
+    noise_dictionary: NoiseDictionary,
 ) -> list[str]:
     """
     字幕ごとにOCR破損英字列を検出する。
@@ -850,6 +856,7 @@ def find_garbled_latin_violations(
         sequences = (
             find_suspicious_latin_sequences(
                 translated_text,
+                noise_dictionary,
                 allowed_terms=ALLOWED_LATIN_TERMS,
             )
         )
@@ -871,6 +878,7 @@ def validate_translation_response(
     response: str,
     *,
     expected_ids: list[str],
+    noise_dictionary: NoiseDictionary,
     source_texts: list[str] | None = None,
     glossary_entries: Mapping[str, str] | None = None,
     repeat_threshold: int = DEFAULT_REPEAT_THRESHOLD,
@@ -974,6 +982,7 @@ def validate_translation_response(
         find_garbled_latin_violations(
             translated_texts,
             expected_ids,
+            noise_dictionary,
         )
     )
 
@@ -990,6 +999,7 @@ def validate_translation_response(
         find_untranslated_english_violations(
             translated_texts,
             expected_ids,
+            noise_dictionary,
         )
     )
 
