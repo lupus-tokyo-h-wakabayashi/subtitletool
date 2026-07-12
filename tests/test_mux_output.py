@@ -12,6 +12,175 @@ from lib.mux_validation import (
 )
 
 
+def build_valid_mux_probe_pair(
+    *,
+    input_duration: str = "100.0",
+    output_duration: str = "100.0",
+) -> tuple[dict, dict]:
+    input_probe = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "tags": {},
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+                "tags": {
+                    "language": "eng",
+                    "title": "Surround 5.1",
+                },
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": (
+                    "hdmv_pgs_subtitle"
+                ),
+                "tags": {
+                    "language": "eng",
+                    "title": "English",
+                },
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+        ],
+        "format": {
+            "duration": input_duration,
+        },
+    }
+
+    output_probe = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "tags": {},
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "eac3",
+                "tags": {
+                    "language": "eng",
+                    "title": "Surround 5.1",
+                },
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": (
+                    "hdmv_pgs_subtitle"
+                ),
+                "tags": {
+                    "language": "eng",
+                    "title": "English",
+                },
+                "disposition": {
+                    "default": 1,
+                    "forced": 0,
+                },
+            },
+            {
+                "codec_type": "subtitle",
+                "codec_name": "subrip",
+                "tags": {
+                    "language": "jpn",
+                    "title": "Japanese AI",
+                },
+                "disposition": {
+                    "default": 0,
+                    "forced": 0,
+                },
+            },
+        ],
+        "format": {
+            "duration": output_duration,
+        },
+    }
+
+    return (
+        input_probe,
+        output_probe,
+    )
+
+
+def test_validate_mux_probe_data_detects_missing_added_subtitle_language(
+) -> None:
+    (
+        input_probe,
+        output_probe,
+    ) = build_valid_mux_probe_pair()
+
+    added_subtitle = (
+        output_probe["streams"][-1]
+    )
+
+    added_subtitle["tags"].pop(
+        "language"
+    )
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+    assert result.warnings == ()
+
+    assert (
+        "Added subtitle language mismatch: "
+        "expected='jpn', actual=''"
+        in result.errors
+    )
+
+
+def test_validate_mux_probe_data_detects_missing_added_subtitle_title(
+) -> None:
+    (
+        input_probe,
+        output_probe,
+    ) = build_valid_mux_probe_pair()
+
+    added_subtitle = (
+        output_probe["streams"][-1]
+    )
+
+    added_subtitle["tags"].pop(
+        "title"
+    )
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert not result.valid
+    assert result.warnings == ()
+
+    assert (
+        "Added subtitle title mismatch: "
+        "expected='Japanese AI', actual=''"
+        in result.errors
+    )
+
+
 def test_build_mux_plan_creates_part_filename(
     tmp_path: Path,
 ) -> None:
