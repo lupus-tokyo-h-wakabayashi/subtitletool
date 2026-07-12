@@ -60,23 +60,24 @@ def mux_japanese_srt(
         "-map", "0",
         "-map", "1:0",
 
-        # まず全ストリームをコピー
         "-c", "copy",
 
-        # 追加される字幕だけSRTとしてmux
-        f"-c:s:{mux_plan.added_subtitle_index}", "srt",
+        f"-c:s:{mux_plan.added_subtitle_index}",
+        "srt",
 
-        f"-metadata:s:s:{mux_plan.added_subtitle_index}", "language=jpn",
-        f"-metadata:s:s:{mux_plan.added_subtitle_index}", "title=Japanese AI",
+        f"-metadata:s:s:{mux_plan.added_subtitle_index}",
+        "language=jpn",
+        f"-metadata:s:s:{mux_plan.added_subtitle_index}",
+        "title=Japanese AI",
 
-        str(mux_plan.output_mkv),
+        str(mux_plan.temporary_output),
     ]
 
     run(cmd)
 
     validation = validate_mux_output(
         mux_plan.input_mkv,
-        mux_plan.output_mkv,
+        mux_plan.temporary_output,
         added_language=(
             mux_plan.added_language
         ),
@@ -106,4 +107,4 @@ def mux_japanese_srt(
     print()
     print("Mux Validation: OK")
 
-    return mux_plan.output_mkv
+    return mux_plan.temporary_output
