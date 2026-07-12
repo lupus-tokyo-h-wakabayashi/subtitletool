@@ -858,3 +858,55 @@ def test_validate_mux_probe_data_detects_existing_subtitle_disposition_change(
         "output=[(False, False)]"
         in result.errors
     )
+
+
+@pytest.mark.parametrize(
+    (
+            "output_duration",
+            "expected_valid",
+    ),
+    [
+        (
+                "102.000",
+                True,
+        ),
+        (
+                "102.001",
+                False,
+        ),
+    ],
+)
+def test_validate_mux_probe_data_duration_boundary(
+    output_duration: str,
+    expected_valid: bool,
+) -> None:
+    (
+        input_probe,
+        output_probe,
+    ) = build_valid_mux_probe_pair(
+        input_duration="100.000",
+        output_duration=output_duration,
+    )
+
+    result = validate_mux_probe_data(
+        input_probe,
+        output_probe,
+    )
+
+    assert result.valid is expected_valid
+    assert result.warnings == ()
+
+    duration_error = (
+        "Duration difference is too large"
+    )
+
+    if expected_valid:
+        assert not any(
+            duration_error in error
+            for error in result.errors
+        )
+    else:
+        assert any(
+            duration_error in error
+            for error in result.errors
+        )
