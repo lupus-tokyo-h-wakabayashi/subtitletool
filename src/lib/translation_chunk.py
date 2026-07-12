@@ -327,6 +327,31 @@ def translate_chunk(
             glossary_entries=glossary_entries,
         )
 
+        if validation.noise_candidates:
+            saved_entries = append_noise_candidates(
+                noise_dictionary,
+                validation.noise_candidates,
+            )
+
+            if saved_entries:
+                print_saved_noise_candidates(
+                    saved_entries
+                )
+
+        if (
+            validation.valid
+            and validation.noise_candidates
+        ):
+            saved_entries = append_noise_candidates(
+                noise_dictionary,
+                validation.noise_candidates,
+            )
+
+            if saved_entries:
+                print_saved_noise_candidates(
+                    saved_entries
+                )
+
         if validation.warnings:
             print("Validation Warnings:")
 

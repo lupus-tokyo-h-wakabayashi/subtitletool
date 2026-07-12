@@ -28,6 +28,7 @@ from lib.translation_resume import (
 )
 from lib.translation_tags import (
     parse_translation_tags,
+    render_translation_tags,
     strip_translation_tags,
 )
 from lib.translation_validation import (
@@ -1097,3 +1098,191 @@ def test_validation_applies_glossary_after_level_5_tag_removal(
         in reason
         for reason in result.reasons
     )
+
+
+def test_validation_masks_level_1_ocr_noise(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "773",
+      "translation": "[1]sie lexer=s-4-9 10) WV am nat (el=)[/1]\\n第九のシェブロンアドレスへの接続"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "773",
+        ],
+        source_texts=[
+            (
+                "sie lexer=s-4-9 10) "
+                "WV am nat (el=)\n"
+                "the connection to the\n"
+                "ninth chevron address."
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+    assert result.translated_texts == [
+        (
+            "（判読不能）\n"
+            "第九のシェブロンアドレスへの接続"
+        ),
+    ]
+
+    assert result.noise_candidates == [
+        "sie lexer=s-4-9 10) WV am nat (el=)",
+    ]
+
+
+def test_validation_rejects_level_1_without_japanese_translation(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "[1]garbled OCR text[/1]"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            "garbled OCR text",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+    assert result.noise_candidates == []
+
+    assert any(
+        "requires Japanese translation"
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_validation_rejects_partial_level_1_source_line(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "[1]sie lexer=s-4-9[/1]\\n接続を確立します。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            (
+                "sie lexer=s-4-9 10) "
+                "WV am nat (el=)\n"
+                "establishing connection"
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+    assert result.noise_candidates == []
+
+    assert any(
+        "must match a complete source line"
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_render_translation_tags_replaces_only_tagged_level_1_value(
+) -> None:
+    result = render_translation_tags(
+        (
+            "[1]noise[/1] "
+            "noise"
+        ),
+        level_1_replacement=(
+            "（判読不能）"
+        ),
+    )
+
+    assert result == (
+        "（判読不能） noise"
+    )
+
+
+def test_validation_records_failed_id_for_invalid_tag(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "7",
+      "translation": "[5]P4X-351[/3]"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "7",
+        ],
+        source_texts=[
+            "P4X-351",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert result.failed_ids == {
+        "7",
+    }

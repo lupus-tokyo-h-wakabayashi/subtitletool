@@ -16,7 +16,14 @@ from lib.text import (
 )
 from lib.translation_tags import (
     process_translation_tags,
+    render_translation_tags,
 )
+
+JAPANESE_CHARACTER_PATTERN = re.compile(
+    r"[ぁ-んァ-ヶ一-龠々ー]"
+)
+
+UNREADABLE_MARKER = "（判読不能）"
 
 # 英語の文として残っている可能性が高い単語。
 # 固有名詞や略語だけを英語残存と誤判定しないため、
@@ -110,6 +117,9 @@ class ValidationResult:
     translated_texts: list[str] = field(default_factory=list)
     failed_ids: set[str] = field(default_factory=set)
     requires_full_retry: bool = False
+    noise_candidates: list[str] = field(
+        default_factory=list
+    )
 
     def add_error(
         self,
@@ -967,7 +977,10 @@ def validate_translation_response(
 
     for error in tag_processing.errors:
         result.add_error(
-            error
+            error.message,
+            subtitle_id=(
+                error.subtitle_id
+            ),
         )
 
     if tag_processing.errors:
@@ -977,9 +990,112 @@ def validate_translation_response(
 
         return result
 
-    translated_texts = list(
-        tag_processing.translated_texts
+    processed_texts: list[str] = []
+
+    resolved_source_texts = (
+        source_texts
+        if source_texts is not None
+        else [
+            ""
+            for _ in expected_ids
+        ]
     )
+
+    for (
+            subtitle_id,
+            source_text,
+            original_translation,
+            tags,
+    ) in zip(
+        expected_ids,
+        resolved_source_texts,
+        translated_texts,
+        tag_processing.tags,
+        strict=True,
+    ):
+        level_1_tags = [
+            tag
+            for tag in tags
+            if tag.level == 1
+        ]
+
+        if not level_1_tags:
+            processed_texts.append(
+                render_translation_tags(
+                    original_translation
+                )
+            )
+            continue
+
+        untagged_text = (
+            render_translation_tags(
+                original_translation
+            )
+        )
+
+        if not JAPANESE_CHARACTER_PATTERN.search(
+            untagged_text
+        ):
+            result.add_error(
+                "Level 1 translation tag requires "
+                "Japanese translation in the same "
+                "subtitle: "
+                f"subtitle_id={subtitle_id!r}, "
+                f"text={original_translation!r}",
+                subtitle_id=subtitle_id,
+            )
+
+            processed_texts.append(
+                untagged_text
+            )
+            continue
+
+        source_lines = [
+            line
+            for line in source_text.splitlines()
+        ]
+
+        invalid_level_1_values = [
+            tag.value
+            for tag in level_1_tags
+            if tag.value not in source_lines
+        ]
+
+        if invalid_level_1_values:
+            result.add_error(
+                "Level 1 translation tag must match "
+                "a complete source line: "
+                f"subtitle_id={subtitle_id!r}, "
+                f"values="
+                f"{invalid_level_1_values!r}, "
+                f"source={source_text!r}",
+                subtitle_id=subtitle_id,
+            )
+
+            processed_texts.append(
+                untagged_text
+            )
+            continue
+
+        for tag in level_1_tags:
+            if (
+                tag.value
+                not in result.noise_candidates
+            ):
+                result.noise_candidates.append(
+                    tag.value
+                )
+
+        processed_texts.append(
+            render_translation_tags(
+                original_translation,
+                level_1_replacement=(
+                    UNREADABLE_MARKER
+                ),
+            )
+        )
+
+    translated_texts = processed_texts
 
     result.translated_texts = (
         translated_texts

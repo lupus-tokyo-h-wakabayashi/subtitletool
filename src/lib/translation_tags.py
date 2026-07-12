@@ -46,13 +46,35 @@ class TranslationTagParseResult:
 
 
 @dataclass(frozen=True)
+class TranslationTagProcessingError:
+    """
+    字幕単位の自己評価タグ処理エラー。
+    """
+
+    subtitle_id: str
+    message: str
+
+
+@dataclass(frozen=True)
 class TranslationTagProcessingResult:
     """
     自己評価タグの検証・除去結果。
     """
 
     translated_texts: tuple[str, ...]
-    errors: tuple[str, ...]
+
+    tags: tuple[
+        tuple[
+            TranslationEvaluationTag,
+            ...
+        ],
+        ...
+    ]
+
+    errors: tuple[
+        TranslationTagProcessingError,
+        ...
+    ]
 
 
 def parse_translation_tags(
@@ -226,6 +248,68 @@ def strip_translation_tags(
     )
 
 
+def render_translation_tags(
+    text: str,
+    *,
+    level_1_replacement: str | None = None,
+) -> str:
+    """
+    正常な自己評価タグを最終字幕文字列へ変換する。
+
+    [5]・[3]はタグだけを除去して値を維持する。
+    [1]はlevel_1_replacement指定時だけ置換する。
+    """
+    parse_result = parse_translation_tags(
+        text
+    )
+
+    if parse_result.errors:
+        raise ValueError(
+            "Invalid translation tags: "
+            + "; ".join(
+                parse_result.errors
+            )
+        )
+
+    if not parse_result.tags:
+        return text
+
+    parts: list[str] = []
+    cursor = 0
+
+    for tag in parse_result.tags:
+        parts.append(
+            text[
+                cursor:tag.start
+            ]
+        )
+
+        if (
+            tag.level == 1
+            and level_1_replacement
+            is not None
+        ):
+            parts.append(
+                level_1_replacement
+            )
+        else:
+            parts.append(
+                tag.value
+            )
+
+        cursor = tag.end
+
+    parts.append(
+        text[
+            cursor:
+        ]
+    )
+
+    return "".join(
+        parts
+    )
+
+
 def process_translation_tags(
     translated_texts: list[str],
     subtitle_ids: list[str],
@@ -233,14 +317,11 @@ def process_translation_tags(
     source_texts: list[str] | None,
 ) -> TranslationTagProcessingResult:
     """
-    翻訳文の自己評価タグを検証し、
-    正常な場合はタグだけを除去する。
+    翻訳文の自己評価タグを検証する。
 
-    全レベルのタグ内部は、
-    原文から一文字も変更せずコピーされている必要がある。
-
-    source_textsがない状態でタグが存在する場合は、
-    原文一致を確認できないためエラーにする。
+    正常な字幕はタグを除去した文字列を返す。
+    タグ構造または原文一致に問題がある字幕は、
+    元の翻訳文を保持してエラーを返す。
     """
     if len(translated_texts) != len(
         subtitle_ids
@@ -263,7 +344,17 @@ def process_translation_tags(
         )
 
     processed_texts: list[str] = []
-    errors: list[str] = []
+
+    processed_tags: list[
+        tuple[
+            TranslationEvaluationTag,
+            ...
+        ]
+    ] = []
+
+    errors: list[
+        TranslationTagProcessingError
+    ] = []
 
     for index, (
             subtitle_id,
@@ -275,11 +366,15 @@ def process_translation_tags(
             strict=True,
         )
     ):
-        item_errors: list[str] = []
-
         parse_result = parse_translation_tags(
             translated_text
         )
+
+        processed_tags.append(
+            parse_result.tags
+        )
+
+        item_errors: list[str] = []
 
         for error in parse_result.errors:
             item_errors.append(
@@ -323,9 +418,13 @@ def process_translation_tags(
                 )
 
         if item_errors:
-            errors.extend(
-                item_errors
-            )
+            for message in item_errors:
+                errors.append(
+                    TranslationTagProcessingError(
+                        subtitle_id=subtitle_id,
+                        message=message,
+                    )
+                )
 
             processed_texts.append(
                 translated_text
@@ -333,7 +432,7 @@ def process_translation_tags(
             continue
 
         processed_texts.append(
-            strip_translation_tags(
+            render_translation_tags(
                 translated_text
             )
         )
@@ -341,6 +440,9 @@ def process_translation_tags(
     return TranslationTagProcessingResult(
         translated_texts=tuple(
             processed_texts
+        ),
+        tags=tuple(
+            processed_tags
         ),
         errors=tuple(
             errors
