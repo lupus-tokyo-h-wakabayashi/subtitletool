@@ -107,4 +107,19 @@ def mux_japanese_srt(
     print()
     print("Mux Validation: OK")
 
-    return mux_plan.temporary_output
+    if not mux_plan.temporary_output.is_file():
+        raise FileNotFoundError(
+            "Temporary mux output not found: "
+            f"{mux_plan.temporary_output}"
+        )
+
+    mux_plan.temporary_output.replace(
+        mux_plan.output_mkv
+    )
+
+    print(
+        "Mux Output Finalized: "
+        f"{mux_plan.output_mkv}"
+    )
+
+    return mux_plan.output_mkv
