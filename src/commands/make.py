@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 
 import argparse
+import sys
 from pathlib import Path
 
+from lib.cleanup import (
+    cleanup_intermediate_files,
+)
 from lib.extract import extract_english_pgs
 from lib.ffmpeg import mux_japanese_srt
-from lib.paths import eng_srt_path, eng_sup_path, ja_mkv_path, ja_srt_path
+from lib.paths import (
+    eng_srt_path,
+    eng_sup_path,
+    ja_mkv_path,
+    ja_srt_path,
+)
 from lib.pgstosrt import ocr_sup_to_srt
 from lib.translate import translate_srt
 
@@ -75,12 +84,39 @@ def main() -> None:
         ja_srt,
         profile_name=args.profile,
     )
-    mux_japanese_srt(input_mkv, ja_srt, output_mkv)
+    result_mkv = mux_japanese_srt(
+        input_mkv,
+        ja_srt,
+        output_mkv,
+    )
+
+    if not result_mkv.is_file():
+        raise FileNotFoundError(
+            "Final MKV not found after mux: "
+            f"{result_mkv}"
+        )
+
+    cleanup_result = cleanup_intermediate_files(
+        [
+            sup_path,
+            eng_srt,
+            ja_srt,
+        ]
+    )
+
+    print()
+    print("Cleanup:")
+
+    for path in cleanup_result.deleted:
+        print(f"  Deleted: {path}")
+
+    for path in cleanup_result.missing:
+        print(f"  Missing: {path}")
 
     print()
     print("========================================")
     print("Done")
-    print(f"Output: {output_mkv}")
+    print(f"Output: {result_mkv}")
     print("========================================")
 
 
