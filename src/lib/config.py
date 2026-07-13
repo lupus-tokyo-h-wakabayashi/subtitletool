@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
 
@@ -159,7 +158,7 @@ def resolve_profile_config(
         profile_dir=profile_dir,
         prompt_path=CONFIG_DIR / "prompt.txt",
         glossary_path=(
-            profile_dir / "glossary.txt"
+            profile_dir / "glossary.json"
         ),
         style_path=(
             profile_dir / "style.txt"

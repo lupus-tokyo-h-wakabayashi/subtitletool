@@ -3,8 +3,11 @@
 from pathlib import Path
 
 from lib.config import (
-    DEFAULT_PROFILE_NAME,
     resolve_profile_config,
+)
+from lib.glossary import (
+    build_glossary_prompt,
+    load_glossary_entries as load_json_glossary_entries,
 )
 
 DEFAULT_PROMPT_NAME = "translate"
@@ -74,92 +77,28 @@ def load_glossary(
     profile_name: str | None = None,
 ) -> str:
     """
-    指定profileの用語集を読み込む。
+    Prompt用Glossary文字列を返す。
 
-    profileが存在しない場合はdefaultへフォールバックする。
+    呼出元との互換性のため、
+    API名を維持する。
     """
-    config = resolve_profile_config(
+    return build_glossary_prompt(
         profile_name
     )
-
-    return read_config_file(
-        config.glossary_path
-    )
-
-
-def parse_glossary_entries(
-    glossary_text: str,
-) -> dict[str, str]:
-    """
-    次の形式の用語集を辞書へ変換する。
-
-    English term = 日本語訳
-
-    空行と # から始まるコメントは無視する。
-    """
-    entries: dict[str, str] = {}
-
-    for raw_line in glossary_text.splitlines():
-        line = raw_line.strip()
-
-        if not line:
-            continue
-
-        if line.startswith("#"):
-            continue
-
-        if "=" not in line:
-            continue
-
-        source_term, translated_term = line.split(
-            "=",
-            maxsplit=1,
-        )
-
-        source_term = source_term.strip()
-        translated_term = translated_term.strip()
-
-        if not source_term or not translated_term:
-            continue
-
-        entries[source_term] = translated_term
-
-    return entries
 
 
 def load_glossary_entries(
     profile_name: str | None = None,
 ) -> dict[str, str]:
     """
-    指定profileの用語集を検証用辞書として読み込む。
+    Validation用Glossary辞書を返す。
 
-    default profileの用語集は空でも許可する。
-    それ以外のprofileは有効な用語が1件以上必要。
+    呼出元との互換性のため、
+    API名を維持する。
     """
-    config = resolve_profile_config(
+    return load_json_glossary_entries(
         profile_name
     )
-
-    glossary_text = read_config_file(
-        config.glossary_path
-    )
-
-    entries = parse_glossary_entries(
-        glossary_text
-    )
-
-    if (
-        not entries
-        and config.resolved_profile
-        != DEFAULT_PROFILE_NAME
-    ):
-        raise RuntimeError(
-            "No valid glossary entries: "
-            f"profile={config.resolved_profile!r}, "
-            f"path={config.glossary_path}"
-        )
-
-    return entries
 
 
 def load_style(
