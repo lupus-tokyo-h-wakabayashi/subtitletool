@@ -8,7 +8,7 @@ from lib.profile.config import (
 from lib.profile.noise import (
     load_noise_dictionary,
 )
-from lib.srt import (
+from lib.subtitle.srt import (
     parse_srt,
 )
 from lib.translation.translation_output import (

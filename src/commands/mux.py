@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from lib.ffmpeg import mux_japanese_srt
-from lib.srt import default_ja_path
+from lib.subtitle.srt import default_ja_path
 
 
 def main():

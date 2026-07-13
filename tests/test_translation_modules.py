@@ -9,8 +9,8 @@ from lib.profile.noise import (
     is_valid_noise_candidate,
     normalize_noise_candidate,
 )
-from lib.srt import SrtBlock
-from lib.text import (
+from lib.subtitle.srt import SrtBlock
+from lib.subtitle.text import (
     detect_simplified_chinese,
     mask_chinese_ocr_text,
 )

@@ -10,13 +10,13 @@ from lib.cleanup import (
 )
 from lib.extract import extract_english_pgs
 from lib.ffmpeg import mux_japanese_srt
-from lib.paths import (
+from lib.pgstosrt import ocr_sup_to_srt
+from lib.subtitle.paths import (
     eng_srt_path,
     eng_sup_path,
     ja_mkv_path,
     ja_srt_path,
 )
-from lib.pgstosrt import ocr_sup_to_srt
 from lib.translate import translate_srt
 
 

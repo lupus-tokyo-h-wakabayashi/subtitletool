@@ -10,12 +10,12 @@ from lib.profile.noise import (
 )
 from lib.profile.prompt import load_glossary_entries
 from lib.progress import ProgressTracker
-from lib.srt import (
+from lib.subtitle.srt import (
     SrtBlock,
     apply_translations,
     write_structured_srt,
 )
-from lib.text import cleanup_ocr_text
+from lib.subtitle.text import cleanup_ocr_text
 from lib.translation.translation_chunk import translate_chunk
 from lib.translation.translation_output import (
     print_chunk_start,

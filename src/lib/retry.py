@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from lib.srt import SrtBlock
+from lib.subtitle.srt import SrtBlock
 from lib.translation.translation_validation import (
     source_contains_glossary_term,
 )

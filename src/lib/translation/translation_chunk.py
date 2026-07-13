@@ -28,7 +28,7 @@ from lib.retry import (
     build_untranslated_english_retry_instruction,
     has_structural_validation_error,
 )
-from lib.srt import SrtBlock
+from lib.subtitle.srt import SrtBlock
 from lib.translation.translation_output import (
     print_saved_noise_candidates,
 )

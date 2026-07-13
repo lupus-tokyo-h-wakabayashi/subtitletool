@@ -5,7 +5,7 @@ import json
 from lib.profile.prompt import (
     build_translation_prompt,
 )
-from lib.srt import (
+from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
 )

@@ -3,8 +3,8 @@ from __future__ import annotations
 import ast
 import re
 
-from lib.srt import SrtBlock
-from lib.text import (
+from lib.subtitle.srt import SrtBlock
+from lib.subtitle.text import (
     mask_chinese_ocr_text,
     mask_suspicious_latin_sequences,
 )

@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 
 from lib.ffprobe import find_best_english_pgs_subtitle
-from lib.paths import eng_sup_path
+from lib.subtitle.paths import eng_sup_path
 
 
 def extract_english_pgs(input_mkv: str | Path, output_sup: str | Path | None = None) -> Path:

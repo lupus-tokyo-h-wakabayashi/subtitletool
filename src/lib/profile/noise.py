@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lib.text import (
+from lib.subtitle.text import (
     DEFAULT_ALLOWED_LATIN_TERMS,
     find_heuristic_latin_noise_sequences,
     normalize_latin_token,

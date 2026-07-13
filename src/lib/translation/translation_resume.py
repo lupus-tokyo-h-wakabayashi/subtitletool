@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.srt import (
+from lib.subtitle.srt import (
     SrtBlock,
     parse_srt,
 )

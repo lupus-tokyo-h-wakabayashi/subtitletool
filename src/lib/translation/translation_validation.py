@@ -10,7 +10,7 @@ from lib.profile.noise import (
     NoiseDictionary,
     find_suspicious_latin_sequences,
 )
-from lib.text import (
+from lib.subtitle.text import (
     DEFAULT_ALLOWED_LATIN_TERMS,
     detect_simplified_chinese,
 )
