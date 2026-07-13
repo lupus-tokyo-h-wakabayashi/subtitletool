@@ -3,13 +3,13 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from lib.config import ProfileConfig
-from lib.noise import (
+from lib.profile.config import ProfileConfig
+from lib.profile.noise import (
     NoiseDictionary,
     apply_noise_dictionary_to_text,
 )
+from lib.profile.prompt import load_glossary_entries
 from lib.progress import ProgressTracker
-from lib.prompt import load_glossary_entries
 from lib.srt import (
     SrtBlock,
     apply_translations,

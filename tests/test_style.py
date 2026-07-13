@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-import lib.config as config_module
+import lib.profile.config as config_module
 import pytest
-from lib.style import (
+from lib.profile.style import (
     build_style_prompt,
     load_style_document,
     parse_style_document,

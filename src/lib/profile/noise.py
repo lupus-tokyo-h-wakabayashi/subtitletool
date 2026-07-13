@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lib.config import ProfileConfig
 from lib.text import (
     DEFAULT_ALLOWED_LATIN_TERMS,
     find_heuristic_latin_noise_sequences,
     normalize_latin_token,
 )
+from .config import ProfileConfig
 
 SUPPORTED_NOISE_VERSION = 1
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.config import (
+from lib.profile.config import (
     DEFAULT_PROFILE_NAME,
 )
-from lib.noise import (
+from lib.profile.noise import (
     NoiseDictionary,
     NoiseEntry,
 )

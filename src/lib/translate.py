@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from lib.config import (
+from lib.profile.config import (
     resolve_profile_config,
 )
-from lib.noise import (
+from lib.profile.noise import (
     load_noise_dictionary,
 )
 from lib.srt import (

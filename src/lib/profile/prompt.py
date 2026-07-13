@@ -2,14 +2,14 @@
 
 from pathlib import Path
 
-from lib.config import (
+from .config import (
     resolve_profile_config,
 )
-from lib.glossary import (
+from .glossary import (
     build_glossary_prompt,
     load_glossary_entries as load_json_glossary_entries,
 )
-from lib.style import (
+from .style import (
     build_style_prompt,
 )
 

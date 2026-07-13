@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-import lib.config as config_module
+import lib.profile.config as config_module
 import pytest
-from lib.glossary import (
+from lib.profile.glossary import (
     build_glossary_prompt,
     load_glossary_entries,
     parse_glossary_document,

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lib.config import (
+from .config import (
     DEFAULT_PROFILE_NAME,
     resolve_profile_config,
 )

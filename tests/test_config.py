@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import lib.config as config_module
+import lib.profile.config as config_module
 import pytest
 
 

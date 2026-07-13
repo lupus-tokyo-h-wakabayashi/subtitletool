@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from lib.noise import (
+from lib.profile.noise import (
     NoiseDictionary,
     NoiseEntry,
     find_confirmed_noise_sequences,

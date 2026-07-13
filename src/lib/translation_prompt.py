@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from lib.prompt import (
+from lib.profile.prompt import (
     build_translation_prompt,
 )
 from lib.srt import (

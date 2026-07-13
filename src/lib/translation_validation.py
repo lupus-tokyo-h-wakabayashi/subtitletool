@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from lib.noise import (
+from lib.profile.noise import (
     NoiseDictionary,
     find_suspicious_latin_sequences,
 )

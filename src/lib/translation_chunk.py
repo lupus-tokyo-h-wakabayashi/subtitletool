@@ -5,11 +5,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from lib.noise import (
-    NoiseDictionary,
-    append_noise_candidates,
-    find_suspicious_latin_sequences,
-)
 from lib.ocr_retry import (
     build_chinese_retry_blocks,
     build_latin_ocr_retry_blocks,
@@ -17,6 +12,11 @@ from lib.ocr_retry import (
     mask_chinese_translation_errors,
 )
 from lib.ollama import generate
+from lib.profile.noise import (
+    NoiseDictionary,
+    append_noise_candidates,
+    find_suspicious_latin_sequences,
+)
 from lib.retry import (
     build_chinese_retry_instruction,
     build_glossary_retry_instruction,
