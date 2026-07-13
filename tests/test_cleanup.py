@@ -4,7 +4,7 @@ import pytest
 from commands.make import (
     cleanup_make_intermediate_files,
 )
-from lib.cleanup import (
+from lib.infrastructure.cleanup import (
     cleanup_intermediate_files,
 )
 

@@ -5,13 +5,13 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from lib.infrastructure.ollama import generate
 from lib.ocr_retry import (
     build_chinese_retry_blocks,
     build_latin_ocr_retry_blocks,
     extract_garbled_latin_candidates,
     mask_chinese_translation_errors,
 )
-from lib.ollama import generate
 from lib.profile.noise import (
     NoiseDictionary,
     append_noise_candidates,

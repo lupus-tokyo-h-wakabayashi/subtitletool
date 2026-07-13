@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lib.infrastructure.progress import (
+    ProgressTracker,
+    format_duration,
+)
 from lib.profile.config import (
     DEFAULT_PROFILE_NAME,
 )
 from lib.profile.noise import (
     NoiseDictionary,
     NoiseEntry,
-)
-from lib.progress import (
-    ProgressTracker,
-    format_duration,
 )
 
 

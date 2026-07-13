@@ -4,11 +4,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from lib.cleanup import (
+from lib.extract import extract_english_pgs
+from lib.infrastructure.cleanup import (
     CleanupResult,
     cleanup_intermediate_files,
 )
-from lib.extract import extract_english_pgs
 from lib.media.ffmpeg import mux_japanese_srt
 from lib.media.pgstosrt import ocr_sup_to_srt
 from lib.subtitle.paths import (
