@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from lib.config import (
+    resolve_profile_config,
+)
+
 SUPPORTED_STYLE_VERSION = 1
 
 STYLE_ROOT_REQUIRED_KEYS = {
@@ -401,4 +405,55 @@ def read_style_document(
     return parse_style_document(
         payload,
         path=path,
+    )
+
+
+def load_style_document(
+    profile_name: str | None = None,
+) -> StyleDocument:
+    """
+    profileを解決してStyle JSONを読み込み、
+    スキーマ検証済みDocumentを返す。
+    """
+    config = resolve_profile_config(
+        profile_name
+    )
+
+    return read_style_document(
+        config.style_path
+    )
+
+
+def build_style_prompt(
+    profile_name: str | None = None,
+) -> str:
+    """
+    Style JSONを、
+    翻訳Promptへ埋め込む文字列へ変換する。
+    """
+    document = load_style_document(
+        profile_name
+    )
+
+    section_texts: list[str] = []
+
+    for section in document.sections:
+        lines = [
+            f"【{section.name}】",
+            "",
+        ]
+
+        lines.extend(
+            f"* {rule}"
+            for rule in section.rules
+        )
+
+        section_texts.append(
+            "\n".join(
+                lines
+            )
+        )
+
+    return "\n\n".join(
+        section_texts
     )

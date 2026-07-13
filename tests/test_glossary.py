@@ -565,9 +565,21 @@ def test_profile_glossary_integration(
 
     (
         profile_dir
-        / "style.txt"
+        / "style.json"
     ).write_text(
-        "Test style\n",
+        (
+            '{\n'
+            '  "version": 1,\n'
+            '  "sections": [\n'
+            '    {\n'
+            '      "name": "Test",\n'
+            '      "rules": [\n'
+            '        "Test style"\n'
+            '      ]\n'
+            '    }\n'
+            '  ]\n'
+            '}\n'
+        ),
         encoding="utf-8",
     )
 

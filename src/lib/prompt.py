@@ -9,6 +9,9 @@ from lib.glossary import (
     build_glossary_prompt,
     load_glossary_entries as load_json_glossary_entries,
 )
+from lib.style import (
+    build_style_prompt,
+)
 
 DEFAULT_PROMPT_NAME = "translate"
 
@@ -105,16 +108,13 @@ def load_style(
     profile_name: str | None = None,
 ) -> str:
     """
-    指定profileの字幕スタイルを読み込む。
+    Prompt用Style文字列を返す。
 
-    defaultと指定profileの連結は行わない。
+    呼出元との互換性のため、
+    API名を維持する。
     """
-    config = resolve_profile_config(
+    return build_style_prompt(
         profile_name
-    )
-
-    return read_config_file(
-        config.style_path
     )
 
 

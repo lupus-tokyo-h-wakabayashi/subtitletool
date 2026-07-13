@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
 
+import lib.config as config_module
 import pytest
 from lib.style import (
+    build_style_prompt,
+    load_style_document,
     parse_style_document,
     read_style_document,
 )
@@ -597,3 +600,125 @@ def test_default_style_json_integration(
                "効果音",
                "話者ラベル",
            ]
+
+
+def test_profile_style_prompt_integration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = (
+        tmp_path
+        / "config"
+    )
+
+    profile_dir = (
+        config_dir
+        / "test-profile"
+    )
+
+    profile_dir.mkdir(
+        parents=True,
+    )
+
+    (
+        config_dir
+        / "prompt.txt"
+    ).write_text(
+        (
+            "{target_count}\n"
+            "{glossary}\n"
+            "{style}\n"
+            "{request_json}\n"
+        ),
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "glossary.json"
+    ).write_text(
+        (
+            '{\n'
+            '  "version": 1,\n'
+            '  "entries": [\n'
+            '    {\n'
+            '      "source": "Gate",\n'
+            '      "target": "ゲート"\n'
+            '    }\n'
+            '  ]\n'
+            '}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "style.json"
+    ).write_text(
+        (
+            '{\n'
+            '  "version": 1,\n'
+            '  "description": "Test profile",\n'
+            '  "sections": [\n'
+            '    {\n'
+            '      "name": "基本方針",\n'
+            '      "rules": [\n'
+            '        "自然な日本語にする",\n'
+            '        "簡潔にする"\n'
+            '      ]\n'
+            '    },\n'
+            '    {\n'
+            '      "name": "口調",\n'
+            '      "rules": [\n'
+            '        "人物関係を反映する"\n'
+            '      ]\n'
+            '    }\n'
+            '  ]\n'
+            '}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "noise.json"
+    ).write_text(
+        (
+            '{\n'
+            '  "version": 1,\n'
+            '  "entries": []\n'
+            '}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        config_module,
+        "CONFIG_DIR",
+        config_dir,
+    )
+
+    document = load_style_document(
+        "test-profile"
+    )
+
+    assert [
+               section.name
+               for section in document.sections
+           ] == [
+               "基本方針",
+               "口調",
+           ]
+
+    assert build_style_prompt(
+        "test-profile"
+    ) == (
+               "【基本方針】\n"
+               "\n"
+               "* 自然な日本語にする\n"
+               "* 簡潔にする\n"
+               "\n"
+               "【口調】\n"
+               "\n"
+               "* 人物関係を反映する"
+           )

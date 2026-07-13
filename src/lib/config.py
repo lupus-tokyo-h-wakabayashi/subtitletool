@@ -113,6 +113,23 @@ def validate_profile_config(
             "Convert glossary.txt to glossary.json."
         )
 
+    legacy_style_path = (
+        config.profile_dir
+        / "style.txt"
+    )
+
+    if (
+        not config.style_path.is_file()
+        and legacy_style_path.is_file()
+    ):
+        raise FileNotFoundError(
+            "Style JSON is missing: "
+            f"profile={config.resolved_profile!r}, "
+            f"expected={config.style_path}, "
+            f"legacy={legacy_style_path}. "
+            "Convert style.txt to style.json."
+        )
+
     required_paths = {
         "prompt": config.prompt_path,
         "glossary": config.glossary_path,
@@ -178,7 +195,7 @@ def resolve_profile_config(
             profile_dir / "glossary.json"
         ),
         style_path=(
-            profile_dir / "style.txt"
+            profile_dir / "style.json"
         ),
         noise_path=(
             profile_dir / "noise.json"
