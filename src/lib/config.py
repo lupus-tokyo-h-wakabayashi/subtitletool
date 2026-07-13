@@ -96,6 +96,23 @@ def validate_profile_config(
     profileディレクトリが存在するにもかかわらず、
     必須ファイルが不足している場合はエラーにする。
     """
+    legacy_glossary_path = (
+        config.profile_dir
+        / "glossary.txt"
+    )
+
+    if (
+        not config.glossary_path.is_file()
+        and legacy_glossary_path.is_file()
+    ):
+        raise FileNotFoundError(
+            "Glossary JSON is missing: "
+            f"profile={config.resolved_profile!r}, "
+            f"expected={config.glossary_path}, "
+            f"legacy={legacy_glossary_path}. "
+            "Convert glossary.txt to glossary.json."
+        )
+
     required_paths = {
         "prompt": config.prompt_path,
         "glossary": config.glossary_path,

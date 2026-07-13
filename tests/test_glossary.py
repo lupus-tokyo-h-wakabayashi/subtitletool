@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import lib.config as config_module
 import pytest
 from lib.glossary import (
     build_glossary_prompt,
@@ -505,3 +506,101 @@ def test_parse_glossary_document_rejects_non_object_entry(
             path=Path("glossary.json"),
             allow_empty=False,
         )
+
+
+def test_profile_glossary_integration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = (
+        tmp_path
+        / "config"
+    )
+
+    profile_dir = (
+        config_dir
+        / "test-profile"
+    )
+
+    profile_dir.mkdir(
+        parents=True,
+    )
+
+    (
+        config_dir
+        / "prompt.txt"
+    ).write_text(
+        (
+            "{target_count}\n"
+            "{glossary}\n"
+            "{style}\n"
+            "{request_json}\n"
+        ),
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "glossary.json"
+    ).write_text(
+        """
+{
+  "version": 1,
+  "description": "Test profile",
+  "entries": [
+    {
+      "source": "Chevron",
+      "target": "シェブロン"
+    },
+    {
+      "source": "P4X351",
+      "target": "P4X-351"
+    }
+  ]
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "style.txt"
+    ).write_text(
+        "Test style\n",
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "noise.json"
+    ).write_text(
+        """
+{
+  "version": 1,
+  "entries": []
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        config_module,
+        "CONFIG_DIR",
+        config_dir,
+    )
+
+    assert load_glossary_entries(
+        "test-profile"
+    ) == {
+               "Chevron": "シェブロン",
+               "P4X351": "P4X-351",
+           }
+
+    assert build_glossary_prompt(
+        "test-profile"
+    ) == (
+               "Chevron = シェブロン\n"
+               "P4X351 = P4X-351"
+           )
