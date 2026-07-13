@@ -2,7 +2,7 @@
 import subprocess
 from pathlib import Path
 
-from lib.ffprobe import find_best_english_pgs_subtitle
+from lib.media.ffprobe import find_best_english_pgs_subtitle
 from lib.subtitle.paths import eng_sup_path
 
 

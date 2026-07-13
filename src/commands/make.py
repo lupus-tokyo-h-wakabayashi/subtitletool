@@ -9,8 +9,8 @@ from lib.cleanup import (
     cleanup_intermediate_files,
 )
 from lib.extract import extract_english_pgs
-from lib.ffmpeg import mux_japanese_srt
-from lib.pgstosrt import ocr_sup_to_srt
+from lib.media.ffmpeg import mux_japanese_srt
+from lib.media.pgstosrt import ocr_sup_to_srt
 from lib.subtitle.paths import (
     eng_srt_path,
     eng_sup_path,

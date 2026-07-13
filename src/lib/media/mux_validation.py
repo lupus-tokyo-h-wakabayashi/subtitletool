@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from lib.ffprobe import (
+from lib.media.ffprobe import (
     probe,
     stream_disposition,
     stream_language,

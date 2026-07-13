@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-from lib.ffprobe import (
+from lib.media.ffprobe import (
     audio_streams,
     find_best_english_pgs_subtitle,
     subtitle_streams,

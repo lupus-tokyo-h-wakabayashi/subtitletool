@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-from lib.pgstosrt import ocr_sup_to_srt
+from lib.media.pgstosrt import ocr_sup_to_srt
 
 
 def main():

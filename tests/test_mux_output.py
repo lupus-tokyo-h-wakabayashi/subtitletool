@@ -1,11 +1,11 @@
 from pathlib import Path
 
-import lib.ffmpeg as ffmpeg_module
+import lib.media.ffmpeg as ffmpeg_module
 import pytest
-from lib.mux_plan import (
+from lib.media.mux_plan import (
     build_mux_plan,
 )
-from lib.mux_validation import (
+from lib.media.mux_validation import (
     MuxValidationResult,
     validate_mux_output,
     validate_mux_probe_data,
