@@ -2,11 +2,11 @@
 import subprocess
 from pathlib import Path
 
-from lib.media.ffprobe import subtitle_count
-from lib.media.mux_plan import (
+from .ffprobe import subtitle_count
+from .mux_plan import (
     build_mux_plan,
 )
-from lib.media.mux_validation import (
+from .mux_validation import (
     validate_mux_output,
 )
 
