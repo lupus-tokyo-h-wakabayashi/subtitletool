@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-from lib.extract import extract_english_pgs
+from lib.media.extract import extract_english_pgs
 from lib.media.ffprobe import find_best_english_pgs_subtitle
 from lib.subtitle.paths import eng_sup_path
 

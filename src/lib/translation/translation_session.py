@@ -16,8 +16,8 @@ from lib.subtitle.srt import (
     write_structured_srt,
 )
 from lib.subtitle.text import cleanup_ocr_text
-from lib.translation.translation_chunk import translate_chunk
-from lib.translation.translation_output import (
+from .translation_chunk import translate_chunk
+from .translation_output import (
     print_chunk_start,
     print_translation_complete,
     print_translation_progress,

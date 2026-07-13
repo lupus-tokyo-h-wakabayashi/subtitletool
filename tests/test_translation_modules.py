@@ -14,7 +14,7 @@ from lib.subtitle.text import (
     detect_simplified_chinese,
     mask_chinese_ocr_text,
 )
-from lib.translate import (
+from lib.translation.translate import (
     resolve_requested_profile,
 )
 from lib.translation.translation_chunk import (

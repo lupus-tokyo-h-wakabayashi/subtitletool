@@ -6,18 +6,19 @@ from datetime import datetime
 from pathlib import Path
 
 from lib.infrastructure.ollama import generate
-from lib.ocr_retry import (
-    build_chinese_retry_blocks,
-    build_latin_ocr_retry_blocks,
-    extract_garbled_latin_candidates,
-    mask_chinese_translation_errors,
-)
 from lib.profile.noise import (
     NoiseDictionary,
     append_noise_candidates,
     find_suspicious_latin_sequences,
 )
-from lib.retry import (
+from lib.subtitle.srt import SrtBlock
+from .ocr_retry import (
+    build_chinese_retry_blocks,
+    build_latin_ocr_retry_blocks,
+    extract_garbled_latin_candidates,
+    mask_chinese_translation_errors,
+)
+from .retry import (
     build_chinese_retry_instruction,
     build_glossary_retry_instruction,
     build_latin_ocr_retry_instruction,
@@ -28,15 +29,14 @@ from lib.retry import (
     build_untranslated_english_retry_instruction,
     has_structural_validation_error,
 )
-from lib.subtitle.srt import SrtBlock
-from lib.translation.translation_output import (
+from .translation_output import (
     print_saved_noise_candidates,
 )
-from lib.translation.translation_prompt import (
+from .translation_prompt import (
     build_ocr_noise_instruction,
     build_prompt,
 )
-from lib.translation.translation_validation import (
+from .translation_validation import (
     validate_translation_response,
 )
 

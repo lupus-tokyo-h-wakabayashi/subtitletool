@@ -4,11 +4,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from lib.extract import extract_english_pgs
 from lib.infrastructure.cleanup import (
     CleanupResult,
     cleanup_intermediate_files,
 )
+from lib.media.extract import extract_english_pgs
 from lib.media.ffmpeg import mux_japanese_srt
 from lib.media.pgstosrt import ocr_sup_to_srt
 from lib.subtitle.paths import (
@@ -17,7 +17,7 @@ from lib.subtitle.paths import (
     ja_mkv_path,
     ja_srt_path,
 )
-from lib.translate import translate_srt
+from lib.translation.translate import translate_srt
 
 
 def build_parser() -> argparse.ArgumentParser:

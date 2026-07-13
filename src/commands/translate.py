@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from lib.translate import translate_srt
+from lib.translation.translate import translate_srt
 
 
 def build_parser() -> argparse.ArgumentParser:
