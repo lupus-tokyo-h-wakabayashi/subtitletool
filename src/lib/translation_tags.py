@@ -315,6 +315,7 @@ def process_translation_tags(
     subtitle_ids: list[str],
     *,
     source_texts: list[str] | None,
+    level_5_source_texts: list[str] | None = None,
 ) -> TranslationTagProcessingResult:
     """
     翻訳文の自己評価タグを検証する。
@@ -341,6 +342,19 @@ def process_translation_tags(
             "Translation tag source length mismatch: "
             f"translated={len(translated_texts)}, "
             f"source={len(source_texts)}"
+        )
+
+    if (
+        level_5_source_texts is not None
+        and len(level_5_source_texts)
+        != len(translated_texts)
+    ):
+        raise ValueError(
+            "Translation level 5 source length "
+            "mismatch: "
+            f"translated={len(translated_texts)}, "
+            f"level_5_source="
+            f"{len(level_5_source_texts)}"
         )
 
     processed_texts: list[str] = []
@@ -404,8 +418,32 @@ def process_translation_tags(
                 index
             ]
 
+            level_5_source_text = (
+                level_5_source_texts[
+                    index
+                ]
+                if level_5_source_texts
+                   is not None
+                else source_text
+            )
+
             for tag in parse_result.tags:
-                if tag.value in source_text:
+                comparison_sources = (
+                    (
+                        source_text,
+                        level_5_source_text,
+                    )
+                    if tag.level == 5
+                    else (
+                        source_text,
+                    )
+                )
+
+                if any(
+                    tag.value in comparison_source
+                    for comparison_source
+                    in comparison_sources
+                ):
                     continue
 
                 item_errors.append(
@@ -414,7 +452,9 @@ def process_translation_tags(
                     f"subtitle_id={subtitle_id!r}, "
                     f"level={tag.level}, "
                     f"value={tag.value!r}, "
-                    f"source={source_text!r}"
+                    f"source={source_text!r}, "
+                    "comparison_sources="
+                    f"{comparison_sources!r}"
                 )
 
         if item_errors:

@@ -28,10 +28,12 @@ from lib.translation_resume import (
 )
 from lib.translation_tags import (
     parse_translation_tags,
+    process_translation_tags,
     render_translation_tags,
     strip_translation_tags,
 )
 from lib.translation_validation import (
+    normalize_source_text_with_glossary,
     validate_translation_response,
 )
 
@@ -1286,3 +1288,233 @@ def test_validation_records_failed_id_for_invalid_tag(
     assert result.failed_ids == {
         "7",
     }
+
+
+def test_normalize_source_text_with_glossary(
+) -> None:
+    source = (
+        "The core\n"
+        "of the planet P4X351\n"
+        "had become unstable,"
+    )
+
+    result = (
+        normalize_source_text_with_glossary(
+            source,
+            {
+                "P4X351": "P4X-351",
+            },
+        )
+    )
+
+    assert result == (
+        "The core\n"
+        "of the planet P4X-351\n"
+        "had become unstable,"
+    )
+
+
+def test_validation_accepts_level_5_glossary_normalized_value(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "779",
+      "translation": "惑星[5]P4X-351[/5]のコアが不安定になっていた。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "779",
+        ],
+        source_texts=[
+            (
+                "The core\n"
+                "of the planet P4X351\n"
+                "had become unstable,"
+            ),
+        ],
+        glossary_entries={
+            "P4X351": "P4X-351",
+        },
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+    assert result.translated_texts == [
+        (
+            "惑星P4X-351のコアが"
+            "不安定になっていた。"
+        ),
+    ]
+
+
+def test_validation_rejects_level_5_value_without_glossary_normalization(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "779",
+      "translation": "惑星[5]P4X-351[/5]のコアが不安定になっていた。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "779",
+        ],
+        source_texts=[
+            (
+                "The core\n"
+                "of the planet P4X351\n"
+                "had become unstable,"
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        (
+            "Translation evaluation tag value "
+            "not found in source"
+        )
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_validation_does_not_normalize_level_1_with_glossary(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "[1]P4X-351[/1]\\n識別子を確認しました。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_texts=[
+            (
+                "P4X351\n"
+                "identifier confirmed"
+            ),
+        ],
+        glossary_entries={
+            "P4X351": "P4X-351",
+        },
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert result.noise_candidates == []
+
+    assert any(
+        (
+            "Translation evaluation tag value "
+            "not found in source"
+        )
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_process_translation_tags_uses_normalized_source_only_for_level_5(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            (
+                "[5]P4X-351[/5]\n"
+                "[1]P4X-351[/1]"
+            ),
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        source_texts=[
+            (
+                "P4X351\n"
+                "another source line"
+            ),
+        ],
+        level_5_source_texts=[
+            (
+                "P4X-351\n"
+                "another source line"
+            ),
+        ],
+    )
+
+    assert len(result.errors) == 1
+
+    error = result.errors[0]
+
+    assert error.subtitle_id == "1"
+    assert "level=1" in error.message
+    assert "value='P4X-351'" in error.message
+
+
+def test_process_translation_tags_accepts_level_5_original_source_value(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            "[5]SGC[/5]からの命令です。",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        source_texts=[
+            "This is an order from SGC.",
+        ],
+        level_5_source_texts=[
+            (
+                "This is an order from "
+                "スターゲイト司令部."
+            ),
+        ],
+    )
+
+    assert result.errors == ()
+
+    assert result.translated_texts == (
+        "SGCからの命令です。",
+    )
