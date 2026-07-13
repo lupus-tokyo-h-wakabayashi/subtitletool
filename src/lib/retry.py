@@ -4,7 +4,7 @@ import json
 import re
 
 from lib.srt import SrtBlock
-from lib.translation_validation import (
+from lib.translation.translation_validation import (
     source_contains_glossary_term,
 )
 

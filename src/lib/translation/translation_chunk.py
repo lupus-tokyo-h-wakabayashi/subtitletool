@@ -29,14 +29,14 @@ from lib.retry import (
     has_structural_validation_error,
 )
 from lib.srt import SrtBlock
-from lib.translation_output import (
+from lib.translation.translation_output import (
     print_saved_noise_candidates,
 )
-from lib.translation_prompt import (
+from lib.translation.translation_prompt import (
     build_ocr_noise_instruction,
     build_prompt,
 )
-from lib.translation_validation import (
+from lib.translation.translation_validation import (
     validate_translation_response,
 )
 

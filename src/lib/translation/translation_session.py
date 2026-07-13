@@ -16,8 +16,8 @@ from lib.srt import (
     write_structured_srt,
 )
 from lib.text import cleanup_ocr_text
-from lib.translation_chunk import translate_chunk
-from lib.translation_output import (
+from lib.translation.translation_chunk import translate_chunk
+from lib.translation.translation_output import (
     print_chunk_start,
     print_translation_complete,
     print_translation_progress,

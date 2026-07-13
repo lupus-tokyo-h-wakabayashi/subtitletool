@@ -17,26 +17,26 @@ from lib.text import (
 from lib.translate import (
     resolve_requested_profile,
 )
-from lib.translation_chunk import (
+from lib.translation.translation_chunk import (
     find_noise_candidate_ids,
     normalize_translation_text,
 )
-from lib.translation_prompt import (
+from lib.translation.translation_prompt import (
     build_ocr_noise_instruction,
     build_prompt,
     build_request_item,
     build_translation_evaluation_tag_instruction,
 )
-from lib.translation_resume import (
+from lib.translation.translation_resume import (
     load_resume_blocks,
 )
-from lib.translation_tags import (
+from lib.translation.translation_tags import (
     parse_translation_tags,
     process_translation_tags,
     render_translation_tags,
     strip_translation_tags,
 )
-from lib.translation_validation import (
+from lib.translation.translation_validation import (
     normalize_source_text_with_glossary,
     validate_translation_response,
 )
@@ -517,7 +517,7 @@ def test_build_prompt_includes_translation_evaluation_tags(
 
     monkeypatch.setattr(
         (
-            "lib.translation_prompt."
+            "lib.translation.translation_prompt."
             "build_translation_prompt"
         ),
         fake_build_translation_prompt,

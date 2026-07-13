@@ -14,7 +14,7 @@ from lib.text import (
     DEFAULT_ALLOWED_LATIN_TERMS,
     detect_simplified_chinese,
 )
-from lib.translation_tags import (
+from lib.translation.translation_tags import (
     process_translation_tags,
     render_translation_tags,
 )

@@ -11,13 +11,13 @@ from lib.profile.noise import (
 from lib.srt import (
     parse_srt,
 )
-from lib.translation_output import (
+from lib.translation.translation_output import (
     print_translation_already_complete,
 )
-from lib.translation_resume import (
+from lib.translation.translation_resume import (
     load_resume_blocks,
 )
-from lib.translation_session import (
+from lib.translation.translation_session import (
     run_translation_session,
 )
 
