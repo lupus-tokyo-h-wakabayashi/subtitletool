@@ -11,8 +11,8 @@ from lib.noise import (
     find_suspicious_latin_sequences,
 )
 from lib.text import (
-    CHINESE_SPECIFIC_PATTERN,
     DEFAULT_ALLOWED_LATIN_TERMS,
+    detect_simplified_chinese,
 )
 from lib.translation_tags import (
     process_translation_tags,
@@ -708,31 +708,36 @@ def find_chinese_specific_characters(
     subtitle_ids: list[str],
 ) -> list[str]:
     """
-    日本語字幕へ混入した簡体字・中国語固有文字を、
-    字幕IDと本文を含めて検出する。
+    OpenCCのs2tとjp2tの変換差分を使い、
+    日本語字幕へ混入した簡体字候補を検出する。
+
+    エラー接頭辞は既存Retry・Fallbackとの
+    後方互換性のため変更しない。
     """
     violations: list[str] = []
 
-    for subtitle_id, translated_text in zip(
+    for (
+            subtitle_id,
+            translated_text,
+    ) in zip(
         subtitle_ids,
         translated_texts,
         strict=True,
     ):
-        matched_characters = sorted(
-            set(
-                CHINESE_SPECIFIC_PATTERN.findall(
-                    translated_text
-                )
+        detection = (
+            detect_simplified_chinese(
+                translated_text
             )
         )
 
-        if not matched_characters:
+        if not detection.detected:
             continue
 
         violations.append(
             "Chinese-specific characters detected: "
             f"subtitle_id={subtitle_id!r}, "
-            f"characters={''.join(matched_characters)!r}, "
+            "characters="
+            f"{''.join(detection.characters)!r}, "
             f"text={translated_text!r}"
         )
 

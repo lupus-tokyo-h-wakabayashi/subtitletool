@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 import re
+from dataclasses import dataclass
+from functools import lru_cache
+
+from opencc import OpenCC
 
 # PGS字幕に含まれる話者ラベル。
 # SCOTT:, MAN 1:, WOMAN 2:, DR. RUSH: などを対象にする。
@@ -15,11 +19,9 @@ SPEAKER_LABEL_PATTERN = re.compile(
     """,
     re.VERBOSE,
 )
-
 LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
-
-CHINESE_SPECIFIC_PATTERN = re.compile(
-    r"[这些们为发经进过还让从个里边开关车话说时对与于后会动语]+"
+HAN_SEQUENCE_PATTERN = re.compile(
+    r"[\u3400-\u4DBF\u4E00-\u9FFF]+"
 )
 DEFAULT_ALLOWED_LATIN_TERMS = {
     "AI",
@@ -44,6 +46,113 @@ DEFAULT_ALLOWED_LATIN_TERMS = {
 SUSPICIOUS_MIXED_CASE_TOKEN_PATTERN = re.compile(
     r"\b[A-Za-z]{8,}\b"
 )
+
+_SIMPLIFIED_TO_TRADITIONAL = OpenCC(
+    "s2t"
+)
+
+_JAPANESE_TO_TRADITIONAL = OpenCC(
+    "jp2t"
+)
+
+
+@dataclass(frozen=True)
+class SimplifiedChineseDetection:
+    """
+    OpenCCのs2tとjp2tの変換差分から取得した
+    簡体字候補。
+    """
+
+    source_text: str
+    simplified_to_traditional: str
+    japanese_to_traditional: str
+    characters: tuple[str, ...]
+
+    @property
+    def detected(self) -> bool:
+        return bool(
+            self.characters
+        )
+
+
+@lru_cache(
+    maxsize=4096
+)
+def detect_simplified_chinese(
+    text: str,
+) -> SimplifiedChineseDetection:
+    """
+    各文字をOpenCCのs2tとjp2tで個別変換し、
+    簡体字専用と判断できる元文字を返す。
+
+    判定条件:
+        s2t変換では変化する
+        jp2t変換では変化しない
+
+    文全体の変換結果は診断情報として保持するが、
+    文字位置の比較には使用しない。
+    """
+    simplified_to_traditional = (
+        _SIMPLIFIED_TO_TRADITIONAL.convert(
+            text
+        )
+    )
+
+    japanese_to_traditional = (
+        _JAPANESE_TO_TRADITIONAL.convert(
+            text
+        )
+    )
+
+    detected_characters: list[str] = []
+
+    for source_character in text:
+        simplified_character = (
+            _SIMPLIFIED_TO_TRADITIONAL.convert(
+                source_character
+            )
+        )
+
+        japanese_character = (
+            _JAPANESE_TO_TRADITIONAL.convert(
+                source_character
+            )
+        )
+
+        if (
+            simplified_character
+            == source_character
+        ):
+            continue
+
+        if (
+            japanese_character
+            != source_character
+        ):
+            continue
+
+        if (
+            source_character
+            in detected_characters
+        ):
+            continue
+
+        detected_characters.append(
+            source_character
+        )
+
+    return SimplifiedChineseDetection(
+        source_text=text,
+        simplified_to_traditional=(
+            simplified_to_traditional
+        ),
+        japanese_to_traditional=(
+            japanese_to_traditional
+        ),
+        characters=tuple(
+            detected_characters
+        ),
+    )
 
 
 def is_suspicious_mixed_case_token(
@@ -91,11 +200,40 @@ def mask_chinese_ocr_text(
     text: str,
 ) -> str:
     """
-    OCR由来と考えられる中国語固有文字列を
-    判読不能マーカーへ置換する。
+    簡体字候補を含む連続した漢字列を、
+    OCR判読不能マーカーへ置換する。
+
+    例:
+        兵曹、这些人を落ち着かせてくれ。
+        ↓
+        兵曹、（OCR判読不能）を落ち着かせてくれ。
     """
-    return CHINESE_SPECIFIC_PATTERN.sub(
-        "（OCR判読不能）",
+    detection = detect_simplified_chinese(
+        text
+    )
+
+    if not detection.detected:
+        return text
+
+    target_characters = set(
+        detection.characters
+    )
+
+    def replace_sequence(
+        match: re.Match[str],
+    ) -> str:
+        sequence = match.group(0)
+
+        if any(
+            character in target_characters
+            for character in sequence
+        ):
+            return "（OCR判読不能）"
+
+        return sequence
+
+    return HAN_SEQUENCE_PATTERN.sub(
+        replace_sequence,
         text,
     )
 

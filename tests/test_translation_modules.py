@@ -10,6 +10,10 @@ from lib.noise import (
     normalize_noise_candidate,
 )
 from lib.srt import SrtBlock
+from lib.text import (
+    detect_simplified_chinese,
+    mask_chinese_ocr_text,
+)
 from lib.translate import (
     resolve_requested_profile,
 )
@@ -1517,4 +1521,198 @@ def test_process_translation_tags_accepts_level_5_original_source_value(
 
     assert result.translated_texts == (
         "SGCからの命令です。",
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "最後の機会だと思いました。",
+        "ラッシュ博士に会いたいです。",
+        "国際評議会代表として。",
+        "私にチャンスを与えてください。",
+        "この件に関与させます。",
+        "（判読不能）",
+        "第九のシェブロンアドレスへの接続",
+        "接続を継続します。",
+    ],
+)
+def test_detect_simplified_chinese_accepts_japanese_text(
+    text: str,
+) -> None:
+    result = detect_simplified_chinese(
+        text
+    )
+
+    assert not result.detected
+    assert result.characters == ()
+
+
+@pytest.mark.parametrize(
+    (
+            "source_character",
+            "expected_detected",
+    ),
+    [
+        (
+                "这",
+                True,
+        ),
+        (
+                "们",
+                True,
+        ),
+        (
+                "会",
+                False,
+        ),
+        (
+                "与",
+                False,
+        ),
+        (
+                "関",
+                False,
+        ),
+        (
+                "読",
+                False,
+        ),
+        (
+                "続",
+                False,
+        ),
+    ],
+)
+def test_detect_simplified_chinese_character_boundary(
+    source_character: str,
+    expected_detected: bool,
+) -> None:
+    result = detect_simplified_chinese(
+        source_character
+    )
+
+    assert (
+        result.detected
+        is expected_detected
+    )
+
+
+def test_detect_simplified_chinese_finds_mixed_text(
+) -> None:
+    result = detect_simplified_chinese(
+        "兵曹、这些人を落ち着かせてくれ。"
+    )
+
+    assert result.detected
+    assert "这" in result.characters
+
+
+def test_detect_simplified_chinese_finds_chinese_text(
+) -> None:
+    result = detect_simplified_chinese(
+        "我们已经准备好了。"
+    )
+
+    assert result.detected
+    assert "们" in result.characters
+
+
+def test_validation_accepts_japanese_opencc_variants(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "最後の機会だと思いました。"
+    },
+    {
+      "id": "2",
+      "translation": "私にチャンスを与えてください。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+            "2",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+
+def test_mask_chinese_ocr_text_keeps_japanese(
+) -> None:
+    source = (
+        "最後の機会です。"
+        "接続を継続します。"
+    )
+
+    result = mask_chinese_ocr_text(
+        source
+    )
+
+    assert result == source
+
+
+def test_mask_chinese_ocr_text_masks_simplified_characters(
+) -> None:
+    result = mask_chinese_ocr_text(
+        "兵曹、这些人を落ち着かせてくれ。"
+    )
+
+    assert result == (
+        "兵曹、（OCR判読不能）"
+        "を落ち着かせてくれ。"
+    )
+
+
+def test_validation_rejects_simplified_chinese_with_opencc(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1",
+      "translation": "兵曹、这些人を落ち着かせてくれ。"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert not result.valid
+
+    assert any(
+        (
+            "Chinese-specific characters detected:"
+            in reason
+        )
+        for reason in result.reasons
     )
