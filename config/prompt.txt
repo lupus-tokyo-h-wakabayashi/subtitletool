@@ -19,105 +19,138 @@
 * 強さ、丁寧さ、感情を勝手に変えない
 
 
-【JSON出力仕様】
+【JSON編集タスク】
 
-出力はJSONオブジェクト1個だけとする。
+これは新しいJSONを生成するタスクではない。
+入力JSON内のtargetsを編集するタスクである。
+
+targets配下の各字幕オブジェクトについて、
+source.textを日本語へ翻訳し、
+同じ位置のtranslationへ翻訳結果を設定すること。
+
+書き込み可能なのは、
+targets配下の各字幕オブジェクトにあるtranslationだけである。
+
+次の項目はすべて読み取り専用である。
+
+* targets配下の字幕ID
+* targets配下のsource
+* targets配下のsource.speaker
+* targets配下のsource.text
+* context_before
+* context_after
+* すべてのキー名
+* すべてのオブジェクト構造
+* すべての並び順
+
+読み取り専用の項目は、
+値の変更、追加、削除、移動、並べ替えをしてはならない。
+
+各targets.<字幕ID>.source.textを日本語へ翻訳し、
+同じtargets.<字幕ID>.translationへ設定すること。
+
+
+【返却形式】
+
+返却するJSONはJSONオブジェクト1個だけとする。
 JSONの前後に説明、注釈、Markdownコードブロックを付けない。
 
-出力形式:
+返却するJSONの最上位キーはtargetsだけにする。
 
-{{
-  "translations": [
-    {{
-      "id": "入力targetのid",
-      "translation": "日本語字幕"
-    }}
-  ]
-}}
+context_beforeとcontext_afterは返却しない。
 
-変換規則:
+targets配下の字幕ID、source、キー名、構造、並び順は、
+入力時のtargetsと完全に一致させる。
 
-* 入力targetの text を日本語へ翻訳し、出力の translation に格納する
-* 入力targetの id を、対応する出力要素の id にそのまま使用する
-* translations は必ず {target_count} 件にする
-* 各要素のキーは id と translation の2つだけにする
-* 入力専用キーの text と speaker を出力JSONへ含めない
-* translation の代わりに text を使用しない
-* idを追加、削除、変更、重複、並べ替えしない
-* translationを空文字にしない
-* context_before と context_after は参考文脈としてのみ使用し、出力しない
-* タイムコードを出力しない
+変更してよいのは、
+各targets.<字幕ID>.translationの値だけである。
+
+translationは空文字のまま返してはならない。
+
+新しいキーを追加してはならない。
+既存のキーを削除してはならない。
+字幕IDを追加、削除、変更、並べ替えしてはならない。
+targets以外の最上位キーを追加してはならない。
+タイムコードを出力してはならない。
 
 正しい例:
 
 {{
-  "translations": [
-    {{
-      "id": "148",
+  "targets": {{
+    "148": {{
+      "source": {{
+        "speaker": null,
+        "text": "This is a pen."
+      }},
       "translation": "これはペンだ。"
     }}
-  ]
+  }}
 }}
 
 禁止例:
 
 {{
-  "translations": [
-    {{
-      "id": "148",
-      "speaker": "Michael",
-      "text": "これはペンだ。"
+  "targets": {{
+    "148": {{
+      "source": {{
+        "speaker": null,
+        "text": "これはペンだ。"
+      }},
+      "translation": ""
     }}
-  ]
+  }}
 }}
 
 
 【IDと内容の対応】
 
-入力targetと出力translationsは必ず1対1で対応させる。
+入力targetsと返却targetsは必ず1対1で対応させる。
 
-* target1件につきtranslation要素を1件だけ出力する
-* 1つのtargetを複数のtranslation要素へ分割しない
-* 複数のtargetを1つのtranslation要素へ結合しない
-* 別のidへ内容を移動しない
-* 別のidやcontextの内容を現在のidへ持ち込まない
-* targetの順序を維持する
+* targets配下の字幕IDを変更しない
+* targets配下の字幕IDを追加しない
+* targets配下の字幕IDを削除しない
+* targets配下の字幕IDを並べ替えない
+* 各translationは、同じ字幕IDのsource.textだけを翻訳する
+* 1つのsource.textを複数のtranslationへ分割しない
+* 複数のsource.textを1つのtranslationへ結合しない
+* 別の字幕IDへ内容を移動しない
+* 別の字幕IDやcontextの内容を現在の字幕IDへ持ち込まない
 * 効果音は効果音として対応させる
 * 会話は会話として対応させる
 * 原文内の「 / 」は同一字幕内の改行位置として扱う
-* 「 / 」の前後を別のidへ分割しない
+* 「 / 」の前後を別の字幕IDへ分割しない
 
 
-【targetとcontextの境界】
+【targetsとcontextの境界】
 
-翻訳対象はtargetだけである。
+翻訳対象はtargetsだけである。
 
 context_beforeとcontext_afterは、
 会話の意味、人物関係、口調、場面を判断するための
-参考文脈としてのみ使用する。
+読み取り専用の参考文脈である。
 
-* translationsへ出力するのはtargetの項目だけとする
-* context_beforeとcontext_afterの内容を翻訳して出力しない
-* 各translationは、同じidのtarget.textだけを翻訳する
-* 別のtargetにある文章を移動、結合、補完しない
-* contextの文章をtargetのtranslationへ移動しない
-* contextにだけ存在する単語、数字、固有名詞、OCR文字列を追加しない
+* context_beforeとcontext_afterを返却してはならない
+* contextの文章をtargetsのtranslationへ移動してはならない
+* contextにだけ存在する単語、数字、固有名詞、OCR文字列を追加してはならない
 * 前後文脈から意味を判断して自然な訳にすることは許可する
 * 前後文脈の文そのものをコピーすることは禁止する
-* target.textに存在しないセリフや情報をtranslationへ追加しない
-* 評価タグを使用する場合も、
-* タグ内部の文字列は同じidのtarget.textからのみコピーする。
-* 別のtarget、context_before、context_afterにある文字列を
-* 評価タグへ使用してはいけない。
+* source.textに存在しないセリフや情報をtranslationへ追加してはならない
+
+評価タグを使用する場合も、
+タグ内部の文字列は同じ字幕IDのsource.textからのみコピーする。
+
+別のtargets、context_before、context_afterにある文字列を
+評価タグへ使用してはならない。
+
 
 【speakerの扱い】
 
-speakerは入力専用の翻訳補助情報である。
+source.speakerは読み取り専用の翻訳補助情報である。
 
 * 登場人物の口調を判断するためだけに参照する
-* speakerを出力JSONへ含めない
-* speakerの値をtranslation本文へ追加しない
-* speakerがnullの場合は話者を推測しない
+* source.speakerの値を変更してはならない
+* source.speakerをtranslation本文へ追加してはならない
+* source.speakerがnullの場合は話者を推測してはならない
 
 
 【日本語字幕の作り方】
@@ -259,18 +292,22 @@ Ancient → エンシェント
 確認結果は出力しない。
 
 * JSONとして正しいか
-* 最上位キーがtranslationsだけか
-* translationsが{target_count}件あるか
-* 各要素のキーがidとtranslationだけか
-* textやspeakerを出力していないか
-* idが入力targetと完全一致しているか
-* idの順序、件数、重複、欠落に問題がないか
-* 複数字幕を結合または分割していないか
+* 最上位キーがtargetsだけか
+* targetsが{target_count}件あるか
+* 字幕IDが入力targetsと完全一致しているか
+* 字幕IDの順序、件数、重複、欠落に問題がないか
+* 各字幕オブジェクトのキーがsourceとtranslationだけか
+* sourceのキーがspeakerとtextだけか
+* source.speakerが入力から変更されていないか
+* source.textが入力から変更されていないか
+* translationだけを変更したか
+* translationが空文字ではないか
+* context_beforeとcontext_afterを返却していないか
+* 各translationが同じ字幕IDのsource.textだけに対応しているか
+* contextの文章をtranslationへ混入させていないか
+* 評価タグの値が同じ字幕IDのsource.textから取得されているか
 * 用語集の指定訳を使用しているか
 * translationが自然で簡潔な日本語字幕か
-* 各translationが同じidのtarget.textだけに対応しているか
-* contextの文章をtranslationへ混入させていないか
-* 評価タグの値が同じidのtarget.textから取得されているか
 
 
 【入力JSON】
@@ -288,7 +325,15 @@ Markdownを出力しないでください。
 補足説明を出力しないでください。
 思考過程を出力しないでください。
 
-最上位キーはtranslationsだけにしてください。
-translations以外の最上位キーを追加しないでください。
+最上位キーはtargetsだけにしてください。
+targets以外の最上位キーを追加しないでください。
+
+入力targetsの構造を維持してください。
+
+書き込み可能なのは、
+targets配下の各字幕オブジェクトにあるtranslationだけです。
+
+その他のtargets内要素と、
+context_before、context_afterは読み取り専用です。
 
 JSON以外は一切出力しないでください。

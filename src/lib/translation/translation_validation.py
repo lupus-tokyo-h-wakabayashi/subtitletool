@@ -61,8 +61,8 @@ UNREADABLE_MARKERS = (
 MAX_ENGLISH_WORDS_WITH_UNREADABLE_MARKER = 3
 
 DEFAULT_REPEAT_THRESHOLD = 5
-DEFAULT_MAX_LINES_PER_SUBTITLE = 6
-DEFAULT_MAX_CHARS_PER_SUBTITLE = 200
+DEFAULT_MAX_LINES_PER_SUBTITLE = 8
+DEFAULT_MAX_CHARS_PER_SUBTITLE = 400
 
 DEFAULT_INCOMPLETE_THRESHOLD = 3
 
@@ -106,6 +106,8 @@ SOUND_EFFECT_PATTERN = re.compile(
 @dataclass
 class TranslationResponseItem:
     id: str
+    source_speaker: str | None
+    source_text: str
     translation: str
 
 
@@ -181,12 +183,15 @@ def parse_translation_json(
 
     期待形式:
         {
-          "translations": [
-            {
-              "id": "1",
+          "targets": {
+            "1": {
+              "source": {
+                "speaker": null,
+                "text": "Original text."
+              },
               "translation": "日本語字幕"
             }
-          ]
+          }
         }
     """
     errors: list[str] = []
@@ -216,7 +221,7 @@ def parse_translation_json(
     )
 
     expected_root_keys = {
-        "translations",
+        "targets",
     }
 
     if actual_root_keys != expected_root_keys:
@@ -226,32 +231,54 @@ def parse_translation_json(
             f"actual={sorted(actual_root_keys)}"
         )
 
-    translations = payload.get(
-        "translations"
+    targets = payload.get(
+        "targets"
     )
 
-    if not isinstance(translations, list):
+    if not isinstance(targets, dict):
         errors.append(
-            "Invalid translations: expected array"
+            "Invalid targets: expected object"
         )
 
         return [], errors
 
-    for position, item in enumerate(
-        translations,
+    for position, (
+            item_id,
+            item,
+    ) in enumerate(
+        targets.items(),
         start=1,
     ):
+        if not isinstance(item_id, str):
+            errors.append(
+                "Invalid target id: "
+                f"position={position}, "
+                "expected=string"
+            )
+
+            continue
+
+        normalized_id = item_id.strip()
+
+        if not normalized_id:
+            errors.append(
+                "Empty target id: "
+                f"position={position}"
+            )
+
+            continue
+
         if not isinstance(item, dict):
             errors.append(
-                "Invalid translation item: "
-                f"position={position}, "
+                "Invalid target item: "
+                f"id={normalized_id!r}, "
                 "expected=object"
             )
 
             continue
 
         required_item_keys = {
-            "id",
+            "source",
             "translation",
         }
 
@@ -261,50 +288,97 @@ def parse_translation_json(
 
         if actual_item_keys != required_item_keys:
             errors.append(
-                "Invalid translation item keys: "
-                f"position={position}, "
+                "Invalid target item keys: "
+                f"id={normalized_id!r}, "
                 f"expected={sorted(required_item_keys)}, "
                 f"actual={sorted(actual_item_keys)}"
             )
 
             continue
 
-        item_id = item.get("id")
+        source = item.get(
+            "source"
+        )
+
+        if not isinstance(source, dict):
+            errors.append(
+                "Invalid target source: "
+                f"id={normalized_id!r}, "
+                "expected=object"
+            )
+
+            continue
+
+        required_source_keys = {
+            "speaker",
+            "text",
+        }
+
+        actual_source_keys = set(
+            source.keys()
+        )
+
+        if actual_source_keys != required_source_keys:
+            errors.append(
+                "Invalid target source keys: "
+                f"id={normalized_id!r}, "
+                f"expected={sorted(required_source_keys)}, "
+                f"actual={sorted(actual_source_keys)}"
+            )
+
+            continue
+
+        source_speaker = source.get(
+            "speaker"
+        )
+
+        if (
+            source_speaker is not None
+            and not isinstance(
+            source_speaker,
+            str,
+        )
+        ):
+            errors.append(
+                "Invalid target source speaker: "
+                f"id={normalized_id!r}, "
+                "expected=string or null"
+            )
+
+            continue
+
+        source_text = source.get(
+            "text"
+        )
+
+        if not isinstance(
+            source_text,
+            str,
+        ):
+            errors.append(
+                "Invalid target source text: "
+                f"id={normalized_id!r}, "
+                "expected=string"
+            )
+
+            continue
+
+        if not source_text.strip():
+            errors.append(
+                "Empty target source text: "
+                f"id={normalized_id!r}"
+            )
+
+            continue
+
         translation = item.get(
             "translation"
         )
 
-        if isinstance(item_id, bool):
-            errors.append(
-                "Invalid translation id: "
-                f"position={position}, "
-                "expected=string or integer"
-            )
-
-            continue
-
-        if isinstance(item_id, int):
-            normalized_id = str(item_id)
-        elif isinstance(item_id, str):
-            normalized_id = item_id.strip()
-        else:
-            errors.append(
-                "Invalid translation id: "
-                f"position={position}, "
-                "expected=string or integer"
-            )
-
-            continue
-
-        if not normalized_id:
-            errors.append(
-                "Empty translation id: "
-                f"position={position}"
-            )
-
-            continue
-
-        if not isinstance(translation, str):
+        if not isinstance(
+            translation,
+            str,
+        ):
             errors.append(
                 "Invalid translation text: "
                 f"id={normalized_id!r}, "
@@ -328,6 +402,8 @@ def parse_translation_json(
         items.append(
             TranslationResponseItem(
                 id=normalized_id,
+                source_speaker=source_speaker,
+                source_text=source_text,
                 translation=normalized_translation,
             )
         )
@@ -400,6 +476,62 @@ def validate_translation_ids(
             f"expected={expected_ids}, "
             f"actual={actual_ids}"
         )
+
+    return errors
+
+
+def validate_response_sources(
+    items: list[TranslationResponseItem],
+    expected_speakers: list[str | None],
+    expected_texts: list[str],
+) -> list[str]:
+    """
+    読み取り専用のsourceが変更されていないことを確認する。
+    """
+    errors: list[str] = []
+
+    if len(items) != len(expected_speakers):
+        errors.append(
+            "Source speaker count mismatch: "
+            f"expected={len(expected_speakers)}, "
+            f"actual={len(items)}"
+        )
+
+    if len(items) != len(expected_texts):
+        errors.append(
+            "Source text count mismatch: "
+            f"expected={len(expected_texts)}, "
+            f"actual={len(items)}"
+        )
+
+    if errors:
+        return errors
+
+    for (
+            item,
+            expected_speaker,
+            expected_text,
+    ) in zip(
+        items,
+        expected_speakers,
+        expected_texts,
+        strict=True,
+    ):
+        if item.source_speaker != expected_speaker:
+            errors.append(
+                "Source speaker changed: "
+                f"subtitle_id={item.id!r}, "
+                f"expected={expected_speaker!r}, "
+                f"actual={item.source_speaker!r}"
+            )
+
+        if item.source_text != expected_text:
+            errors.append(
+                "Source text changed: "
+                f"subtitle_id={item.id!r}, "
+                f"expected={expected_text!r}, "
+                f"actual={item.source_text!r}"
+            )
 
     return errors
 
@@ -897,6 +1029,7 @@ def validate_translation_response(
     *,
     expected_ids: list[str],
     noise_dictionary: NoiseDictionary,
+    source_speakers: list[str | None] | None = None,
     source_texts: list[str] | None = None,
     glossary_entries: Mapping[str, str] | None = None,
     repeat_threshold: int = DEFAULT_REPEAT_THRESHOLD,
@@ -907,12 +1040,15 @@ def validate_translation_response(
 
     期待形式:
         {
-          "translations": [
-            {
-              "id": "入力targetのid",
+          "targets": {
+            "1": {
+              "source": {
+                "speaker": null,
+                "text": "Original text."
+              },
               "translation": "日本語字幕"
             }
-          ]
+          }
         }
 
     正常な場合:
@@ -955,19 +1091,46 @@ def validate_translation_response(
     # 後続の検証へ進まない。
     if parse_errors:
         return result
-
     id_errors = validate_translation_ids(
         items,
         expected_ids,
     )
 
     for error in id_errors:
-        result.add_error(error)
+        result.add_error(
+            error,
+            requires_full_retry=True,
+        )
 
     # IDの欠落・重複・追加・並び替えがある場合、
     # 原文と訳文の対応関係を保証できない。
     if id_errors:
         return result
+
+    if (
+        source_speakers is not None
+        and source_texts is not None
+    ):
+        source_errors = (
+            validate_response_sources(
+                items,
+                expected_speakers=(
+                    source_speakers
+                ),
+                expected_texts=(
+                    source_texts
+                ),
+            )
+        )
+
+        for error in source_errors:
+            result.add_error(
+                error,
+                requires_full_retry=True,
+            )
+
+        if source_errors:
+            return result
 
     translated_texts = [
         item.translation

@@ -286,16 +286,22 @@ def test_validation_accepts_japanese_opencc_variants(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "Last chance, I thought."
+      },
       "translation": "最後の機会だと思いました。"
     },
-    {
-      "id": "2",
+    "2": {
+      "source": {
+        "speaker": null,
+        "text": "Please give me a chance."
+      },
       "translation": "私にチャンスを与えてください。"
     }
-  ]
+  }
 }
 """
 
@@ -304,6 +310,14 @@ def test_validation_accepts_japanese_opencc_variants(
         expected_ids=[
             "1",
             "2",
+        ],
+        source_speakers=[
+            None,
+            None,
+        ],
+        source_texts=[
+            "Last chance, I thought.",
+            "Please give me a chance.",
         ],
         noise_dictionary=noise_dictionary,
     )
@@ -348,12 +362,15 @@ def test_validation_rejects_simplified_chinese_with_opencc(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "Petty Officer, calm these people down."
+      },
       "translation": "兵曹、这些人を落ち着かせてくれ。"
     }
-  ]
+  }
 }
 """
 
@@ -361,6 +378,12 @@ def test_validation_rejects_simplified_chinese_with_opencc(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
+        ],
+        source_texts=[
+            "Petty Officer, calm these people down.",
         ],
         noise_dictionary=noise_dictionary,
     )

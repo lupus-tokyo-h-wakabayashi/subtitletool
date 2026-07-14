@@ -13,21 +13,19 @@ from lib.subtitle.srt import (
 
 def build_request_item(
     block: SrtBlock,
-) -> dict[str, str | None]:
-    """
-    SRTブロックをLLMリクエスト用JSON要素へ変換する。
-
-    話者が明示されている場合だけspeakerへ設定し、
-    本文から話者表記を除去する。
-    """
-    parsed = parse_speaker_from_text(
-        block.text
+) -> dict[str, object]:
+    parsed = (
+        parse_speaker_from_text(
+            block.text
+        )
     )
 
     return {
-        "id": block.number,
-        "speaker": parsed.speaker,
-        "text": parsed.text,
+        "source": {
+            "speaker": parsed.speaker,
+            "text": parsed.text,
+        },
+        "translation": "",
     }
 
 
@@ -57,16 +55,21 @@ def build_translation_request_json(
 ) -> str:
     """
     前後文脈と翻訳対象をJSON文字列へ変換する。
+
+    targetsは字幕IDをキーとしたオブジェクトとし、
+    各項目のtranslationだけをLLMの書き込み対象とする。
     """
     payload = {
         "context_before": [
             build_context_item(block)
             for block in before_context
         ],
-        "target": [
-            build_request_item(block)
+        "targets": {
+            block.number: build_request_item(
+                block
+            )
             for block in target_blocks
-        ],
+        },
         "context_after": [
             build_context_item(block)
             for block in after_context

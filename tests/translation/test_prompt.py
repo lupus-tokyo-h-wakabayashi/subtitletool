@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from lib.profile.prompt import (
     build_translation_prompt as build_profile_translation_prompt,
@@ -8,6 +10,7 @@ from lib.translation.translation_prompt import (
     build_prompt,
     build_request_item,
     build_translation_evaluation_tag_instruction,
+    build_translation_request_json,
 )
 
 
@@ -29,10 +32,105 @@ def test_build_request_item_parses_speaker() -> None:
     )
 
     assert result == {
-        "id": "1",
-        "speaker": "DANIEL",
-        "text": "This is the Stargate.",
+        "source": {
+            "speaker": "DANIEL",
+            "text": "This is the Stargate.",
+        },
+        "translation": "",
     }
+
+
+def test_build_translation_request_json_uses_id_keyed_targets(
+) -> None:
+    before_context = [
+        SrtBlock(
+            number="10",
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:03,000"
+            ),
+            text="Before context.",
+        ),
+    ]
+
+    target_blocks = [
+        SrtBlock(
+            number="11",
+            timestamp=(
+                "00:00:04,000 --> "
+                "00:00:06,000"
+            ),
+            text=(
+                "DANIEL: "
+                "This is the Stargate."
+            ),
+        ),
+        SrtBlock(
+            number="12",
+            timestamp=(
+                "00:00:07,000 --> "
+                "00:00:09,000"
+            ),
+            text="That's a pity.",
+        ),
+    ]
+
+    after_context = [
+        SrtBlock(
+            number="13",
+            timestamp=(
+                "00:00:10,000 --> "
+                "00:00:12,000"
+            ),
+            text="After context.",
+        ),
+    ]
+
+    request_json = (
+        build_translation_request_json(
+            before_context,
+            target_blocks,
+            after_context,
+        )
+    )
+
+    payload = json.loads(
+        request_json
+    )
+
+    assert payload == {
+        "context_before": [
+            {
+                "speaker": None,
+                "text": "Before context.",
+            },
+        ],
+        "targets": {
+            "11": {
+                "source": {
+                    "speaker": "DANIEL",
+                    "text": "This is the Stargate.",
+                },
+                "translation": "",
+            },
+            "12": {
+                "source": {
+                    "speaker": None,
+                    "text": "That's a pity.",
+                },
+                "translation": "",
+            },
+        },
+        "context_after": [
+            {
+                "speaker": None,
+                "text": "After context.",
+            },
+        ],
+    }
+
+    assert "target" not in payload
+    assert "translations" not in payload
 
 
 def test_build_ocr_noise_instruction() -> None:
@@ -112,9 +210,29 @@ def test_build_prompt_includes_translation_evaluation_tags(
         request_json: str,
         profile_name: str,
     ) -> str:
+        payload = json.loads(
+            request_json
+        )
+
         assert target_count == 1
-        assert '"id": "1"' in request_json
         assert profile_name == "stargate"
+
+        assert payload == {
+            "context_before": [],
+            "targets": {
+                "1": {
+                    "source": {
+                        "speaker": None,
+                        "text": (
+                            "The planet P4X-351 "
+                            "is unstable."
+                        ),
+                    },
+                    "translation": "",
+                },
+            },
+            "context_after": [],
+        }
 
         return "BASE PROMPT"
 
@@ -175,7 +293,7 @@ def test_build_prompt_includes_translation_evaluation_tags(
     )
 
 
-def test_build_profile_translation_prompt_includes_target_context_isolation(
+def test_build_profile_translation_prompt_includes_editable_targets_schema(
 ) -> None:
     request_json = """
 {
@@ -185,13 +303,15 @@ def test_build_profile_translation_prompt_includes_target_context_isolation(
       "text": "Context before text."
     }
   ],
-  "target": [
-    {
-      "id": "1",
-      "speaker": null,
-      "text": "Target text."
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "Target text."
+      },
+      "translation": ""
     }
-  ],
+  },
   "context_after": [
     {
       "speaker": null,
@@ -208,27 +328,32 @@ def test_build_profile_translation_prompt_includes_target_context_isolation(
     )
 
     assert (
-        "【targetとcontextの境界】"
+        "【JSON編集タスク】"
         in prompt
     )
 
     assert (
-        "翻訳対象はtargetだけである。"
+        "入力JSON内のtargetsを編集するタスク"
         in prompt
     )
 
     assert (
-        "各translationは、同じidのtarget.textだけを翻訳する"
+        "targets配下の各字幕オブジェクトにあるtranslationだけ"
         in prompt
     )
 
     assert (
-        "別のtarget、context_before、context_afterにある文字列を"
+        "その他のtargets内要素と、"
         in prompt
     )
 
     assert (
-        "評価タグへ使用してはいけない。"
+        "context_before、context_afterは読み取り専用"
+        in prompt
+    )
+
+    assert (
+        "最上位キーはtargetsだけ"
         in prompt
     )
 

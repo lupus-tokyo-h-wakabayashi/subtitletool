@@ -11,7 +11,10 @@ from lib.profile.noise import (
     append_noise_candidates,
     find_suspicious_latin_sequences,
 )
-from lib.subtitle.srt import SrtBlock
+from lib.subtitle.srt import (
+    SrtBlock,
+    parse_speaker_from_text,
+)
 from .ocr_retry import (
     build_chinese_retry_blocks,
     build_latin_ocr_retry_blocks,
@@ -89,6 +92,40 @@ def normalize_translation_texts(
         normalize_translation_text(text)
         for text in translated_texts
     ]
+
+
+def build_expected_source_metadata(
+    blocks: list[SrtBlock],
+) -> tuple[
+    list[str | None],
+    list[str],
+]:
+    """
+    Validationで使用する読み取り専用source情報を生成する。
+
+    Prompt生成時と同じspeaker解析を使用し、
+    source.speakerとsource.textの期待値を返す。
+    """
+    source_speakers: list[str | None] = []
+    source_texts: list[str] = []
+
+    for block in blocks:
+        parsed = parse_speaker_from_text(
+            block.text
+        )
+
+        source_speakers.append(
+            parsed.speaker
+        )
+
+        source_texts.append(
+            parsed.text
+        )
+
+    return (
+        source_speakers,
+        source_texts,
+    )
 
 
 def extract_noise_candidates_from_blocks(
@@ -189,6 +226,13 @@ def translate_chunk(
 ) -> list[str]:
     last_errors: list[str] = []
     last_translated_texts: list[str] = []
+
+    (
+        expected_source_speakers,
+        expected_source_texts,
+    ) = build_expected_source_metadata(
+        target_blocks
+    )
 
     input_noise_candidates = (
         extract_noise_candidates_from_blocks(
@@ -319,11 +363,13 @@ def translate_chunk(
                 block.number
                 for block in target_blocks
             ],
+            source_speakers=(
+                expected_source_speakers
+            ),
+            source_texts=(
+                expected_source_texts
+            ),
             noise_dictionary=noise_dictionary,
-            source_texts=[
-                block.text
-                for block in target_blocks
-            ],
             glossary_entries=glossary_entries,
         )
 
@@ -430,17 +476,27 @@ def translate_chunk(
 
         corrected_response = json.dumps(
             {
-                "translations": [
-                    {
-                        "id": block.number,
+                "targets": {
+                    block.number: {
+                        "source": {
+                            "speaker": source_speaker,
+                            "text": source_text,
+                        },
                         "translation": translation,
                     }
-                    for block, translation in zip(
+                    for (
+                        block,
+                        source_speaker,
+                        source_text,
+                        translation,
+                    ) in zip(
                         target_blocks,
+                        expected_source_speakers,
+                        expected_source_texts,
                         corrected_texts,
                         strict=True,
                     )
-                ],
+                },
             },
             ensure_ascii=False,
         )
@@ -452,11 +508,13 @@ def translate_chunk(
                     block.number
                     for block in target_blocks
                 ],
+                source_speakers=(
+                    expected_source_speakers
+                ),
+                source_texts=(
+                    expected_source_texts
+                ),
                 noise_dictionary=noise_dictionary,
-                source_texts=[
-                    block.text
-                    for block in target_blocks
-                ],
                 glossary_entries=glossary_entries,
             )
         )

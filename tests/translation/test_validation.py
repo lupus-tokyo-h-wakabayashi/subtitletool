@@ -22,18 +22,29 @@ def test_validation_uses_confirmed_noise_dictionary() -> None:
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "This is eRe Are."
+      },
       "translation": "これは eRe   Are です。"
     }
-  ]
+  }
 }
 """
 
     result = validate_translation_response(
         response,
-        expected_ids=["1"],
+        expected_ids=[
+            "1",
+        ],
+        source_speakers=[
+            None,
+        ],
+        source_texts=[
+            "This is eRe Are.",
+        ],
         noise_dictionary=noise_dictionary,
     )
 
@@ -56,12 +67,15 @@ def test_validation_accepts_level_5_source_copy(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "The planet P4X-351 is unstable."
+      },
       "translation": "惑星[5]P4X-351[/5]は不安定です。"
     }
-  ]
+  }
 }
 """
 
@@ -69,6 +83,9 @@ def test_validation_accepts_level_5_source_copy(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -97,12 +114,15 @@ def test_validation_accepts_level_5_context_correction(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1021",
+  "targets": {
+    "1021": {
+      "source": {
+        "speaker": null,
+        "text": "it's indicating malfunction.\\nOthers are failing."
+      },
       "translation": "スコット、これは[5]SG-1[/5]です。"
     }
-  ]
+  }
 }
 """
 
@@ -110,6 +130,9 @@ def test_validation_accepts_level_5_context_correction(
         response,
         expected_ids=[
             "1021",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -138,12 +161,15 @@ def test_validation_rejects_invalid_evaluation_tag_structure(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "The planet P4X-351 is unstable."
+      },
       "translation": "惑星[5]P4X-351[/3]は不安定です。"
     }
-  ]
+  }
 }
 """
 
@@ -151,6 +177,9 @@ def test_validation_rejects_invalid_evaluation_tag_structure(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -180,12 +209,15 @@ def test_validation_accepts_level_5_without_source_text(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "The planet is P4X-351."
+      },
       "translation": "惑星[5]P4X-351[/5]です。"
     }
-  ]
+  }
 }
 """
 
@@ -215,12 +247,15 @@ def test_validation_processes_level_3_with_normal_validation(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "The ship is Destiny."
+      },
       "translation": "船名は[3]Destiny[/3]です。"
     }
-  ]
+  }
 }
 """
 
@@ -228,6 +263,9 @@ def test_validation_processes_level_3_with_normal_validation(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             "The ship is Destiny.",
@@ -252,12 +290,15 @@ def test_validation_rejects_untranslated_level_3_sentence(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "the connection to the gate"
+      },
       "translation": "[3]the connection to the gate[/3]"
     }
-  ]
+  }
 }
 """
 
@@ -265,6 +306,9 @@ def test_validation_rejects_untranslated_level_3_sentence(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             "the connection to the gate",
@@ -291,12 +335,15 @@ def test_validation_applies_glossary_after_level_5_tag_removal(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "This is an order from SGC."
+      },
       "translation": "[5]SGC[/5]からの命令です。"
     }
-  ]
+  }
 }
 """
 
@@ -304,6 +351,9 @@ def test_validation_applies_glossary_after_level_5_tag_removal(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             "This is an order from SGC.",
@@ -333,12 +383,15 @@ def test_validation_masks_level_1_ocr_noise(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "773",
+  "targets": {
+    "773": {
+      "source": {
+        "speaker": null,
+        "text": "sie lexer=s-4-9 10) WV am nat (el=)\\nthe connection to the\\nninth chevron address."
+      },
       "translation": "[1]sie lexer=s-4-9 10) WV am nat (el=)[/1]\\n第九のシェブロンアドレスへの接続"
     }
-  ]
+  }
 }
 """
 
@@ -346,6 +399,9 @@ def test_validation_masks_level_1_ocr_noise(
         response,
         expected_ids=[
             "773",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -383,12 +439,15 @@ def test_validation_accepts_level_1_only_ocr_noise(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1037",
+  "targets": {
+    "1037": {
+      "source": {
+        "speaker": null,
+        "text": "0) WV"
+      },
       "translation": "[1]0) WV[/1]"
     }
-  ]
+  }
 }
 """
 
@@ -396,6 +455,9 @@ def test_validation_accepts_level_1_only_ocr_noise(
         response,
         expected_ids=[
             "1037",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             "0) WV",
@@ -425,12 +487,15 @@ def test_validation_accepts_level_1_with_short_ocr_residue(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1052",
+  "targets": {
+    "1052": {
+      "source": {
+        "speaker": null,
+        "text": "Nec\\n\\" 0) WV"
+      },
       "translation": "Nec\\n\\" [1]0) WV[/1]"
     }
-  ]
+  }
 }
 """
 
@@ -438,6 +503,9 @@ def test_validation_accepts_level_1_with_short_ocr_residue(
         response,
         expected_ids=[
             "1052",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -470,12 +538,15 @@ def test_validation_rejects_level_1_with_non_japanese_text(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "OCR noise\\nconnection failed"
+      },
       "translation": "[1]OCR noise[/1]\\nconnection failed"
     }
-  ]
+  }
 }
 """
 
@@ -483,6 +554,9 @@ def test_validation_rejects_level_1_with_non_japanese_text(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -512,12 +586,15 @@ def test_validation_rejects_partial_level_1_source_line(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "sie lexer=s-4-9 10) WV am nat (el=)\\nestablishing connection"
+      },
       "translation": "[1]sie lexer=s-4-9[/1]\\n接続を確立します。"
     }
-  ]
+  }
 }
 """
 
@@ -525,6 +602,9 @@ def test_validation_rejects_partial_level_1_source_line(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -556,12 +636,15 @@ def test_validation_records_failed_id_for_invalid_tag(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "7",
+  "targets": {
+    "7": {
+      "source": {
+        "speaker": null,
+        "text": "P4X-351"
+      },
       "translation": "[5]P4X-351[/3]"
     }
-  ]
+  }
 }
 """
 
@@ -569,6 +652,9 @@ def test_validation_records_failed_id_for_invalid_tag(
         response,
         expected_ids=[
             "7",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             "P4X-351",
@@ -593,12 +679,15 @@ def test_validation_accepts_level_5_value_without_source_match(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "779",
+  "targets": {
+    "779": {
+      "source": {
+        "speaker": null,
+        "text": "The core\\nof the planet P4X351\\nhad become unstable,"
+      },
       "translation": "惑星[5]P4X-351[/5]のコアが不安定になっていた。"
     }
-  ]
+  }
 }
 """
 
@@ -606,6 +695,9 @@ def test_validation_accepts_level_5_value_without_source_match(
         response,
         expected_ids=[
             "779",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -622,6 +714,7 @@ def test_validation_accepts_level_5_value_without_source_match(
 
     assert result.valid
     assert result.reasons == []
+
     assert result.translated_texts == [
         "惑星P4X-351のコアが不安定になっていた。",
     ]
@@ -637,12 +730,15 @@ def test_validation_accepts_level_5_value_without_glossary_normalization(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "779",
+  "targets": {
+    "779": {
+      "source": {
+        "speaker": null,
+        "text": "The core\\nof the planet P4X351\\nhad become unstable,"
+      },
       "translation": "惑星[5]P4X-351[/5]のコアが不安定になっていた。"
     }
-  ]
+  }
 }
 """
 
@@ -650,6 +746,9 @@ def test_validation_accepts_level_5_value_without_glossary_normalization(
         response,
         expected_ids=[
             "779",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
@@ -682,12 +781,15 @@ def test_validation_does_not_normalize_level_1_with_glossary(
 
     response = """
 {
-  "translations": [
-    {
-      "id": "1",
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "P4X351\\nidentifier confirmed"
+      },
       "translation": "[1]P4X-351[/1]\\n識別子を確認しました。"
     }
-  ]
+  }
 }
 """
 
@@ -695,6 +797,9 @@ def test_validation_does_not_normalize_level_1_with_glossary(
         response,
         expected_ids=[
             "1",
+        ],
+        source_speakers=[
+            None,
         ],
         source_texts=[
             (
