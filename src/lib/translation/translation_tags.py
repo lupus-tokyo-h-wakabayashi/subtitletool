@@ -315,14 +315,19 @@ def process_translation_tags(
     subtitle_ids: list[str],
     *,
     source_texts: list[str] | None,
-    level_5_source_texts: list[str] | None = None,
 ) -> TranslationTagProcessingResult:
     """
     翻訳文の自己評価タグを検証する。
 
+    すべてのタグについて構造を検証する。
+
+    Level 1とLevel 3は原文との一致も検証する。
+    Level 5は文脈による補正を許可し、
+    原文との一致は検証しない。
+
     正常な字幕はタグを除去した文字列を返す。
-    タグ構造または原文一致に問題がある字幕は、
-    元の翻訳文を保持してエラーを返す。
+    問題がある字幕は元の翻訳文を保持して
+    エラーを返す。
     """
     if len(translated_texts) != len(
         subtitle_ids
@@ -342,19 +347,6 @@ def process_translation_tags(
             "Translation tag source length mismatch: "
             f"translated={len(translated_texts)}, "
             f"source={len(source_texts)}"
-        )
-
-    if (
-        level_5_source_texts is not None
-        and len(level_5_source_texts)
-        != len(translated_texts)
-    ):
-        raise ValueError(
-            "Translation level 5 source length "
-            "mismatch: "
-            f"translated={len(translated_texts)}, "
-            f"level_5_source="
-            f"{len(level_5_source_texts)}"
         )
 
     processed_texts: list[str] = []
@@ -398,9 +390,17 @@ def process_translation_tags(
                 f"text={translated_text!r}"
             )
 
+        requires_source_text = any(
+            tag.level in {
+                1,
+                3,
+            }
+            for tag in parse_result.tags
+        )
+
         if (
             not parse_result.errors
-            and parse_result.tags
+            and requires_source_text
             and source_texts is None
         ):
             item_errors.append(
@@ -418,32 +418,12 @@ def process_translation_tags(
                 index
             ]
 
-            level_5_source_text = (
-                level_5_source_texts[
-                    index
-                ]
-                if level_5_source_texts
-                   is not None
-                else source_text
-            )
-
             for tag in parse_result.tags:
-                comparison_sources = (
-                    (
-                        source_text,
-                        level_5_source_text,
-                    )
-                    if tag.level == 5
-                    else (
-                        source_text,
-                    )
-                )
+                if tag.level == 5:
+                    # Level5はタグ構造のみ検証する
+                    continue
 
-                if any(
-                    tag.value in comparison_source
-                    for comparison_source
-                    in comparison_sources
-                ):
+                if tag.value in source_text:
                     continue
 
                 item_errors.append(
@@ -452,9 +432,7 @@ def process_translation_tags(
                     f"subtitle_id={subtitle_id!r}, "
                     f"level={tag.level}, "
                     f"value={tag.value!r}, "
-                    f"source={source_text!r}, "
-                    "comparison_sources="
-                    f"{comparison_sources!r}"
+                    f"source={source_text!r}"
                 )
 
         if item_errors:

@@ -233,13 +233,14 @@ def test_render_translation_tags_replaces_only_tagged_level_1_value(
     )
 
 
-def test_process_translation_tags_uses_normalized_source_only_for_level_5(
+def test_process_translation_tags_ignores_level_5_source_mismatch(
 ) -> None:
     result = process_translation_tags(
         translated_texts=[
             (
-                "[5]P4X-351[/5]\n"
-                "[1]P4X-351[/1]"
+                "こちらは"
+                "[5]SG-1[/5]"
+                "です。"
             ),
         ],
         subtitle_ids=[
@@ -247,43 +248,8 @@ def test_process_translation_tags_uses_normalized_source_only_for_level_5(
         ],
         source_texts=[
             (
-                "P4X351\n"
-                "another source line"
-            ),
-        ],
-        level_5_source_texts=[
-            (
-                "P4X-351\n"
-                "another source line"
-            ),
-        ],
-    )
-
-    assert len(result.errors) == 1
-
-    error = result.errors[0]
-
-    assert error.subtitle_id == "1"
-    assert "level=1" in error.message
-    assert "value='P4X-351'" in error.message
-
-
-def test_process_translation_tags_accepts_level_5_original_source_value(
-) -> None:
-    result = process_translation_tags(
-        translated_texts=[
-            "[5]SGC[/5]からの命令です。",
-        ],
-        subtitle_ids=[
-            "1",
-        ],
-        source_texts=[
-            "This is an order from SGC.",
-        ],
-        level_5_source_texts=[
-            (
-                "This is an order from "
-                "スターゲイト司令部."
+                "it's indicating malfunction.\n"
+                "Others are failing."
             ),
         ],
     )
@@ -291,5 +257,49 @@ def test_process_translation_tags_accepts_level_5_original_source_value(
     assert result.errors == ()
 
     assert result.translated_texts == (
-        "SGCからの命令です。",
+        "こちらはSG-1です。",
+    )
+
+
+def test_process_translation_tags_accepts_level_5_without_source_text(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            "[5]SG-1[/5]からの通信です。",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        source_texts=None,
+    )
+
+    assert result.errors == ()
+
+    assert result.translated_texts == (
+        "SG-1からの通信です。",
+    )
+
+
+def test_process_translation_tags_requires_source_text_for_level_3(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            "[3]Destiny[/3]",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        source_texts=None,
+    )
+
+    assert len(result.errors) == 1
+
+    error = result.errors[0]
+
+    assert error.subtitle_id == "1"
+
+    assert (
+        "Translation evaluation tags require "
+        "source text"
+        in error.message
     )

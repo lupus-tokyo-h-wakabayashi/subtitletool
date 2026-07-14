@@ -2,7 +2,6 @@ from lib.profile.noise import (
     NoiseEntry,
 )
 from lib.translation.translation_validation import (
-    normalize_source_text_with_glossary,
     validate_translation_response,
 )
 
@@ -88,7 +87,7 @@ def test_validation_accepts_level_5_source_copy(
     ]
 
 
-def test_validation_rejects_modified_level_5_value(
+def test_validation_accepts_level_5_context_correction(
 ) -> None:
     noise_dictionary = (
         build_test_noise_dictionary(
@@ -100,8 +99,8 @@ def test_validation_rejects_modified_level_5_value(
 {
   "translations": [
     {
-      "id": "1",
-      "translation": "惑星[5]P4X351[/5]は不安定です。"
+      "id": "1021",
+      "translation": "スコット、これは[5]SG-1[/5]です。"
     }
   ]
 }
@@ -110,27 +109,23 @@ def test_validation_rejects_modified_level_5_value(
     result = validate_translation_response(
         response,
         expected_ids=[
-            "1",
+            "1021",
         ],
         source_texts=[
             (
-                "The planet P4X-351 "
-                "is unstable."
+                "it's indicating malfunction.\n"
+                "Others are failing."
             ),
         ],
         noise_dictionary=noise_dictionary,
     )
 
-    assert not result.valid
+    assert result.valid
+    assert result.reasons == []
 
-    assert any(
-        (
-            "Translation evaluation tag value "
-            "not found in source"
-        )
-        in reason
-        for reason in result.reasons
-    )
+    assert result.translated_texts == [
+        "スコット、これはSG-1です。",
+    ]
 
 
 def test_validation_rejects_invalid_evaluation_tag_structure(
@@ -175,7 +170,7 @@ def test_validation_rejects_invalid_evaluation_tag_structure(
     )
 
 
-def test_validation_rejects_evaluation_tag_without_source_text(
+def test_validation_accepts_level_5_without_source_text(
 ) -> None:
     noise_dictionary = (
         build_test_noise_dictionary(
@@ -202,16 +197,12 @@ def test_validation_rejects_evaluation_tag_without_source_text(
         noise_dictionary=noise_dictionary,
     )
 
-    assert not result.valid
+    assert result.valid
+    assert result.reasons == []
 
-    assert any(
-        (
-            "Translation evaluation tags require "
-            "source text"
-        )
-        in reason
-        for reason in result.reasons
-    )
+    assert result.translated_texts == [
+        "惑星P4X-351です。",
+    ]
 
 
 def test_validation_processes_level_3_with_normal_validation(
@@ -503,31 +494,7 @@ def test_validation_records_failed_id_for_invalid_tag(
     }
 
 
-def test_normalize_source_text_with_glossary(
-) -> None:
-    source = (
-        "The core\n"
-        "of the planet P4X351\n"
-        "had become unstable,"
-    )
-
-    result = (
-        normalize_source_text_with_glossary(
-            source,
-            {
-                "P4X351": "P4X-351",
-            },
-        )
-    )
-
-    assert result == (
-        "The core\n"
-        "of the planet P4X-351\n"
-        "had become unstable,"
-    )
-
-
-def test_validation_accepts_level_5_glossary_normalized_value(
+def test_validation_accepts_level_5_value_without_source_match(
 ) -> None:
     noise_dictionary = (
         build_test_noise_dictionary(
@@ -566,16 +533,12 @@ def test_validation_accepts_level_5_glossary_normalized_value(
 
     assert result.valid
     assert result.reasons == []
-
     assert result.translated_texts == [
-        (
-            "惑星P4X-351のコアが"
-            "不安定になっていた。"
-        ),
+        "惑星P4X-351のコアが不安定になっていた。",
     ]
 
 
-def test_validation_rejects_level_5_value_without_glossary_normalization(
+def test_validation_accepts_level_5_value_without_glossary_normalization(
 ) -> None:
     noise_dictionary = (
         build_test_noise_dictionary(
@@ -609,16 +572,15 @@ def test_validation_rejects_level_5_value_without_glossary_normalization(
         noise_dictionary=noise_dictionary,
     )
 
-    assert not result.valid
+    assert result.valid
+    assert result.reasons == []
 
-    assert any(
+    assert result.translated_texts == [
         (
-            "Translation evaluation tag value "
-            "not found in source"
-        )
-        in reason
-        for reason in result.reasons
-    )
+            "惑星P4X-351のコアが"
+            "不安定になっていた。"
+        ),
+    ]
 
 
 def test_validation_does_not_normalize_level_1_with_glossary(

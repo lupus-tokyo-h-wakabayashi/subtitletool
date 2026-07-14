@@ -974,25 +974,10 @@ def validate_translation_response(
         for item in items
     ]
 
-    level_5_source_texts = (
-        [
-            normalize_source_text_with_glossary(
-                source_text,
-                glossary_entries,
-            )
-            for source_text in source_texts
-        ]
-        if source_texts is not None
-        else None
-    )
-
     tag_processing = process_translation_tags(
         translated_texts,
         expected_ids,
         source_texts=source_texts,
-        level_5_source_texts=(
-            level_5_source_texts
-        ),
     )
 
     for error in tag_processing.errors:
@@ -1342,50 +1327,6 @@ def source_contains_glossary_term(
     return bool(
         pattern.search(source_text)
     )
-
-
-def normalize_source_text_with_glossary(
-    source_text: str,
-    glossary_entries: Mapping[
-                          str,
-                          str,
-                      ] | None,
-) -> str:
-    """
-    原文へGlossaryのsource→expected置換を適用する。
-
-    [5]タグの原文コピー検証専用。
-    """
-    if not glossary_entries:
-        return source_text
-
-    normalized = source_text
-
-    sorted_entries = sorted(
-        glossary_entries.items(),
-        key=lambda entry: len(
-            entry[0]
-        ),
-        reverse=True,
-    )
-
-    for (
-            source_term,
-            expected_term,
-    ) in sorted_entries:
-        pattern = re.compile(
-            rf"(?<![A-Za-z0-9])"
-            rf"{re.escape(source_term)}"
-            rf"(?![A-Za-z0-9])",
-            re.IGNORECASE,
-        )
-
-        normalized = pattern.sub(
-            lambda _match: expected_term,
-            normalized,
-        )
-
-    return normalized
 
 
 def find_glossary_violations(
