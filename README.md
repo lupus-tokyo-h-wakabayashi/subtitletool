@@ -46,9 +46,12 @@ SubtitleToolを実行するために、以下のソフトウェアが必要で�
 - PgsToSrt
 - .NET 8 Runtime
 - Ollama
+    - Windows側またはWSL側で実行
 - qwen3:14b
 
-各コマンドはPATHから実行できる状態にしてください。
+FFmpeg、FFprobe、MKVToolNix、Tesseract、dotnetは、PATHから実行できる状態にしてください。
+
+OllamaをWindows側で実行する場合は、WSLからOllama APIへ接続できる状態にしてください。
 
 ## Environment
 
@@ -56,11 +59,11 @@ SubtitleToolを実行するために、以下のソフトウェアが必要で�
 
 ### OS
 
-- Ubuntu 24.04（WSL2）
+- Ubuntu 22.04（WSL2）
 
 ### Python
 
-- Python 3.13
+- Python 3.13.x
 
 ### .NET
 
@@ -68,7 +71,7 @@ SubtitleToolを実行するために、以下のソフトウェアが必要で�
 
 ### FFmpeg
 
-- FFmpeg 7.x
+- FFmpeg 4.4.2
 
 ### MKVToolNix
 
@@ -78,11 +81,12 @@ SubtitleToolを実行するために、以下のソフトウェアが必要で�
 ### OCR
 
 - PgsToSrt
-- Tesseract OCR 4.x
+- Tesseract OCR 4.1.1
 
 ### Ollama
 
-- Ollama 0.9.x
+- Windows側で起動
+- WSLからAPI接続
 
 ### LLM
 
@@ -109,6 +113,17 @@ git clone <repository>
 cd subtitletool
 ```
 
+Python仮想環境を作成します。
+
+```fish
+python3 -m venv .venv
+
+source .venv/bin/activate.fish
+
+python3 -m pip install \
+    -r requirements.txt
+```
+
 作品ごとの翻訳設定を作成します。
 
 `config/default/` をコピーし、作品名など任意のプロファイル名へリネームしてください。
@@ -116,12 +131,12 @@ cd subtitletool
 例
 
 ```bash
-cp -r config/default config/stargate
+cp -r config/default config/hogehoge
 ```
 
 必要に応じて以下の設定ファイルを編集してください。
 
-### style.txt
+### style.json
 
 翻訳スタイルを定義します。
 
@@ -132,7 +147,7 @@ cp -r config/default config/stargate
 - 軍隊用語
 - 世界観
 
-### glossary.txt
+### glossary.json
 
 作品固有の用語を定義します。
 
@@ -149,15 +164,15 @@ OCRで頻繁に発生するノイズを管理します。
 
 翻訳中に自動で更新され、OCR品質の改善に利用されます。
 
-翻訳モデルをインストールします。
+Ollamaを実行している環境で翻訳モデルを取得します。
 
-```bash
+```fish
 ollama pull qwen3:14b
 ```
 
 インストール後、各コマンドが利用できることを確認してください。
 
-```bash
+```fish
 python3 --version
 ffmpeg -version
 ffprobe -version
@@ -165,13 +180,22 @@ mkvextract --version
 mkvmerge --version
 tesseract --version
 dotnet --version
-ollama --version
 ```
 
-利用可能なモデルを確認します。
+Ollama CLIをインストールしている場合は、バージョンと利用可能なモデルを確認できます。
 
-```bash
+```fish
+ollama --version
 ollama list
+```
+
+開発時は次のコマンドでテストを実行できます。
+
+```fish
+env PYTHONPATH=src \
+    python3 -m pytest \
+    tests \
+    -v
 ```
 
 ## Directories
@@ -183,21 +207,38 @@ subtitletool
 │   └── subtitletool
 │
 ├── config/
+│   ├── prompt.txt
+│   │
 │   ├── default/
-│   │   ├── glossary.txt
+│   │   ├── glossary.json
 │   │   ├── noise.json
-│   │   └── style.txt
+│   │   ├── noise.local.json
+│   │   └── style.json
 │   │
 │   └── {PROFILE}/
-│       ├── glossary.txt
+│       ├── glossary.json
+│       ├── noise.json
 │       ├── noise.local.json
-│       └── style.txt
+│       └── style.json
 │
 ├── src/
 │   ├── commands/
+│   │   ├── extract.py
+│   │   ├── make.py
+│   │   ├── mux.py
+│   │   ├── ocr.py
+│   │   ├── scan.py
+│   │   └── translate.py
+│   │
 │   └── lib/
+│       ├── infrastructure/
+│       ├── media/
+│       ├── profile/
+│       ├── subtitle/
+│       └── translation/
 │
 ├── tests/
+│   └── translation/
 │
 └── tmp/
     └── （実行時に生成）
@@ -209,46 +250,85 @@ subtitletool
 
 ### config/default/
 
-新しい翻訳プロファイルを作成するためのテンプレートです。
+プロファイル未指定時に使用する既定設定です。
+
+新しい翻訳プロファイルを作成する際のテンプレートとしても使用します。
 
 ### config/{PROFILE}/
 
 作品ごとの翻訳設定を管理します。
 
+`--profile`で指定したディレクトリを使用し、`default`との設定マージは行いません。
+
 ### src/commands/
 
-CLIコマンドを実装します。
+`scan`、`extract`、`ocr`、`translate`、`mux`、`make`のCLI処理を実装します。
 
 ### src/lib/
 
-各機能をライブラリとして実装します。
+各機能を責務別のパッケージとして実装します。
+
+- `infrastructure/`
+    - Ollama通信、進捗表示、中間ファイル削除
+- `media/`
+    - FFmpeg、FFprobe、PGS抽出、OCR、Mux、Mux検証
+- `profile/`
+    - Profile解決、Prompt、Glossary、Style、Noise設定
+- `subtitle/`
+    - SRT解析、字幕ファイルパス、字幕テキスト処理
+- `translation/`
+    - 翻訳チャンク、Prompt生成、Validation、Retry、Resume
 
 ### tests/
 
 回帰テストを配置します。
 
+翻訳関連のテストは`tests/translation/`へ責務別に分割しています。
+
 ### tmp/
 
-デバッグ用ファイルや、一時的な作業ファイルを出力します。
+翻訳失敗時のLLMレスポンスなど、デバッグ用の一時ファイルを出力します。
+
+Git管理対象には含めません。
 
 ## Commands
 
 SubtitleToolは各処理を個別に実行することも、一括で実行することもできます。
 
-### 全処理を実行
+### scan
 
-英語PGS字幕の抽出から、日本語字幕付きMKVの生成までを一括で実行します。
+入力動画のVideo / Audio / Subtitleストリームを解析します。
+
+### extract
+
+動画からPGS字幕を抽出します。
+
+### ocr
+
+PGS字幕をOCRし、SRTへ変換します。
+
+### translate
+
+SRT字幕をローカルLLMへ送り、JSON形式のレスポンスを使って日本語へ翻訳します。
+
+### mux
+
+翻訳字幕を動画へMuxします。
+
+### make
+
+Extract → OCR → Translate → Mux を一括実行します。
 
 ```bash
 subtitletool make movie.mkv
 ```
 
-翻訳プロファイルを指定する場合は、`--profile`を指定します。
+翻訳プロファイルを指定する場合は、事前に`config/{PROFILE}/`へ作品別の設定ファイルを用意し、`--profile`を指定します。
 
 ```bash
 subtitletool make \
     movie.mkv \
-    --profile stargate
+    --profile hogehoge
 ```
 
 ### 個別実行
@@ -257,10 +337,22 @@ subtitletool make \
 
 ```bash
 subtitletool scan movie.mkv
+
 subtitletool extract movie.mkv
+
 subtitletool ocr movie.eng.sup
-subtitletool translate movie.eng.srt
-subtitletool mux movie.mkv
+
+subtitletool translate \
+    movie.eng.srt \
+    --profile hogehoge
+
+subtitletool mux \
+    movie.mkv \
+    movie.ja.srt
+
+subtitletool make \
+    movie.mkv \
+    --profile hogehoge
 ```
 
 主に開発時やトラブルシューティング時の確認に利用します。
@@ -269,21 +361,21 @@ subtitletool mux movie.mkv
 
 翻訳設定はプロファイル単位で管理します。
 
-各作品ごとに専用ディレクトリを作成することで、作品ごとに翻訳品質を最適化できます。
+作品ごとに専用ディレクトリを作成することで、
+作品ごとの翻訳品質を最適化できます。
 
 ```
 config/
 ├── default/
-├── stargate/
-├── friends/
-└── movie/
+├── profile-a/
+└── profile-b/
 ```
 
 各プロファイルには次の設定ファイルがあります。
 
-### style.txt
+### style.json
 
-翻訳スタイルを定義します。
+翻訳スタイルをJSON形式で定義します。
 
 例
 
@@ -295,9 +387,9 @@ config/
 
 ---
 
-### glossary.txt
+### glossary.json
 
-作品固有の用語を定義します。
+作品固有の用語をJSON形式で定義します。
 
 例
 
