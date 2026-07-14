@@ -1,5 +1,7 @@
 import pytest
-
+from lib.profile.prompt import (
+    build_translation_prompt as build_profile_translation_prompt,
+)
 from lib.subtitle.srt import SrtBlock
 from lib.translation.translation_prompt import (
     build_ocr_noise_instruction,
@@ -171,3 +173,63 @@ def test_build_prompt_includes_translation_evaluation_tags(
     assert prompt.endswith(
         "\nOCR INSTRUCTION\n"
     )
+
+
+def test_build_profile_translation_prompt_includes_target_context_isolation(
+) -> None:
+    request_json = """
+{
+  "context_before": [
+    {
+      "speaker": null,
+      "text": "Context before text."
+    }
+  ],
+  "target": [
+    {
+      "id": "1",
+      "speaker": null,
+      "text": "Target text."
+    }
+  ],
+  "context_after": [
+    {
+      "speaker": null,
+      "text": "Context after text."
+    }
+  ]
+}
+""".strip()
+
+    prompt = build_profile_translation_prompt(
+        target_count=1,
+        request_json=request_json,
+        profile_name=None,
+    )
+
+    assert (
+        "【targetとcontextの境界】"
+        in prompt
+    )
+
+    assert (
+        "翻訳対象はtargetだけである。"
+        in prompt
+    )
+
+    assert (
+        "各translationは、同じidのtarget.textだけを翻訳する"
+        in prompt
+    )
+
+    assert (
+        "別のtarget、context_before、context_afterにある文字列を"
+        in prompt
+    )
+
+    assert (
+        "評価タグへ使用してはいけない。"
+        in prompt
+    )
+
+    assert request_json in prompt

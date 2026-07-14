@@ -80,12 +80,35 @@ JSONの前後に説明、注釈、Markdownコードブロックを付けない�
 * 1つのtargetを複数のtranslation要素へ分割しない
 * 複数のtargetを1つのtranslation要素へ結合しない
 * 別のidへ内容を移動しない
+* 別のidやcontextの内容を現在のidへ持ち込まない
 * targetの順序を維持する
 * 効果音は効果音として対応させる
 * 会話は会話として対応させる
 * 原文内の「 / 」は同一字幕内の改行位置として扱う
 * 「 / 」の前後を別のidへ分割しない
 
+
+【targetとcontextの境界】
+
+翻訳対象はtargetだけである。
+
+context_beforeとcontext_afterは、
+会話の意味、人物関係、口調、場面を判断するための
+参考文脈としてのみ使用する。
+
+* translationsへ出力するのはtargetの項目だけとする
+* context_beforeとcontext_afterの内容を翻訳して出力しない
+* 各translationは、同じidのtarget.textだけを翻訳する
+* 別のtargetにある文章を移動、結合、補完しない
+* contextの文章をtargetのtranslationへ移動しない
+* contextにだけ存在する単語、数字、固有名詞、OCR文字列を追加しない
+* 前後文脈から意味を判断して自然な訳にすることは許可する
+* 前後文脈の文そのものをコピーすることは禁止する
+* target.textに存在しないセリフや情報をtranslationへ追加しない
+* 評価タグを使用する場合も、
+* タグ内部の文字列は同じidのtarget.textからのみコピーする。
+* 別のtarget、context_before、context_afterにある文字列を
+* 評価タグへ使用してはいけない。
 
 【speakerの扱い】
 
@@ -245,6 +268,9 @@ Ancient → エンシェント
 * 複数字幕を結合または分割していないか
 * 用語集の指定訳を使用しているか
 * translationが自然で簡潔な日本語字幕か
+* 各translationが同じidのtarget.textだけに対応しているか
+* contextの文章をtranslationへ混入させていないか
+* 評価タグの値が同じidのtarget.textから取得されているか
 
 
 【入力JSON】
