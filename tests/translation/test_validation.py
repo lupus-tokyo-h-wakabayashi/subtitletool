@@ -373,7 +373,49 @@ def test_validation_masks_level_1_ocr_noise(
     ]
 
 
-def test_validation_rejects_level_1_without_japanese_translation(
+def test_validation_accepts_level_1_only_ocr_noise(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1037",
+      "translation": "[1]0) WV[/1]"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1037",
+        ],
+        source_texts=[
+            "0) WV",
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+    assert result.translated_texts == [
+        "（判読不能）",
+    ]
+
+    assert result.noise_candidates == [
+        "0) WV",
+    ]
+
+
+def test_validation_rejects_level_1_with_non_japanese_text(
 ) -> None:
     noise_dictionary = (
         build_test_noise_dictionary(
@@ -386,7 +428,7 @@ def test_validation_rejects_level_1_without_japanese_translation(
   "translations": [
     {
       "id": "1",
-      "translation": "[1]garbled OCR text[/1]"
+      "translation": "[1]OCR noise[/1]\\nconnection failed"
     }
   ]
 }
@@ -398,13 +440,15 @@ def test_validation_rejects_level_1_without_japanese_translation(
             "1",
         ],
         source_texts=[
-            "garbled OCR text",
+            (
+                "OCR noise\n"
+                "connection failed"
+            ),
         ],
         noise_dictionary=noise_dictionary,
     )
 
     assert not result.valid
-    assert result.noise_candidates == []
 
     assert any(
         "requires Japanese translation"

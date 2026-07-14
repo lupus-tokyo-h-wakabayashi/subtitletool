@@ -1038,8 +1038,24 @@ def validate_translation_response(
             )
         )
 
-        if not JAPANESE_CHARACTER_PATTERN.search(
-            untagged_text
+        non_level_1_text = (
+            render_translation_tags(
+                original_translation,
+                level_1_replacement="",
+            )
+            .strip()
+        )
+
+        # Level 1タグだけで構成される字幕は、
+        # OCRノイズのみの字幕として許可する。
+        #
+        # Level 1以外の本文が残る場合は、
+        # 従来どおり日本語訳を必須とする。
+        if (
+            non_level_1_text
+            and not JAPANESE_CHARACTER_PATTERN.search(
+            non_level_1_text
+        )
         ):
             result.add_error(
                 "Level 1 translation tag requires "
