@@ -415,6 +415,51 @@ def test_validation_accepts_level_1_only_ocr_noise(
     ]
 
 
+def test_validation_accepts_level_1_with_short_ocr_residue(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "translations": [
+    {
+      "id": "1052",
+      "translation": "Nec\\n\\" [1]0) WV[/1]"
+    }
+  ]
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1052",
+        ],
+        source_texts=[
+            (
+                "Nec\n"
+                "\" 0) WV"
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+    assert result.translated_texts == [
+        "（判読不能）",
+    ]
+
+    assert result.noise_candidates == [
+        "0) WV",
+    ]
+
+
 def test_validation_rejects_level_1_with_non_japanese_text(
 ) -> None:
     noise_dictionary = (

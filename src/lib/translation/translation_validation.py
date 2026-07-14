@@ -1046,16 +1046,21 @@ def validate_translation_response(
             .strip()
         )
 
-        # Level 1タグだけで構成される字幕は、
-        # OCRノイズのみの字幕として許可する。
+        has_short_level_1_ocr_residue = (
+            is_short_level_1_ocr_residue(
+                non_level_1_text
+            )
+        )
+
+        # Level 1タグだけで構成される字幕と、
+        # タグ外に短いOCR残骸だけが残る字幕は許可する。
         #
-        # Level 1以外の本文が残る場合は、
+        # それ以外の本文が残る場合は、
         # 従来どおり日本語訳を必須とする。
         if (
             non_level_1_text
-            and not JAPANESE_CHARACTER_PATTERN.search(
-            non_level_1_text
-        )
+            and not has_short_level_1_ocr_residue
+            and not JAPANESE_CHARACTER_PATTERN.search(non_level_1_text)
         ):
             result.add_error(
                 "Level 1 translation tag requires "
@@ -1071,15 +1076,19 @@ def validate_translation_response(
             )
             continue
 
-        source_lines = [
-            line
+        normalized_source_lines = {
+            normalize_level_1_source_line(
+                line
+            )
             for line in source_text.splitlines()
-        ]
+        }
 
         invalid_level_1_values = [
             tag.value
             for tag in level_1_tags
-            if tag.value not in source_lines
+            if normalize_level_1_source_line(
+                tag.value
+            ) not in normalized_source_lines
         ]
 
         if invalid_level_1_values:
@@ -1106,6 +1115,15 @@ def validate_translation_response(
                 result.noise_candidates.append(
                     tag.value
                 )
+
+        if (
+            non_level_1_text
+            and has_short_level_1_ocr_residue
+        ):
+            processed_texts.append(
+                UNREADABLE_MARKER
+            )
+            continue
 
         processed_texts.append(
             render_translation_tags(
@@ -1407,6 +1425,65 @@ def normalize_translation_ending(
     )
 
     return normalized
+
+
+def is_short_level_1_ocr_residue(
+    text: str,
+) -> bool:
+    """
+    Level1タグ以外に残った文字列が、
+    OCR残骸だけか判定する。
+
+    許可例:
+        Nec
+        "
+        Nec "
+
+    拒否例:
+        connection failed
+        keep looking
+    """
+
+    normalized = re.sub(
+        r'["\'“”‘’\s]+',
+        "",
+        text,
+    )
+
+    if not normalized:
+        return True
+
+    if JAPANESE_CHARACTER_PATTERN.search(
+        normalized
+    ):
+        return False
+
+    if " " in normalized:
+        return False
+
+    return bool(
+        re.fullmatch(
+            r"[A-Za-z]{1,3}",
+            normalized,
+        )
+    )
+
+
+def normalize_level_1_source_line(
+    text: str,
+) -> str:
+    """
+    Level1タグ値と原文行を比較するため、
+    行頭・行末の空白と引用符だけを除去する。
+
+    文字列内部の空白・記号・英数字は変更しない。
+    """
+    return text.strip(
+        " \t\r\n"
+        "\"'"
+        "“”"
+        "‘’"
+    )
 
 
 def is_incomplete_translation(
