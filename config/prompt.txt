@@ -22,11 +22,35 @@
 【JSON編集タスク】
 
 これは新しいJSONを生成するタスクではない。
-入力JSON内のtargetsを編集するタスクである。
 
-targets配下の各字幕オブジェクトについて、
-source.textを日本語へ翻訳し、
-同じ位置のtranslationへ翻訳結果を設定すること。
+入力JSON内のtargetsを、
+字幕ID・キー・値・構造・順序を
+一切変更せずに
+返却JSONのtargetsへ複製すること。
+
+新しいtargetsを独自に生成してはならない。
+targetsを配列へ変更してはならない。
+targetsを省略してはならない。
+
+書き込み可能なのは、
+各targets.<字幕ID>.translationの値だけである。
+
+各targets.<字幕ID>.source.textを日本語へ翻訳し、
+同じtargets.<字幕ID>.translationへ設定すること。
+
+targets.<字幕ID>.translation以外は、
+如何なる理由があろうと変更してはならない。
+
+特に次の操作を禁止する。
+
+* targetsを省略する
+* targetsを配列へ変更する
+* 字幕IDを省略する
+* sourceを省略する
+* source.speakerを変更または省略する
+* source.textを変更または省略する
+* translation以外のキーを追加する
+
 
 書き込み可能なのは、
 targets配下の各字幕オブジェクトにあるtranslationだけである。
@@ -47,9 +71,6 @@ targets配下の各字幕オブジェクトにあるtranslationだけである�
 如何なる理由があろうと、
 値の変更、追加、削除、移動、並べ替えをしてはならない。
 
-各targets.<字幕ID>.source.textを日本語へ翻訳し、
-同じtargets.<字幕ID>.translationへ設定すること。
-
 
 【返却形式】
 
@@ -58,13 +79,32 @@ JSONの前後に説明、注釈、Markdownコードブロックを付けない�
 
 返却するJSONの最上位キーはtargetsだけにする。
 
-context_beforeとcontext_afterは返却しない。
 
-targets配下の字幕ID、source、キー名、構造、並び順は、
-入力時のtargetsと完全に一致させる。
+返却JSONには、
+入力JSON内のtargetsだけを複製すること。
+
+context_beforeとcontext_afterは返却しないこと。
+
+返却するtargetsは、入力時のtargetsと比較して、
+translationの値以外を完全に一致させること。
+
+次の項目は入力時の値と構造を維持すること。
+
+* targetsという最上位キー
+* targetsのオブジェクト形式
+* すべての字幕ID
+* 字幕IDの順序
+* 各字幕オブジェクトのsource
+* 各sourceのspeaker
+* 各sourceのtext
+* すべてのキー名
+* すべての階層構造
 
 変更してよいのは、
 各targets.<字幕ID>.translationの値だけである。
+
+返却するtargetsについては、
+translation以外を一切変更してはならない。
 
 如何なる理由があろうと、
 source、
@@ -84,7 +124,23 @@ translationは空文字のまま返してはならない。
 targets以外の最上位キーを追加してはならない。
 タイムコードを出力してはならない。
 
-正しい例:
+入力例:
+
+{{
+  "context_before": [],
+  "targets": {{
+    "148": {{
+      "source": {{
+        "speaker": null,
+        "text": "This is a pen."
+      }},
+      "translation": ""
+    }}
+  }},
+  "context_after": []
+}}
+
+正しい返却例:
 
 {{
   "targets": {{
@@ -98,16 +154,35 @@ targets以外の最上位キーを追加してはならない。
   }}
 }}
 
-禁止例:
+禁止例1 — targetsを省略している:
+
+{{
+  "148": {{
+    "source": {{
+      "speaker": null,
+      "text": "This is a pen."
+    }},
+    "translation": "これはペンだ。"
+  }}
+}}
+
+禁止例2 — targetsを配列へ変更している:
+
+{{
+  "targets": [
+    {{
+      "id": "148",
+      "translation": "これはペンだ。"
+    }}
+  ]
+}}
+
+禁止例3 — sourceを省略している:
 
 {{
   "targets": {{
     "148": {{
-      "source": {{
-        "speaker": null,
-        "text": "これはペンだ。"
-      }},
-      "translation": ""
+      "translation": "これはペンだ。"
     }}
   }}
 }}
@@ -319,7 +394,15 @@ Ancient → エンシェント
 * 評価タグの値が同じ字幕IDのsource.textから取得されているか
 * 用語集の指定訳を使用しているか
 * translationが自然で簡潔な日本語字幕か
-
+* targetsがオブジェクトであり、配列になっていないか
+* 字幕IDが最上位キーへ移動していないか
+* 入力targetsの字幕IDが1件も欠落していないか
+* 各字幕オブジェクトにsourceとtranslationの両方があるか
+* sourceを省略していないか
+* translation以外の値や構造を変更していないか
+* translation以外のキーが増減していないか
+* sourceがtranslationへ置き換わっていないか
+* targetsが入力と同じオブジェクト構造か
 
 【入力JSON】
 {request_json}
@@ -328,33 +411,35 @@ Ancient → エンシェント
 【最終出力指示】
 
 説明は不要です。
-常にJSONのみを返してください。
+常にJSONだけを返してください。
 
-Markdownを出力しないでください。
-コードフェンスを出力しないでください。
-検証結果を出力しないでください。
-補足説明を出力しないでください。
-思考過程を出力しないでください。
+Markdown、コードフェンス、検証結果、補足説明、
+思考過程は出力しないでください。
 
-最上位キーはtargetsだけにしてください。
-targets以外の最上位キーを追加しないでください。
+返却JSONの最上位キーはtargetsだけです。
 
-入力targetsの構造を維持してください。
+入力JSON内のtargetsを、
+値、キー、構造、字幕ID、並び順を維持したまま
+返却JSONのtargetsへ複製してください。
 
 書き込み可能なのは、
-targets配下の各字幕オブジェクトにある
-translationだけです。
+各targets.<字幕ID>.translationの値だけです。
 
-その他のtargets内要素と、
-context_before、
-context_afterは
-読み取り専用です。
+その他のすべての値と構造は読み取り専用です。
 
 如何なる理由があろうと、
-変更・追加・削除・移動・並べ替えを
+変更、追加、削除、省略、移動、並べ替えを
 してはいけません。
 
-変更してよいのは、
-translationの値だけです。
+targetsを省略してはいけません。
+targetsを配列へ変更してはいけません。
+字幕IDを1件でも欠落させてはいけません。
+sourceを省略してはいけません。
+source.speakerとsource.textを変更してはいけません。
+
+context_beforeとcontext_afterは返却しないでください。
+
+translation以外は、
+入力時のtargetsと完全に一致させてください。
 
 JSON以外は一切出力しないでください。

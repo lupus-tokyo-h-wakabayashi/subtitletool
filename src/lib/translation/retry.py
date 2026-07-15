@@ -9,23 +9,30 @@ from .translation_validation import (
 )
 
 STRUCTURAL_ERROR_PREFIXES = (
+    "Translation response is empty",
     "Invalid JSON response:",
     "Invalid JSON root:",
     "Invalid JSON root keys:",
-    "Invalid translations:",
-    "Invalid translation item:",
-    "Invalid translation item keys:",
-    "Missing translation item keys:",
-    "Unexpected translation item keys:",
-    "Invalid translation id:",
-    "Empty translation id:",
+    "Invalid targets:",
+    "Invalid target id:",
+    "Empty target id:",
+    "Invalid target item:",
+    "Invalid target item keys:",
+    "Invalid target source:",
+    "Invalid target source keys:",
+    "Invalid target source speaker:",
+    "Invalid target source text:",
+    "Empty target source text:",
     "Invalid translation text:",
     "Empty translation:",
-    "Translation count mismatch:",
     "Duplicate translation IDs:",
     "Missing translation IDs:",
     "Unexpected translation IDs:",
     "Invalid translation ID order:",
+    "Source speaker count mismatch:",
+    "Source text count mismatch:",
+    "Source speaker changed:",
+    "Source text changed:",
     "Response has too many lines:",
     "Response is too long:",
 )
@@ -117,13 +124,17 @@ def build_retry_instruction(
 次の規則を必ず守ること。
 
 * 出力はJSONオブジェクト1個だけにする
-* 最上位キーはtranslationsのみにする
-* translationsは入力targetと同じ件数にする
-* 各要素のキーはidとtranslationだけにする
-* idは入力targetのidをそのまま使用する
-* idを追加、削除、変更、重複、並べ替えしない
-* translationには日本語字幕だけを入れる
-* 入力側のtextやspeakerを出力へコピーしない
+* 最上位キーはtargetsだけにする
+* targetsは配列ではなくオブジェクトにする
+* targetsは入力時と同じ字幕IDを同じ順序で含める
+* 各字幕オブジェクトのキーはsourceとtranslationだけにする
+* sourceのキーはspeakerとtextだけにする
+* source.speakerとsource.textは入力時の値をそのまま維持する
+* 変更してよいのはtranslationの値だけにする
+* translationには同じ字幕IDの日本語字幕だけを入れる
+* 字幕IDを追加、削除、変更、重複、並べ替えしない
+* sourceを追加、削除、変更しない
+* 入力側のtextやspeakerをtranslationへコピーしない
 * translationの代わりにtextを使用しない
 * 複数字幕を1つのtranslationへ結合しない
 * context_beforeとcontext_afterは出力しない
@@ -164,18 +175,25 @@ def build_structural_retry_instruction(
 
 【JSON構造の修正】
 
-今回出力してよいIDは次のIDだけである。
+今回出力してよい字幕IDは次のIDだけである。
 
 {ids_json}
 
 必ず次を守ること。
 
-* translationsは配列にする
-* translationsは必ず{len(target_ids)}件にする
+* 最上位キーはtargetsだけにする
+* targetsは配列ではなくオブジェクトにする
+* targetsは必ず{len(target_ids)}件にする
 * 上記IDを同じ順序で1回ずつ出力する
-* context_beforeとcontext_afterの内容・IDを出力しない
-* 上記にないIDを追加しない
-* 一部のIDだけを出力しない
+* 各字幕IDの値はオブジェクトにする
+* 各字幕オブジェクトのキーはsourceとtranslationだけにする
+* sourceのキーはspeakerとtextだけにする
+* source.speakerとsource.textは入力時の値をそのまま出力する
+* 変更してよいのはtranslationの値だけにする
+* context_beforeとcontext_afterは出力しない
+* 上記にない字幕IDを追加しない
+* 一部の字幕IDだけを出力しない
+* sourceを省略しない
 * Markdownコードブロックを付けない
 """
 
