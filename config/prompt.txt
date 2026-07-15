@@ -44,6 +44,7 @@ targets配下の各字幕オブジェクトにあるtranslationだけである�
 * すべての並び順
 
 読み取り専用の項目は、
+如何なる理由があろうと、
 値の変更、追加、削除、移動、並べ替えをしてはならない。
 
 各targets.<字幕ID>.source.textを日本語へ翻訳し、
@@ -64,6 +65,16 @@ targets配下の字幕ID、source、キー名、構造、並び順は、
 
 変更してよいのは、
 各targets.<字幕ID>.translationの値だけである。
+
+如何なる理由があろうと、
+source、
+speaker、
+text、
+字幕ID、
+キー名、
+オブジェクト構造、
+並び順を
+変更・追加・削除・移動・並べ替えしてはならない。
 
 translationは空文字のまま返してはならない。
 
@@ -331,9 +342,19 @@ targets以外の最上位キーを追加しないでください。
 入力targetsの構造を維持してください。
 
 書き込み可能なのは、
-targets配下の各字幕オブジェクトにあるtranslationだけです。
+targets配下の各字幕オブジェクトにある
+translationだけです。
 
 その他のtargets内要素と、
-context_before、context_afterは読み取り専用です。
+context_before、
+context_afterは
+読み取り専用です。
+
+如何なる理由があろうと、
+変更・追加・削除・移動・並べ替えを
+してはいけません。
+
+変更してよいのは、
+translationの値だけです。
 
 JSON以外は一切出力しないでください。
