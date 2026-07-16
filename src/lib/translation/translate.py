@@ -9,6 +9,7 @@ from lib.profile.noise import (
     load_noise_dictionary,
 )
 from lib.subtitle.srt import (
+    SrtBlock,
     parse_srt,
 )
 from .translation_output import (
@@ -28,6 +29,34 @@ CHUNK_SIZE = 10
 
 # 翻訳対象の前後に参考として渡す字幕数
 CONTEXT_SIZE = 15
+
+
+def filter_empty_source_blocks(
+    blocks: list[SrtBlock],
+) -> tuple[list[SrtBlock], list[SrtBlock]]:
+    """
+    本文が空または空白だけの字幕を翻訳対象から除外する。
+
+    戻り値:
+        translation_blocks:
+            LLMへ送信する有効な字幕
+
+        skipped_blocks:
+            本文が空のため除外した字幕
+    """
+    translation_blocks: list[SrtBlock] = []
+    skipped_blocks: list[SrtBlock] = []
+
+    for block in blocks:
+        if block.text.strip():
+            translation_blocks.append(block)
+        else:
+            skipped_blocks.append(block)
+
+    return (
+        translation_blocks,
+        skipped_blocks,
+    )
 
 
 def resolve_requested_profile(
@@ -129,13 +158,33 @@ def translate_srt(
         profile_config
     )
 
-    source_blocks = parse_srt(
+    parsed_source_blocks = parse_srt(
         input_path
     )
 
+    (
+        source_blocks,
+        skipped_empty_blocks,
+    ) = filter_empty_source_blocks(
+        parsed_source_blocks
+    )
+
+    if skipped_empty_blocks:
+        print()
+        print(
+            "Skipped empty source subtitles:"
+        )
+
+        for block in skipped_empty_blocks:
+            print(
+                "  - "
+                f"id={block.number}, "
+                f"timestamp={block.timestamp}"
+            )
+
     if not source_blocks:
         raise RuntimeError(
-            "No valid subtitle blocks: "
+            "No translatable subtitle blocks: "
             f"{input_path}"
         )
 
