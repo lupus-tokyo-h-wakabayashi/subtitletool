@@ -39,6 +39,9 @@ from .translation_prompt import (
     build_ocr_noise_instruction,
     build_prompt,
 )
+from .translation_schema import (
+    build_translation_response_schema,
+)
 from .translation_validation import (
     validate_translation_response,
 )
@@ -212,6 +215,28 @@ def save_failed_translation_response(
     return output_path
 
 
+def generate_translation_response(
+    prompt: str,
+    model: str,
+    target_blocks: list[SrtBlock],
+) -> str:
+    """
+    翻訳対象ブロックからレスポンスSchemaを生成し、
+    OllamaへSchema付き生成リクエストを送信する。
+    """
+    response_schema = (
+        build_translation_response_schema(
+            target_blocks
+        )
+    )
+
+    return generate(
+        prompt,
+        model=model,
+        response_format=response_schema,
+    )
+
+
 def translate_chunk(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
@@ -228,8 +253,8 @@ def translate_chunk(
     last_translated_texts: list[str] = []
 
     (
-        expected_source_speakers,
-        expected_source_texts,
+        original_source_speakers,
+        original_source_texts,
     ) = build_expected_source_metadata(
         target_blocks
     )
@@ -292,6 +317,13 @@ def translate_chunk(
                 )
             )
 
+        (
+            response_source_speakers,
+            response_source_texts,
+        ) = build_expected_source_metadata(
+            retry_target_blocks
+        )
+
         prompt = build_prompt(
             before_context,
             retry_target_blocks,
@@ -343,9 +375,10 @@ def translate_chunk(
                     )
                 )
 
-        response = generate(
+        response = generate_translation_response(
             prompt,
-            model=model,
+            model,
+            retry_target_blocks,
         )
 
         display_response = "\n".join(
@@ -364,10 +397,16 @@ def translate_chunk(
                 for block in target_blocks
             ],
             source_speakers=(
-                expected_source_speakers
+                original_source_speakers
             ),
             source_texts=(
-                expected_source_texts
+                original_source_texts
+            ),
+            response_source_speakers=(
+                response_source_speakers
+            ),
+            response_source_texts=(
+                response_source_texts
             ),
             noise_dictionary=noise_dictionary,
             glossary_entries=glossary_entries,
@@ -491,8 +530,8 @@ def translate_chunk(
                         translation,
                     ) in zip(
                         target_blocks,
-                        expected_source_speakers,
-                        expected_source_texts,
+                        original_source_speakers,
+                        original_source_texts,
                         corrected_texts,
                         strict=True,
                     )
@@ -509,10 +548,10 @@ def translate_chunk(
                     for block in target_blocks
                 ],
                 source_speakers=(
-                    expected_source_speakers
+                    original_source_speakers
                 ),
                 source_texts=(
-                    expected_source_texts
+                    original_source_texts
                 ),
                 noise_dictionary=noise_dictionary,
                 glossary_entries=glossary_entries,
