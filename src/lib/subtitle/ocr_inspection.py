@@ -33,8 +33,28 @@ class OcrInspectionEntry:
     changed_steps: tuple[str, ...]
 
     @property
-    def changed(self) -> bool:
+    def observed(self) -> bool:
+        """
+        話者検出やNoise候補検出を含め、
+        何らかの観測結果が存在するかを返す。
+        """
         return bool(self.changed_steps)
+
+    @property
+    def changed(self) -> bool:
+        """
+        OCR処理によって字幕本文が実際に変更されたかを返す。
+
+        話者抽出とNoise候補検出だけでは、
+        本文変更として扱わない。
+        """
+        return any(
+            step in {
+                STEP_OCR_CLEANUP,
+                STEP_NOISE_DICTIONARY,
+            }
+            for step in self.changed_steps
+        )
 
 
 @dataclass(frozen=True)

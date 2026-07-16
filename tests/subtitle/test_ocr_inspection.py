@@ -142,6 +142,30 @@ def test_bracket_speaker_is_detected(
     )
 
 
+def test_speaker_detection_is_observed_but_not_changed(
+    tmp_path: Path,
+) -> None:
+    dictionary = build_noise_dictionary(
+        tmp_path
+    )
+
+    entry = inspect_ocr_block(
+        build_block(
+            "[DANIEL] This is the Stargate."
+        ),
+        dictionary,
+    )
+
+    assert entry.speaker == "DANIEL"
+
+    assert STEP_SPEAKER_PARSE in (
+        entry.changed_steps
+    )
+
+    assert entry.observed is True
+    assert entry.changed is False
+
+
 def test_colon_speaker_is_detected(
     tmp_path: Path,
 ) -> None:
@@ -246,13 +270,24 @@ def test_candidate_noise_is_not_applied(
         dictionary,
     )
 
+    assert entry.noise_candidates == (
+        "CandidateNoise",
+    )
+
     assert entry.noise_applied_text == (
         "CandidateNoise"
+    )
+
+    assert STEP_NOISE_DETECTED in (
+        entry.changed_steps
     )
 
     assert STEP_NOISE_DICTIONARY not in (
         entry.changed_steps
     )
+
+    assert entry.observed is True
+    assert entry.changed is False
 
 
 def test_inspection_does_not_write_noise_file(
@@ -296,7 +331,7 @@ def test_changed_steps_have_stable_order(
     )
 
 
-def test_report_summary_is_calculated(
+def test_summary_does_not_count_observation_only_entries_as_changed(
     tmp_path: Path,
 ) -> None:
     dictionary = build_noise_dictionary(
@@ -306,13 +341,16 @@ def test_report_summary_is_calculated(
     report = inspect_ocr_blocks(
         [
             build_block(
-                "Normal text.",
+                "[DANIEL] Normal dialogue.",
                 number="1",
             ),
             build_block(
-                "[DANIEL] | think "
-                "VVNsKomCIAcM",
+                "CandidateNoise",
                 number="2",
+            ),
+            build_block(
+                "| think this changed.",
+                number="3",
             ),
         ],
         source_srt=(
@@ -322,17 +360,11 @@ def test_report_summary_is_calculated(
         noise_dictionary=dictionary,
     )
 
-    assert report.summary.subtitle_count == 2
+    assert report.summary.subtitle_count == 3
 
     assert (
         report.summary
         .speaker_detected_count
-        == 1
-    )
-
-    assert (
-        report.summary
-        .cleanup_changed_count
         == 1
     )
 
@@ -344,14 +376,14 @@ def test_report_summary_is_calculated(
 
     assert (
         report.summary
-        .noise_candidate_count
+        .cleanup_changed_count
         == 1
     )
 
     assert (
         report.summary
         .noise_applied_count
-        == 1
+        == 0
     )
 
     assert (

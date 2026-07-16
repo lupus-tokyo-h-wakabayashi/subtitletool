@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from lib.subtitle.ocr_html import (
+    render_entry,
     render_ocr_html_report,
     write_ocr_html_report,
 )
@@ -154,3 +155,30 @@ def test_html_report_is_written(
         output_path.parent
         / "report.html.tmp"
     ).exists()
+
+
+def test_speaker_only_entry_is_not_marked_as_changed() -> None:
+    entry = OcrInspectionEntry(
+        subtitle_id="1",
+        timestamp=(
+            "00:00:01,000 --> "
+            "00:00:03,000"
+        ),
+        raw_text=(
+            "[DANIEL] Normal dialogue."
+        ),
+        speaker="DANIEL",
+        parsed_text="Normal dialogue.",
+        cleaned_text="Normal dialogue.",
+        noise_candidates=(),
+        noise_applied_text="Normal dialogue.",
+        changed_steps=(
+            "speaker_parse",
+        ),
+    )
+
+    html = render_entry(entry)
+
+    assert 'data-changed="false"' in html
+    assert 'data-speaker="true"' in html
+    assert "entry-changed" not in html

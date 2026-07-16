@@ -15,6 +15,7 @@ from lib.subtitle.ocr_html import (
     write_ocr_html_report,
 )
 from lib.subtitle.ocr_inspection import (
+    OcrInspectionReport,
     inspect_ocr_blocks,
 )
 from lib.subtitle.ocr_report import (
@@ -86,7 +87,7 @@ def build_default_output_dir(
 
 
 def print_report_summary(
-    report,
+    report: OcrInspectionReport,
 ) -> None:
     summary = report.summary
 
