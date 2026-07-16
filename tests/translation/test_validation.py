@@ -825,3 +825,59 @@ def test_validation_does_not_normalize_level_1_with_glossary(
         in reason
         for reason in result.reasons
     )
+
+
+def test_validation_uses_retry_source_for_response_validation(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    response = """
+{
+  "targets": {
+    "1": {
+      "source": {
+        "speaker": null,
+        "text": "（OCR判読不能） establishing connection"
+      },
+      "translation": "接続を確立します。"
+    }
+  }
+}
+"""
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "1",
+        ],
+        source_speakers=[
+            None,
+        ],
+        source_texts=[
+            (
+                "这些人 "
+                "establishing connection"
+            ),
+        ],
+        response_source_speakers=[
+            None,
+        ],
+        response_source_texts=[
+            (
+                "（OCR判読不能） "
+                "establishing connection"
+            ),
+        ],
+        noise_dictionary=noise_dictionary,
+    )
+
+    assert result.valid
+    assert result.reasons == []
+
+    assert result.translated_texts == [
+        "接続を確立します。",
+    ]

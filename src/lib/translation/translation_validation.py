@@ -1031,12 +1031,28 @@ def validate_translation_response(
     noise_dictionary: NoiseDictionary,
     source_speakers: list[str | None] | None = None,
     source_texts: list[str] | None = None,
+    response_source_speakers: list[str | None] | None = None,
+    response_source_texts: list[str] | None = None,
     glossary_entries: Mapping[str, str] | None = None,
     repeat_threshold: int = DEFAULT_REPEAT_THRESHOLD,
     incomplete_threshold: int = DEFAULT_INCOMPLETE_THRESHOLD,
 ) -> ValidationResult:
     """
     LLMのJSON翻訳レスポンス全体を検証する。
+
+    source_speakers / source_texts:
+        翻訳内容、タグ、用語集などの品質検証に使用する
+        元字幕のsource情報。
+
+    response_source_speakers / response_source_texts:
+        返却JSON内のsourceが変更されていないことを
+        確認するためのsource情報。
+
+        未指定の場合は、
+        source_speakers / source_textsを使用する。
+
+        OCRマスク後の字幕で再試行する場合は、
+        再試行用source情報を指定する。
 
     期待形式:
         {
@@ -1091,6 +1107,7 @@ def validate_translation_response(
     # 後続の検証へ進まない。
     if parse_errors:
         return result
+
     id_errors = validate_translation_ids(
         items,
         expected_ids,
@@ -1107,18 +1124,30 @@ def validate_translation_response(
     if id_errors:
         return result
 
+    expected_response_speakers = (
+        response_source_speakers
+        if response_source_speakers is not None
+        else source_speakers
+    )
+
+    expected_response_texts = (
+        response_source_texts
+        if response_source_texts is not None
+        else source_texts
+    )
+
     if (
-        source_speakers is not None
-        and source_texts is not None
+        expected_response_speakers is not None
+        and expected_response_texts is not None
     ):
         source_errors = (
             validate_response_sources(
                 items,
                 expected_speakers=(
-                    source_speakers
+                    expected_response_speakers
                 ),
                 expected_texts=(
-                    source_texts
+                    expected_response_texts
                 ),
             )
         )
