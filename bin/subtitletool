@@ -23,6 +23,10 @@ switch $COMMAND
         set -gx PYTHONPATH ~/projects/subtitletool/src
         python3 ~/projects/subtitletool/src/commands/ocr.py $argv[2..-1]
 
+    case inspect-ocr
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/inspect_ocr.py $argv[2..-1]
+
     case mux
         set -gx PYTHONPATH ~/projects/subtitletool/src
         python3 ~/projects/subtitletool/src/commands/mux.py $argv[2..-1]
@@ -34,5 +38,6 @@ switch $COMMAND
         echo "  subtitletool make input.mkv"
         echo "  subtitletool extract input.mkv"
         echo "  subtitletool ocr input.eng.sup [output.eng.srt]"
+        echo "  subtitletool inspect-ocr input.eng.srt [--profile PROFILE]"
         echo "  subtitletool mux input.mkv [input.ja.srt] [output.ja.mkv]"
 end
