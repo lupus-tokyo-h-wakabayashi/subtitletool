@@ -13,6 +13,7 @@ from lib.profile.prompt import load_glossary_entries
 from lib.subtitle.srt import (
     SrtBlock,
     apply_translations,
+    parse_speaker_from_text,
     write_structured_srt,
 )
 from lib.subtitle.text import cleanup_ocr_text
@@ -25,21 +26,75 @@ from .translation_output import (
 )
 
 
+def rebuild_speaker_text(
+    speaker: str | None,
+    text: str,
+) -> str:
+    """
+    OCR前処理後の本文へ、
+    抽出済みの話者情報を内部形式で戻す。
+
+    話者あり:
+        [DANIEL] This is the Stargate.
+
+    話者なし:
+        This is the Stargate.
+    """
+    if speaker is None:
+        return text
+
+    return f"[{speaker}] {text}"
+
+
+def cleanup_block(
+    block: SrtBlock,
+) -> SrtBlock:
+    """
+    字幕番号とタイムコードを維持したまま、
+    話者情報を失わずにOCR前処理する。
+
+    明示的な話者ラベルがある場合は、
+    話者と本文を先に分離する。
+
+    OCR前処理は本文だけへ適用し、
+    処理後に話者を内部形式へ戻す。
+    """
+    parsed = parse_speaker_from_text(
+        block.text
+    )
+
+    if parsed.speaker is None:
+        cleaned_text = cleanup_ocr_text(
+            block.text
+        )
+    else:
+        cleaned_body = cleanup_ocr_text(
+            parsed.text
+        )
+
+        cleaned_text = rebuild_speaker_text(
+            parsed.speaker,
+            cleaned_body,
+        )
+
+    return SrtBlock(
+        number=block.number,
+        timestamp=block.timestamp,
+        text=cleaned_text,
+    )
+
+
 def cleanup_blocks(
     blocks: list[SrtBlock],
 ) -> list[SrtBlock]:
     """
     字幕番号とタイムコードを維持したまま、
-    AIへ渡す字幕本文だけOCR前処理する。
+    AIへ渡す字幕本文をOCR前処理する。
+
+    明示された話者情報は内部形式で維持する。
     """
     return [
-        SrtBlock(
-            number=block.number,
-            timestamp=block.timestamp,
-            text=cleanup_ocr_text(
-                block.text
-            ),
-        )
+        cleanup_block(block)
         for block in blocks
     ]
 
