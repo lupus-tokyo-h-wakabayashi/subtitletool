@@ -338,7 +338,7 @@ def test_build_profile_translation_prompt_includes_editable_targets_schema(
     )
 
     assert (
-        "返却JSONのtargetsへ複製すること"
+        "入力JSON内のtargetsを"
         in prompt
     )
 
@@ -348,7 +348,12 @@ def test_build_profile_translation_prompt_includes_editable_targets_schema(
     )
 
     assert (
-        "context_beforeとcontext_afterは返却しない"
+        "context_beforeとcontext_afterは"
+        in prompt
+    )
+
+    assert (
+        "読み取り専用です"
         in prompt
     )
 
@@ -358,12 +363,12 @@ def test_build_profile_translation_prompt_includes_editable_targets_schema(
     )
 
     assert (
-        "source.speakerとsource.textを変更してはいけません"
+        "変更してよいのは、"
         in prompt
     )
 
     assert (
-        "translation以外は、"
+        "translationの値だけです"
         in prompt
     )
 
