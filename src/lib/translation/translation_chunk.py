@@ -5,7 +5,10 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from lib.infrastructure.ollama import generate
+from lib.infrastructure.ollama import (
+    build_generate_payload,
+    generate,
+)
 from lib.profile.noise import (
     NoiseDictionary,
     append_noise_candidates,
@@ -51,14 +54,135 @@ MAX_TRANSLATION_ATTEMPTS = 3
 PROJECT_ROOT = (
     Path(__file__)
     .resolve()
-    .parents[2]
+    .parents[3]
 )
 
 TRANSLATION_DEBUG_DIR = (
     PROJECT_ROOT
     / "tmp"
-    / "subtitletool"
 )
+
+
+def build_initial_translation_prompt(
+    before_context: list[SrtBlock],
+    target_blocks: list[SrtBlock],
+    after_context: list[SrtBlock],
+    *,
+    profile_name: str,
+    ocr_noise_instruction: str,
+    glossary_instruction: str,
+) -> str:
+    """
+    初回翻訳リクエストで使用するPromptを生成する。
+
+    通常翻訳とリクエスト確認機能の両方が
+    この関数を使用し、送信内容の差異を防ぐ。
+    """
+    prompt = build_prompt(
+        before_context,
+        target_blocks,
+        after_context,
+        profile_name=profile_name,
+        ocr_noise_instruction=(
+            ocr_noise_instruction
+        ),
+    )
+
+    prompt += glossary_instruction
+
+    return prompt
+
+
+def build_initial_translation_request_payload(
+    before_context: list[SrtBlock],
+    target_blocks: list[SrtBlock],
+    after_context: list[SrtBlock],
+    model: str,
+    *,
+    glossary_entries: dict[str, str],
+    noise_dictionary: NoiseDictionary,
+    profile_name: str,
+) -> dict[str, object]:
+    """
+    次の初回翻訳リクエストと同一のPayloadを生成する。
+
+    Ollamaへの接続・送信やNoise辞書の更新は行わない。
+    """
+    suspicious_ids = find_noise_candidate_ids(
+        target_blocks,
+        noise_dictionary,
+    )
+
+    ocr_noise_instruction = (
+        build_ocr_noise_instruction(
+            suspicious_ids
+        )
+    )
+
+    glossary_instruction = (
+        build_required_glossary_instruction(
+            target_blocks,
+            glossary_entries,
+        )
+    )
+
+    prompt = build_initial_translation_prompt(
+        before_context,
+        target_blocks,
+        after_context,
+        profile_name=profile_name,
+        ocr_noise_instruction=(
+            ocr_noise_instruction
+        ),
+        glossary_instruction=(
+            glossary_instruction
+        ),
+    )
+
+    response_schema = (
+        build_translation_response_schema(
+            target_blocks
+        )
+    )
+
+    return build_generate_payload(
+        prompt=prompt,
+        model=model,
+        temperature=0.2,
+        top_p=0.9,
+        response_format=response_schema,
+    )
+
+
+def save_translation_request_payload(
+    payload: dict[str, object],
+    *,
+    chunk_start: int,
+    chunk_end: int,
+) -> Path:
+    """
+    Ollamaへ送信予定のPayloadを確認用JSONへ保存する。
+    """
+    TRANSLATION_DEBUG_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path = TRANSLATION_DEBUG_DIR / (
+        "translation-request-"
+        f"{chunk_start}-{chunk_end}.json"
+    )
+
+    output_path.write_text(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    return output_path
 
 
 def normalize_translation_text(
@@ -324,7 +448,7 @@ def translate_chunk(
             retry_target_blocks
         )
 
-        prompt = build_prompt(
+        prompt = build_initial_translation_prompt(
             before_context,
             retry_target_blocks,
             after_context,
@@ -332,9 +456,10 @@ def translate_chunk(
             ocr_noise_instruction=(
                 ocr_noise_instruction
             ),
+            glossary_instruction=(
+                glossary_instruction
+            ),
         )
-
-        prompt += glossary_instruction
 
         if attempt > 1:
             prompt += build_retry_instruction(

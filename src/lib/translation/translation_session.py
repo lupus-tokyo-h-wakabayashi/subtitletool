@@ -17,7 +17,11 @@ from lib.subtitle.srt import (
     write_structured_srt,
 )
 from lib.subtitle.text import cleanup_ocr_text
-from .translation_chunk import translate_chunk
+from .translation_chunk import (
+    build_initial_translation_request_payload,
+    save_translation_request_payload,
+    translate_chunk,
+)
 from .translation_output import (
     print_chunk_start,
     print_translation_complete,
@@ -130,7 +134,8 @@ def run_translation_session(
     context_size: int,
     profile_config: ProfileConfig,
     noise_dictionary: NoiseDictionary,
-) -> None:
+    inspect_request: bool = False,
+) -> Path | None:
     """
     未翻訳部分をチャンク単位で翻訳し、
     各チャンク終了時に途中保存する。
@@ -254,6 +259,38 @@ def run_translation_session(
             ),
         )
 
+        if inspect_request:
+            request_payload = (
+                build_initial_translation_request_payload(
+                    before_context,
+                    target_blocks,
+                    after_context,
+                    model,
+                    glossary_entries=glossary_entries,
+                    noise_dictionary=noise_dictionary,
+                    profile_name=resolved_profile,
+                )
+            )
+
+            inspection_path = (
+                save_translation_request_payload(
+                    request_payload,
+                    chunk_start=start + 1,
+                    chunk_end=end,
+                )
+            )
+
+            print()
+            print(
+                "Translation request inspection saved:"
+            )
+            print(f"  {inspection_path}")
+            print(
+                "Ollama request was not sent."
+            )
+
+            return inspection_path
+
         translated_texts = translate_chunk(
             before_context,
             target_blocks,
@@ -331,3 +368,5 @@ def run_translation_session(
         total_elapsed=total_elapsed,
         output_path=output_path,
     )
+
+    return None
