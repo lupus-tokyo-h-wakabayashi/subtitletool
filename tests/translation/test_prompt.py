@@ -333,7 +333,12 @@ def test_build_profile_translation_prompt_includes_editable_targets_schema(
     )
 
     assert (
-        "入力JSON内のtargetsを編集するタスク"
+        "新しいJSONを生成するタスクではない"
+        in prompt
+    )
+
+    assert (
+        "入力JSON内のtargetsを"
         in prompt
     )
 
@@ -343,17 +348,27 @@ def test_build_profile_translation_prompt_includes_editable_targets_schema(
     )
 
     assert (
-        "その他のtargets内要素と、"
+        "context_beforeとcontext_afterは"
         in prompt
     )
 
     assert (
-        "context_before、context_afterは読み取り専用"
+        "読み取り専用です"
         in prompt
     )
 
     assert (
         "最上位キーはtargetsだけ"
+        in prompt
+    )
+
+    assert (
+        "変更してよいのは、"
+        in prompt
+    )
+
+    assert (
+        "translationの値だけです"
         in prompt
     )
 
