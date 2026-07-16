@@ -5,9 +5,38 @@ import time
 import urllib.error
 import urllib.request
 
-
 DEFAULT_MODEL = "qwen3:14b"
 STARTUP_TIMEOUT_SECONDS = 30
+
+
+def build_generate_payload(
+    *,
+    prompt: str,
+    model: str,
+    temperature: float,
+    top_p: float,
+    response_format: dict[str, object] | None,
+) -> dict[str, object]:
+    """
+    Ollama /api/generate用のPayloadを生成する。
+
+    response_formatが指定されている場合だけ、
+    structured outputs用のformatを追加する。
+    """
+    payload: dict[str, object] = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+            "top_p": top_p,
+        },
+    }
+
+    if response_format is not None:
+        payload["format"] = response_format
+
+    return payload
 
 
 def get_windows_host_ip() -> str:
@@ -44,10 +73,10 @@ def is_available(timeout: float = 2.0) -> bool:
             return response.status == 200
 
     except (
-        urllib.error.URLError,
-        TimeoutError,
-        ConnectionError,
-        OSError,
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            OSError,
     ):
         return False
 
@@ -130,20 +159,27 @@ def generate(
     temperature: float = 0.2,
     top_p: float = 0.9,
     timeout: int = 900,
+    response_format: dict[str, object] | None = None,
 ) -> str:
+    """
+    Ollamaへ生成リクエストを送信する。
+
+    response_formatが指定されている場合は、
+    JSON Schemaをformatとして送信する。
+    """
     # 各生成処理の前に接続を保証する
     ensure_available()
 
+    request_payload = build_generate_payload(
+        prompt=prompt,
+        model=model,
+        temperature=temperature,
+        top_p=top_p,
+        response_format=response_format,
+    )
+
     payload = json.dumps(
-        {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-                "top_p": top_p,
-            },
-        }
+        request_payload
     ).encode("utf-8")
 
     request = urllib.request.Request(
@@ -155,10 +191,18 @@ def generate(
 
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = json.loads(response.read().decode("utf-8"))
+            body = json.loads(
+                response.read().decode(
+                    "utf-8"
+                )
+            )
 
     except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
+        detail = error.read().decode(
+            "utf-8",
+            errors="replace",
+        )
+
         raise RuntimeError(
             f"Ollama HTTP error {error.code}: {detail}"
         ) from error
@@ -168,9 +212,17 @@ def generate(
             f"Failed to connect to Ollama: {error.reason}"
         ) from error
 
-    generated = body.get("response")
+    generated = body.get(
+        "response"
+    )
 
-    if not isinstance(generated, str):
-        raise RuntimeError("Ollama response does not contain generated text.")
+    if not isinstance(
+        generated,
+        str,
+    ):
+        raise RuntimeError(
+            "Ollama response does not contain "
+            "generated text."
+        )
 
     return generated.strip()
