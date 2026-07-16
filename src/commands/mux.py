@@ -2,7 +2,9 @@
 import sys
 from pathlib import Path
 
-from lib.media.ffmpeg import mux_japanese_srt
+from lib.media.mkvmerge import (
+    mux_japanese_srt,
+)
 from lib.subtitle.srt import default_ja_path
 
 
