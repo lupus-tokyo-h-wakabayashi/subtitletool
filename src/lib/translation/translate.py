@@ -239,5 +239,3 @@ def translate_srt(
         return inspection_path
 
     return output_path
-
-    return output_path

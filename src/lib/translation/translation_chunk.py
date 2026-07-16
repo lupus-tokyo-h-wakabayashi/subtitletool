@@ -461,8 +461,6 @@ def translate_chunk(
             ),
         )
 
-        prompt += glossary_instruction
-
         if attempt > 1:
             prompt += build_retry_instruction(
                 last_errors
