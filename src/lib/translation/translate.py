@@ -116,6 +116,7 @@ def translate_srt(
     profile_name: str | None = None,
     style_name: str | None = None,
     glossary_name: str | None = None,
+    inspect_request: bool = False,
 ) -> Path:
     input_path = (
         Path(input_srt)
@@ -199,6 +200,12 @@ def translate_srt(
     )
 
     if resume_start == total_blocks:
+        if inspect_request:
+            raise RuntimeError(
+                "No translation request to inspect: "
+                "all subtitles are already translated."
+            )
+
         print_translation_already_complete(
             requested_profile=(
                 profile_config.requested_profile
@@ -214,7 +221,7 @@ def translate_srt(
 
         return output_path
 
-    run_translation_session(
+    inspection_path = run_translation_session(
         source_blocks=source_blocks,
         translated_blocks_all=(
             translated_blocks_all
@@ -225,6 +232,12 @@ def translate_srt(
         context_size=context_size,
         profile_config=profile_config,
         noise_dictionary=noise_dictionary,
+        inspect_request=inspect_request,
     )
+
+    if inspection_path is not None:
+        return inspection_path
+
+    return output_path
 
     return output_path

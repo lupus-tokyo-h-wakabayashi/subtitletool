@@ -55,6 +55,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    parser.add_argument(
+        "--inspect-request",
+        action="store_true",
+        help=(
+            "Save the next Ollama translation request "
+            "as JSON without sending it."
+        ),
+    )
+
     return parser
 
 
@@ -117,10 +126,15 @@ def main() -> None:
         profile_name=args.profile,
         style_name=args.style,
         glossary_name=args.glossary,
+        inspect_request=args.inspect_request,
     )
 
     print()
-    print(f"Done: {result}")
+
+    if args.inspect_request:
+        print(f"Request inspection saved: {result}")
+    else:
+        print(f"Done: {result}")
 
 
 if __name__ == "__main__":
