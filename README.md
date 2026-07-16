@@ -29,6 +29,8 @@ Blu-rayなどに収録された英語PGS字幕をOCRでテキスト化し、
 - Mux結果の自動検証
 - ETA付き進捗表示
 - エラー発生時のレスポンス保存
+- OCR処理段階のデバッグレポート
+- OCR Raw / Cleanup / Noise辞書適用結果の比較
 - すべてローカル環境で完結
 
 ## Requirements
@@ -82,6 +84,16 @@ OllamaをWindows側で実行する場合は、WSLからOllama APIへ接続でき
 
 - PgsToSrt
 - Tesseract OCR 4.1.1
+
+### inspect-ocr
+
+PgsToSrtが生成した英語SRTを解析し、OCR直後・クリーンアップ後・Noise辞書適用後のテキストを比較できるデバッグレポートを生成します。
+
+```bash
+subtitletool inspect-ocr \
+    movie.eng.srt \
+    --profile hogehoge
+```
 
 ### Ollama
 
@@ -532,3 +544,22 @@ Validationは次の順番で実行されます。
 Validationに失敗した場合は、エラー内容に応じたRetryプロンプトを生成し、自動で再翻訳を実行します。
 
 正常な字幕は保持したまま問題のある字幕のみを修正することで、翻訳品質と処理時間の両立を実現しています。
+
+
+---
+
+# フェーズ10：全テスト
+
+```fish
+env PYTHONPATH=src \
+    python3 -m pytest \
+    tests/subtitle/test_ocr_inspection.py \
+    tests/subtitle/test_ocr_report.py \
+    tests/subtitle/test_ocr_html.py \
+    -v
+
+env PYTHONPATH=src \
+    python3 -m pytest \
+    tests \
+    -v
+```
