@@ -31,6 +31,7 @@ GLOSSARY_ENTRY_REQUIRED_KEYS = {
 GLOSSARY_ENTRY_ALLOWED_KEYS = {
     "source",
     "target",
+    "case_sensitive",
 }
 
 
@@ -38,10 +39,57 @@ GLOSSARY_ENTRY_ALLOWED_KEYS = {
 class GlossaryEntry:
     """
     Glossaryの1エントリ。
+
+    case_sensitive:
+        Trueの場合、原文中のsourceを
+        大文字・小文字まで完全一致で判定する。
+
+        Falseの場合、従来どおり
+        大文字・小文字を区別しない。
     """
 
     source: str
     target: str
+    case_sensitive: bool = False
+
+
+class GlossaryEntries(dict[str, str]):
+    """
+    ValidationとPrompt生成で使用する用語集。
+
+    dict[str, str]との互換性を維持しながら、
+    大文字・小文字を区別するsourceを保持する。
+    """
+
+    def __init__(
+        self,
+        entries: tuple[GlossaryEntry, ...],
+    ) -> None:
+        super().__init__(
+            (
+                entry.source,
+                entry.target,
+            )
+            for entry in entries
+        )
+
+        self.case_sensitive_sources = frozenset(
+            entry.source
+            for entry in entries
+            if entry.case_sensitive
+        )
+
+    def is_case_sensitive(
+        self,
+        source_term: str,
+    ) -> bool:
+        """
+        指定sourceが大小文字区別対象か返す。
+        """
+        return (
+            source_term
+            in self.case_sensitive_sources
+        )
 
 
 @dataclass(frozen=True)
@@ -200,6 +248,9 @@ def parse_glossary_entry(
 ) -> GlossaryEntry:
     """
     entries配列内の1要素を検証する。
+
+    case_sensitiveは任意項目とし、
+    未指定の場合はFalseを使用する。
     """
     if not isinstance(value, dict):
         raise RuntimeError(
@@ -242,6 +293,11 @@ def parse_glossary_entry(
     source_value = value["source"]
     target_value = value["target"]
 
+    case_sensitive_value = value.get(
+        "case_sensitive",
+        False,
+    )
+
     if not isinstance(source_value, str):
         raise RuntimeError(
             "Invalid glossary source: "
@@ -256,6 +312,15 @@ def parse_glossary_entry(
             f"path={path}, "
             f"index={index}, "
             "expected=string"
+        )
+
+    if type(case_sensitive_value) is not bool:
+        raise RuntimeError(
+            "Invalid glossary case_sensitive: "
+            f"path={path}, "
+            f"index={index}, "
+            f"value={case_sensitive_value!r}, "
+            "expected=boolean"
         )
 
     source = source_value.strip()
@@ -278,6 +343,7 @@ def parse_glossary_entry(
     return GlossaryEntry(
         source=source,
         target=target,
+        case_sensitive=case_sensitive_value,
     )
 
 
@@ -408,18 +474,20 @@ def load_glossary_document(
 
 def load_glossary_entries(
     profile_name: str | None = None,
-) -> dict[str, str]:
+) -> GlossaryEntries:
     """
-    Validation用の辞書を配列順のまま返す。
+    Validation用の用語集を配列順のまま返す。
+
+    dict[str, str]との互換性を維持しながら、
+    case_sensitive対象のsourceも保持する。
     """
     document = load_glossary_document(
         profile_name
     )
 
-    return {
-        entry.source: entry.target
-        for entry in document.entries
-    }
+    return GlossaryEntries(
+        document.entries
+    )
 
 
 def build_glossary_prompt(

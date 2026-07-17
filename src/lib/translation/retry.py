@@ -5,6 +5,7 @@ import re
 
 from lib.subtitle.srt import SrtBlock
 from .translation_validation import (
+    is_glossary_term_case_sensitive,
     source_contains_glossary_term,
 )
 
@@ -423,16 +424,29 @@ def build_required_glossary_instruction(
     """
     翻訳対象チャンクに含まれる用語集項目を抽出し、
     LLMへ使用必須の訳語として通知する。
+
+    case_sensitive対象の用語は、
+    原文の大文字・小文字まで一致した場合だけ通知する。
     """
-    required_entries: list[tuple[str, str]] = []
+    required_entries: list[
+        tuple[str, str]
+    ] = []
 
     for source_term, expected_term in (
         glossary_entries.items()
     ):
+        case_sensitive = (
+            is_glossary_term_case_sensitive(
+                glossary_entries,
+                source_term,
+            )
+        )
+
         if not any(
             source_contains_glossary_term(
                 block.text,
                 source_term,
+                case_sensitive=case_sensitive,
             )
             for block in target_blocks
         ):

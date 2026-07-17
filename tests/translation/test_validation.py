@@ -1,10 +1,19 @@
+from __future__ import annotations
+
+import pytest
+from lib.profile.glossary import (
+    GlossaryEntries,
+    GlossaryEntry,
+)
 from lib.profile.noise import (
     NoiseEntry,
 )
 from lib.translation.translation_validation import (
+    find_glossary_violations,
+)
+from lib.translation.translation_validation import (
     validate_translation_response,
 )
-
 from .helpers import build_test_noise_dictionary
 
 
@@ -881,3 +890,151 @@ def test_validation_uses_retry_source_for_response_validation(
     assert result.translated_texts == [
         "接続を確立します。",
     ]
+
+
+def test_case_sensitive_glossary_matches_exact_case(
+) -> None:
+    glossary_entries = GlossaryEntries(
+        (
+            GlossaryEntry(
+                source="Destiny",
+                target="デスティニー",
+                case_sensitive=True,
+            ),
+        )
+    )
+
+    violations = find_glossary_violations(
+        source_texts=[
+            "We have returned to Destiny.",
+        ],
+        translated_texts=[
+            "デスティニーへ戻った。",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        glossary_entries=glossary_entries,
+    )
+
+    assert violations == []
+
+
+def test_case_sensitive_glossary_rejects_wrong_translation(
+) -> None:
+    glossary_entries = GlossaryEntries(
+        (
+            GlossaryEntry(
+                source="Destiny",
+                target="デスティニー",
+                case_sensitive=True,
+            ),
+        )
+    )
+
+    violations = find_glossary_violations(
+        source_texts=[
+            "We have returned to Destiny.",
+        ],
+        translated_texts=[
+            "船へ戻った。",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        glossary_entries=glossary_entries,
+    )
+
+    assert len(violations) == 1
+
+    assert violations[0].startswith(
+        "Glossary violation:"
+    )
+
+
+def test_case_sensitive_glossary_ignores_lowercase_common_noun(
+) -> None:
+    glossary_entries = GlossaryEntries(
+        (
+            GlossaryEntry(
+                source="Destiny",
+                target="デスティニー",
+                case_sensitive=True,
+            ),
+        )
+    )
+
+    violations = find_glossary_violations(
+        source_texts=[
+            "Coming here was my destiny.",
+        ],
+        translated_texts=[
+            (
+                "ここに来ることこそが、"
+                "私の運命でした。"
+            ),
+        ],
+        subtitle_ids=[
+            "190",
+        ],
+        glossary_entries=glossary_entries,
+    )
+
+    assert violations == []
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        "destinies",
+        "predestiny",
+        "DESTINY",
+    ],
+)
+def test_case_sensitive_glossary_does_not_partially_match(
+    source_text: str,
+) -> None:
+    glossary_entries = GlossaryEntries(
+        (
+            GlossaryEntry(
+                source="Destiny",
+                target="デスティニー",
+                case_sensitive=True,
+            ),
+        )
+    )
+
+    violations = find_glossary_violations(
+        source_texts=[
+            source_text,
+        ],
+        translated_texts=[
+            "任意の日本語",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        glossary_entries=glossary_entries,
+    )
+
+    assert violations == []
+
+
+def test_plain_dictionary_keeps_case_insensitive_behavior(
+) -> None:
+    violations = find_glossary_violations(
+        source_texts=[
+            "return to chevron",
+        ],
+        translated_texts=[
+            "帰還する",
+        ],
+        subtitle_ids=[
+            "1",
+        ],
+        glossary_entries={
+            "Chevron": "シェブロン",
+        },
+    )
+
+    assert len(violations) == 1
