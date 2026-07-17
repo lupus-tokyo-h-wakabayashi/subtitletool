@@ -18,6 +18,9 @@ from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
 )
+from .hybrid_recovery import (
+    recover_translation_with_hybrid,
+)
 from .ocr_retry import (
     apply_level_1_ocr_fallback,
     build_chinese_retry_blocks,
@@ -860,6 +863,22 @@ def translate_chunk(
             return normalize_translation_texts(
                 corrected_validation.translated_texts
             )
+
+    hybrid_texts = (
+        recover_translation_with_hybrid(
+            target_blocks,
+            last_translated_texts,
+            last_errors,
+            model,
+            noise_dictionary=noise_dictionary,
+            glossary_entries=glossary_entries,
+        )
+    )
+
+    if hybrid_texts is not None:
+        return normalize_translation_texts(
+            hybrid_texts
+        )
 
     raise RuntimeError(
         "Translation failed after "
