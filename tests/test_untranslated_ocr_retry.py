@@ -14,6 +14,7 @@ from lib.translation.ocr_retry import (
     extract_untranslated_english_error_ids,
     find_probable_untranslated_ocr_lines,
     is_probable_ocr_source_line,
+    is_symbol_dense_ocr_source_line,
 )
 from lib.translation.retry import (
     build_untranslated_english_retry_instruction,
@@ -23,6 +24,29 @@ from lib.translation.translation_chunk import (
 )
 from lib.translation.translation_validation import (
     validate_translation_response,
+)
+
+SYMBOL_DENSE_OCR_LINE = (
+    "hm )olt=)a-te mda omc) "
+    "t= meh Yd (=) 00"
+)
+
+SYMBOL_DENSE_SOURCE_TEXT = (
+    "This is what Destiny\n"
+    "intended from the moment\n"
+    f"{SYMBOL_DENSE_OCR_LINE}"
+)
+
+SYMBOL_DENSE_TRANSLATION = (
+    "これはデスティニーが"
+    "最初から意図したことであり、"
+    f"{SYMBOL_DENSE_OCR_LINE}"
+)
+
+SYMBOL_DENSE_UNTRANSLATED_ERROR = (
+    "Untranslated English sentence detected: "
+    "subtitle_id='361', "
+    f"text={SYMBOL_DENSE_TRANSLATION!r}"
 )
 
 OCR_LINE = "AV Cag are T"
@@ -596,3 +620,137 @@ def test_level_1_fallback_does_not_run_with_other_errors(
     )
 
     assert result is None
+
+
+def test_symbol_dense_ocr_source_line_is_detected(
+) -> None:
+    actual = is_symbol_dense_ocr_source_line(
+        SYMBOL_DENSE_OCR_LINE
+    )
+
+    assert actual is True
+
+
+@pytest.mark.parametrize(
+    "source_line",
+    [
+        "This is what Destiny intended.",
+        "What's going on?",
+        "(CROWD CHATTERING)",
+        "(LOW MECHANICAL HUM) (CONTINUES)",
+        "SG-1",
+        "F-302",
+        "P4X-351",
+        "x = 10",
+        "sa",
+    ],
+)
+def test_normal_or_ambiguous_line_is_not_symbol_dense_ocr(
+    source_line: str,
+) -> None:
+    actual = is_symbol_dense_ocr_source_line(
+        source_line
+    )
+
+    assert actual is False
+
+
+def test_probable_ocr_source_line_detects_symbol_dense_text(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    actual = is_probable_ocr_source_line(
+        SYMBOL_DENSE_OCR_LINE,
+        noise_dictionary,
+    )
+
+    assert actual is True
+
+
+def test_find_symbol_dense_untranslated_ocr_line(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    target_block = SrtBlock(
+        number="361",
+        timestamp=(
+            "00:32:31,867 --> "
+            "00:32:35,287"
+        ),
+        text=SYMBOL_DENSE_SOURCE_TEXT,
+    )
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            target_blocks=[
+                target_block,
+            ],
+            translated_texts=[
+                SYMBOL_DENSE_TRANSLATION,
+            ],
+            errors=[
+                SYMBOL_DENSE_UNTRANSLATED_ERROR,
+            ],
+            noise_dictionary=(
+                noise_dictionary
+            ),
+        )
+    )
+
+    assert actual == {
+        "361": [
+            SYMBOL_DENSE_OCR_LINE,
+        ],
+    }
+
+
+def test_symbol_dense_ocr_fallback_wraps_complete_line(
+) -> None:
+    target_block = SrtBlock(
+        number="361",
+        timestamp=(
+            "00:32:31,867 --> "
+            "00:32:35,287"
+        ),
+        text=SYMBOL_DENSE_SOURCE_TEXT,
+    )
+
+    (
+        corrected,
+        applied,
+    ) = apply_level_1_ocr_fallback(
+        target_blocks=[
+            target_block,
+        ],
+        translated_texts=[
+            SYMBOL_DENSE_TRANSLATION,
+        ],
+        probable_ocr_lines={
+            "361": [
+                SYMBOL_DENSE_OCR_LINE,
+            ],
+        },
+    )
+
+    assert corrected == [
+        (
+            "これはデスティニーが"
+            "最初から意図したことであり、"
+            f"[1]{SYMBOL_DENSE_OCR_LINE}[/1]"
+        ),
+    ]
+
+    assert applied == {
+        "361": [
+            SYMBOL_DENSE_OCR_LINE,
+        ],
+    }
+
+
+def test_short_ambiguous_line_is_not_high_confidence_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    actual = is_probable_ocr_source_line(
+        "sa",
+        noise_dictionary,
+    )
+
+    assert actual is False

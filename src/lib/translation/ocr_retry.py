@@ -14,6 +14,23 @@ from lib.subtitle.text import (
     mask_suspicious_latin_sequences,
 )
 
+MIN_SYMBOL_DENSE_OCR_ASCII_LETTERS = 8
+MIN_SYMBOL_DENSE_OCR_TOKENS = 4
+MIN_SYMBOL_DENSE_OCR_SHORT_TOKENS = 3
+MIN_SYMBOL_DENSE_OCR_STRUCTURAL_SYMBOLS = 3
+MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO = 0.6
+
+SYMBOL_DENSE_OCR_STRUCTURAL_PATTERN = re.compile(
+    r"[=()\[\]{}<>|~]"
+)
+
+SOUND_EFFECT_ONLY_PATTERN = re.compile(
+    r"^(?:"
+    r"\([A-Z0-9 ,.'’!?-]+\)"
+    r"\s*"
+    r")+$"
+)
+
 
 def extract_chinese_error_ids(
     errors: list[str],
@@ -165,6 +182,94 @@ def extract_untranslated_english_error_ids(
     return subtitle_ids
 
 
+def is_symbol_dense_ocr_source_line(
+    source_line: str,
+) -> bool:
+    """
+    原文1行が、短い英字トークンと構造記号が密集した
+    OCR破損文字列か判定する。
+
+    この関数は単独で翻訳前字幕を削除するためには使用しない。
+
+    呼出元で次を確認した後の、
+    高確度OCR判定として使用する。
+
+    - 未翻訳英文エラーの対象字幕IDである
+    - 原文の完全な1行がtranslationへ残っている
+
+    正常な効果音、型番、識別子、短い数式などを
+    誤検出しないよう、複数条件を同時に要求する。
+    """
+    normalized = source_line.strip()
+
+    if not normalized:
+        return False
+
+    if SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+        normalized
+    ):
+        return False
+
+    ascii_letters = re.findall(
+        r"[A-Za-z]",
+        normalized,
+    )
+
+    if (
+        len(ascii_letters)
+        < MIN_SYMBOL_DENSE_OCR_ASCII_LETTERS
+    ):
+        return False
+
+    tokens = re.findall(
+        r"[A-Za-z]+",
+        normalized,
+    )
+
+    if (
+        len(tokens)
+        < MIN_SYMBOL_DENSE_OCR_TOKENS
+    ):
+        return False
+
+    short_tokens = [
+        token
+        for token in tokens
+        if len(token) <= 3
+    ]
+
+    if (
+        len(short_tokens)
+        < MIN_SYMBOL_DENSE_OCR_SHORT_TOKENS
+    ):
+        return False
+
+    structural_symbols = (
+        SYMBOL_DENSE_OCR_STRUCTURAL_PATTERN.findall(
+            normalized
+        )
+    )
+
+    if (
+        len(structural_symbols)
+        < MIN_SYMBOL_DENSE_OCR_STRUCTURAL_SYMBOLS
+    ):
+        return False
+
+    short_token_ratio = (
+        len(short_tokens)
+        / len(tokens)
+    )
+
+    if (
+        short_token_ratio
+        < MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO
+    ):
+        return False
+
+    return True
+
+
 def is_probable_ocr_source_line(
     source_line: str,
     noise_dictionary: NoiseDictionary,
@@ -172,12 +277,14 @@ def is_probable_ocr_source_line(
     """
     原文1行が高確度のOCR英字破損か判定する。
 
-    既存Noise検出で判定された行に加え、
-    複数の大文字トークンと不自然な1文字トークンを含む
-    OCR特有の英字列を検出する。
+    次の順序で判定する。
+
+    1. Noise辞書または既存ヒューリスティック
+    2. 大文字トークンと不自然な1文字トークン
+    3. 短い英字トークンと構造記号の密集
 
     正常な英文を誤ってOCR扱いしないため、
-    単一条件だけではTrueにしない。
+    単一の弱い条件だけではTrueにしない。
     """
     normalized = source_line.strip()
 
@@ -202,47 +309,46 @@ def is_probable_ocr_source_line(
         normalized,
     )
 
-    if len(tokens) < 3:
-        return False
+    if len(tokens) >= 3:
+        abnormal_single_letter_tokens = [
+            token
+            for token in tokens
+            if (
+                len(token) == 1
+                and token.upper() not in {
+                    "A",
+                    "I",
+                }
+            )
+        ]
 
-    abnormal_single_letter_tokens = [
-        token
-        for token in tokens
+        uppercase_tokens = [
+            token
+            for token in tokens
+            if (
+                len(token) >= 2
+                and token.isupper()
+            )
+        ]
+
+        has_mixed_case_pattern = any(
+            (
+                len(token) >= 3
+                and token[0].isupper()
+                and token[1:].islower()
+            )
+            for token in tokens
+        )
+
         if (
-            len(token) == 1
-            and token.upper() not in {
-                "A",
-                "I",
-            }
-        )
-    ]
-
-    uppercase_tokens = [
-        token
-        for token in tokens
-        if (
-            len(token) >= 2
-            and token.isupper()
-        )
-    ]
-
-    has_mixed_case_pattern = any(
-        (
-            len(token) >= 3
-            and token[0].isupper()
-            and token[1:].islower()
-        )
-        for token in tokens
-    )
-
-    return (
-        bool(
             abnormal_single_letter_tokens
-        )
-        and bool(
-        uppercase_tokens
-    )
-        and has_mixed_case_pattern
+            and uppercase_tokens
+            and has_mixed_case_pattern
+        ):
+            return True
+
+    return is_symbol_dense_ocr_source_line(
+        normalized
     )
 
 
