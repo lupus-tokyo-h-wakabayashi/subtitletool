@@ -657,3 +657,160 @@ def test_validate_hybrid_response_requires_translation_for_mixed_ocr_text(
         )
         for reason in validation.reasons
     )
+
+
+def test_hybrid_recovery_handles_multiple_independent_groups(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    target_blocks = [
+        SrtBlock(
+            number="601",
+            timestamp=(
+                "00:00:00,000 --> "
+                "00:00:01,000"
+            ),
+            text="Good.",
+        ),
+        SrtBlock(
+            number="602",
+            timestamp=(
+                "00:00:01,100 --> "
+                "00:00:03,000"
+            ),
+            text=(
+                "Hopefully, we've proven\n"
+                "that's not our goal."
+            ),
+        ),
+        SrtBlock(
+            number="603",
+            timestamp=(
+                "00:00:03,100 --> "
+                "00:00:04,000"
+            ),
+            text="I'm sorry.",
+        ),
+        SrtBlock(
+            number="604",
+            timestamp=(
+                "00:00:06,000 --> "
+                "00:00:07,000"
+            ),
+            text="I couldn't deal with it,",
+        ),
+        SrtBlock(
+            number="605",
+            timestamp=(
+                "00:00:07,100 --> "
+                "00:00:09,000"
+            ),
+            text=(
+                "the thought of you\n"
+                "being trapped on that ship."
+            ),
+        ),
+    ]
+
+    responses = iter(
+        [
+            json.dumps(
+                {
+                    "group": {
+                        "full_translation": (
+                            "それが目的ではないと"
+                            "証明できたはずです。"
+                        ),
+                        "segments": {
+                            "602": (
+                                "それが目的ではないと"
+                                "証明できたはずです。"
+                            ),
+                        },
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "group": {
+                        "full_translation": (
+                            "あなたが船に閉じ込められる"
+                            "と思うと耐えられませんでした。"
+                        ),
+                        "segments": {
+                            "604": (
+                                "あなたが船に"
+                                "閉じ込められると思うと"
+                            ),
+                            "605": (
+                                "耐えられませんでした。"
+                            ),
+                        },
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        lambda *args, **kwargs: next(
+            responses
+        ),
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        [
+            "いいでしょう。",
+            (
+                "Hopefully, we've proven\n"
+                "that's not our goal."
+            ),
+            "ごめんなさい。",
+            "I couldn't deal with it,",
+            (
+                "あなたが船に"
+                "閉じ込められることを。"
+            ),
+        ],
+        [
+            (
+                "Untranslated English sentence "
+                "detected: subtitle_id='602', "
+                "text=\"Hopefully, we've proven "
+                "that's not our goal.\""
+            ),
+            (
+                "Untranslated English sentence "
+                "detected: subtitle_id='604', "
+                "text=\"I couldn't deal with it,\""
+            ),
+        ],
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result == [
+        "いいでしょう。",
+        (
+            "それが目的ではないと"
+            "証明できたはずです。"
+        ),
+        "ごめんなさい。",
+        (
+            "あなたが船に"
+            "閉じ込められると思うと"
+        ),
+        "耐えられませんでした。",
+    ]

@@ -380,3 +380,165 @@ def build_hybrid_translation_group(
             failed_ids
         ),
     )
+
+
+def hybrid_groups_overlap(
+    first: HybridTranslationGroup,
+    second: HybridTranslationGroup,
+) -> bool:
+    """
+    2つのHybridグループが
+    同じ字幕位置を共有しているか判定する。
+    """
+    return bool(
+        set(first.positions)
+        & set(second.positions)
+    )
+
+
+def build_hybrid_translation_groups(
+    target_blocks: list[SrtBlock],
+    failed_ids: set[str],
+    *,
+    maximum_blocks: int = (
+        DEFAULT_MAX_HYBRID_GROUP_BLOCKS
+    ),
+    maximum_gap_milliseconds: int = (
+        DEFAULT_MAX_HYBRID_GAP_MILLISECONDS
+    ),
+) -> tuple[
+    HybridTranslationGroup,
+    ...,
+]:
+    """
+    複数の失敗字幕IDを、
+    文末・時間差・最大件数に基づいて
+    独立したHybridグループへ分割する。
+
+    各失敗IDについて個別にグループを構築し、
+    同じ字幕範囲へ展開されたグループは統合する。
+
+    統合後のグループは、
+    元字幕の位置順に返す。
+
+    グループを構築できない失敗IDが
+    1件でもある場合は空tupleを返す。
+    一部の失敗IDだけを無視して
+    翻訳成功扱いにはしない。
+    """
+    if not target_blocks:
+        return ()
+
+    if not failed_ids:
+        return ()
+
+    known_ids = {
+        block.number
+        for block in target_blocks
+    }
+
+    if not failed_ids.issubset(
+        known_ids
+    ):
+        return ()
+
+    groups: list[
+        HybridTranslationGroup
+    ] = []
+
+    ordered_failed_ids = [
+        block.number
+        for block in target_blocks
+        if block.number in failed_ids
+    ]
+
+    for failed_id in ordered_failed_ids:
+        candidate = (
+            build_hybrid_translation_group(
+                target_blocks,
+                {
+                    failed_id,
+                },
+                maximum_blocks=(
+                    maximum_blocks
+                ),
+                maximum_gap_milliseconds=(
+                    maximum_gap_milliseconds
+                ),
+            )
+        )
+
+        if candidate is None:
+            return ()
+
+        overlapping_groups = [
+            group
+            for group in groups
+            if hybrid_groups_overlap(
+                group,
+                candidate,
+            )
+        ]
+
+        if not overlapping_groups:
+            groups.append(
+                candidate
+            )
+            continue
+
+        combined_failed_ids = {
+            failed_id,
+        }
+
+        for group in overlapping_groups:
+            combined_failed_ids.update(
+                group.failed_ids
+            )
+
+        merged_group = (
+            build_hybrid_translation_group(
+                target_blocks,
+                combined_failed_ids,
+                maximum_blocks=(
+                    maximum_blocks
+                ),
+                maximum_gap_milliseconds=(
+                    maximum_gap_milliseconds
+                ),
+            )
+        )
+
+        if merged_group is None:
+            return ()
+
+        groups = [
+            group
+            for group in groups
+            if group
+               not in overlapping_groups
+        ]
+
+        groups.append(
+            merged_group
+        )
+
+    groups.sort(
+        key=lambda group: (
+            group.positions[0]
+        )
+    )
+
+    recovered_failed_ids = set()
+
+    for group in groups:
+        recovered_failed_ids.update(
+            group.failed_ids
+        )
+
+    if (
+        recovered_failed_ids
+        != failed_ids
+    ):
+        return ()
+
+    return tuple(groups)

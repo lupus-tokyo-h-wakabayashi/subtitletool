@@ -13,7 +13,7 @@ from lib.subtitle.srt import (
 )
 from .hybrid_group import (
     HybridTranslationGroup,
-    build_hybrid_translation_group,
+    build_hybrid_translation_groups,
 )
 from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
@@ -764,58 +764,23 @@ def build_standard_translation_response(
     )
 
 
-def recover_translation_with_hybrid(
+def recover_single_hybrid_group(
+    *,
+    group: HybridTranslationGroup,
     target_blocks: list[SrtBlock],
     translated_texts: list[str],
-    errors: list[str],
     model: str,
-    *,
     noise_dictionary: NoiseDictionary,
     glossary_entries: Mapping[str, str],
-) -> list[str] | None:
+) -> list[str]:
     """
-    通常翻訳に失敗したチャンクを、
-    連続文グループ全文翻訳で回復する。
+    1つのHybridグループを回復し、
+    チャンク全体の翻訳一覧へ反映する。
 
-    各Hybrid試行について、
-    Prompt、Schema、レスポンス、
-    検証結果をtmpへ保存する。
-
-    次の制約を設ける。
-
-    - 現在のチャンク内だけを対象とする
-    - すべての失敗IDを1グループへまとめる
-    - 最大6字幕
-    - 最大2回試行
+    Hybrid検証後の既存Validatorは、
+    他グループの未修正エラーに影響されないよう
+    現在のグループだけを対象に実行する。
     """
-    if not errors:
-        return None
-
-    if has_structural_validation_error(
-        errors
-    ):
-        return None
-
-    if len(translated_texts) != len(
-        target_blocks
-    ):
-        return None
-
-    failed_ids = extract_error_subtitle_ids(
-        errors
-    )
-
-    if not failed_ids:
-        return None
-
-    group = build_hybrid_translation_group(
-        target_blocks,
-        failed_ids,
-    )
-
-    if group is None:
-        return None
-
     ocr_lines = find_group_ocr_lines(
         group,
         noise_dictionary,
@@ -906,27 +871,17 @@ def recover_translation_with_hybrid(
 
             continue
 
-        merged_texts = list(
-            translated_texts
-        )
-
-        for position, block in zip(
-            group.positions,
-            group.blocks,
-            strict=True,
-        ):
-            merged_texts[
-                position
-            ] = (
-                hybrid_validation.segments[
-                    block.number
-                ]
-            )
+        group_translated_texts = [
+            hybrid_validation.segments[
+                block.number
+            ]
+            for block in group.blocks
+        ]
 
         standard_response = (
             build_standard_translation_response(
-                target_blocks,
-                merged_texts,
+                list(group.blocks),
+                group_translated_texts,
             )
         )
 
@@ -936,7 +891,7 @@ def recover_translation_with_hybrid(
 
         source_texts: list[str] = []
 
-        for block in target_blocks:
+        for block in group.blocks:
             parsed = parse_speaker_from_text(
                 block.text
             )
@@ -954,7 +909,7 @@ def recover_translation_with_hybrid(
                 standard_response,
                 expected_ids=[
                     block.number
-                    for block in target_blocks
+                    for block in group.blocks
                 ],
                 source_speakers=source_speakers,
                 source_texts=source_texts,
@@ -1012,6 +967,19 @@ def recover_translation_with_hybrid(
             validation_reasons=[],
         )
 
+        merged_texts = list(
+            translated_texts
+        )
+
+        for position, translation in zip(
+            group.positions,
+            standard_validation.translated_texts,
+            strict=True,
+        ):
+            merged_texts[
+                position
+            ] = translation
+
         print(
             "Hybrid Translation Recovery "
             "succeeded:"
@@ -1024,9 +992,7 @@ def recover_translation_with_hybrid(
             )
         )
 
-        return (
-            standard_validation.translated_texts
-        )
+        return merged_texts
 
     raise HybridRecoveryError(
         "Hybrid Translation Recovery failed "
@@ -1040,4 +1006,178 @@ def recover_translation_with_hybrid(
         + "; ".join(
             retry_reasons
         )
+    )
+
+
+def recover_translation_with_hybrid(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    errors: list[str],
+    model: str,
+    *,
+    noise_dictionary: NoiseDictionary,
+    glossary_entries: Mapping[str, str],
+) -> list[str] | None:
+    """
+    通常翻訳に失敗したチャンクを、
+    1つ以上のHybridグループへ分割して回復する。
+
+    複数の失敗IDが異なる文章や時間範囲にある場合は、
+    それぞれを独立したグループとして順番に翻訳する。
+
+    グループごとの回復結果は
+    チャンク全体の翻訳一覧へ累積して反映する。
+    """
+    if not errors:
+        return None
+
+    if has_structural_validation_error(
+        errors
+    ):
+        return None
+
+    if len(translated_texts) != len(
+        target_blocks
+    ):
+        return None
+
+    failed_ids = extract_error_subtitle_ids(
+        errors
+    )
+
+    if not failed_ids:
+        return None
+
+    groups = build_hybrid_translation_groups(
+        target_blocks,
+        failed_ids,
+    )
+
+    if not groups:
+        return None
+
+    print()
+    print(
+        "Hybrid Translation Recovery Groups:"
+    )
+    print(
+        f"  Count: {len(groups)}"
+    )
+
+    for group_number, group in enumerate(
+        groups,
+        start=1,
+    ):
+        print(
+            f"  [{group_number}] "
+            + ", ".join(
+                group.target_ids
+            )
+        )
+
+    recovered_texts = list(
+        translated_texts
+    )
+
+    for group_number, group in enumerate(
+        groups,
+        start=1,
+    ):
+        print()
+        print(
+            "Hybrid Group Start:"
+        )
+        print(
+            f"  Group: {group_number}/"
+            f"{len(groups)}"
+        )
+        print(
+            "  IDs: "
+            + ", ".join(
+                group.target_ids
+            )
+        )
+
+        recovered_texts = (
+            recover_single_hybrid_group(
+                group=group,
+                target_blocks=target_blocks,
+                translated_texts=(
+                    recovered_texts
+                ),
+                model=model,
+                noise_dictionary=(
+                    noise_dictionary
+                ),
+                glossary_entries=(
+                    glossary_entries
+                ),
+            )
+        )
+
+    final_response = (
+        build_standard_translation_response(
+            target_blocks,
+            recovered_texts,
+        )
+    )
+
+    source_speakers: list[
+        str | None
+        ] = []
+
+    source_texts: list[str] = []
+
+    for block in target_blocks:
+        parsed = parse_speaker_from_text(
+            block.text
+        )
+
+        source_speakers.append(
+            parsed.speaker
+        )
+
+        source_texts.append(
+            parsed.text
+        )
+
+    final_validation = (
+        validate_translation_response(
+            final_response,
+            expected_ids=[
+                block.number
+                for block in target_blocks
+            ],
+            source_speakers=source_speakers,
+            source_texts=source_texts,
+            noise_dictionary=(
+                noise_dictionary
+            ),
+            glossary_entries=(
+                glossary_entries
+            ),
+        )
+    )
+
+    if not final_validation.valid:
+        raise HybridRecoveryError(
+            "Hybrid Translation Recovery "
+            "completed all groups but final "
+            "chunk validation failed: "
+            + "; ".join(
+                final_validation.reasons
+            )
+        )
+
+    print()
+    print(
+        "Hybrid Translation Recovery "
+        "completed all groups:"
+    )
+    print(
+        f"  Groups: {len(groups)}"
+    )
+
+    return (
+        final_validation.translated_texts
     )
