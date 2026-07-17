@@ -19,9 +19,11 @@ from lib.subtitle.srt import (
     parse_speaker_from_text,
 )
 from .ocr_retry import (
+    apply_level_1_ocr_fallback,
     build_chinese_retry_blocks,
     build_latin_ocr_retry_blocks,
     extract_garbled_latin_candidates,
+    find_probable_untranslated_ocr_lines,
     mask_chinese_translation_errors,
 )
 from .retry import (
@@ -361,6 +363,140 @@ def generate_translation_response(
     )
 
 
+def try_level_1_ocr_fallback(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    errors: list[str],
+    probable_ocr_lines: dict[str, list[str]],
+    *,
+    noise_dictionary: NoiseDictionary,
+    glossary_entries: dict[str, str],
+) -> list[str] | None:
+    """
+    未翻訳英文エラーだけが残り、
+    高確度OCR文字列がtranslationへコピーされている場合に、
+    その完全な原文行を[1]タグで囲んで再検証する。
+
+    正常英文や判定不能な文字列には適用しない。
+    """
+    untranslated_only_errors = (
+        bool(errors)
+        and all(
+        error.startswith(
+            "Untranslated English sentence detected:"
+        )
+        for error in errors
+    )
+    )
+
+    if not untranslated_only_errors:
+        return None
+
+    if not probable_ocr_lines:
+        return None
+
+    if len(translated_texts) != len(
+        target_blocks
+    ):
+        return None
+
+    (
+        corrected_texts,
+        applied_lines,
+    ) = apply_level_1_ocr_fallback(
+        target_blocks,
+        translated_texts,
+        probable_ocr_lines,
+    )
+
+    if not applied_lines:
+        return None
+
+    (
+        source_speakers,
+        source_texts,
+    ) = build_expected_source_metadata(
+        target_blocks
+    )
+
+    corrected_response = json.dumps(
+        {
+            "targets": {
+                block.number: {
+                    "source": {
+                        "speaker": source_speaker,
+                        "text": source_text,
+                    },
+                    "translation": translation,
+                }
+                for (
+                    block,
+                    source_speaker,
+                    source_text,
+                    translation,
+                ) in zip(
+                    target_blocks,
+                    source_speakers,
+                    source_texts,
+                    corrected_texts,
+                    strict=True,
+                )
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    corrected_validation = (
+        validate_translation_response(
+            corrected_response,
+            expected_ids=[
+                block.number
+                for block in target_blocks
+            ],
+            source_speakers=(
+                source_speakers
+            ),
+            source_texts=(
+                source_texts
+            ),
+            noise_dictionary=noise_dictionary,
+            glossary_entries=glossary_entries,
+        )
+    )
+
+    if not corrected_validation.valid:
+        return None
+
+    if corrected_validation.noise_candidates:
+        saved_entries = append_noise_candidates(
+            noise_dictionary,
+            corrected_validation.noise_candidates,
+        )
+
+        print_saved_noise_candidates(
+            saved_entries,
+            noise_dictionary,
+        )
+
+    print(
+        "Level 1 OCR fallback applied:"
+    )
+
+    for subtitle_id, lines in (
+        applied_lines.items()
+    ):
+        for line in lines:
+            print(
+                "  - "
+                f"id={subtitle_id}, "
+                f"text={line!r}"
+            )
+
+    return normalize_translation_texts(
+        corrected_validation.translated_texts
+    )
+
+
 def translate_chunk(
     before_context: list[SrtBlock],
     target_blocks: list[SrtBlock],
@@ -375,6 +511,11 @@ def translate_chunk(
 ) -> list[str]:
     last_errors: list[str] = []
     last_translated_texts: list[str] = []
+
+    last_probable_ocr_lines: dict[
+        str,
+        list[str],
+    ] = {}
 
     (
         original_source_speakers,
@@ -484,7 +625,8 @@ def translate_chunk(
 
                 prompt += (
                     build_untranslated_english_retry_instruction(
-                        last_errors
+                        last_errors,
+                        last_probable_ocr_lines,
                     )
                 )
 
@@ -596,8 +738,18 @@ def translate_chunk(
             last_translated_texts = (
                 validation.translated_texts
             )
+
+            last_probable_ocr_lines = (
+                find_probable_untranslated_ocr_lines(
+                    target_blocks,
+                    last_translated_texts,
+                    last_errors,
+                    noise_dictionary,
+                )
+            )
         else:
             last_translated_texts = []
+            last_probable_ocr_lines = {}
 
         print(
             "Translation validation failed "
@@ -624,6 +776,20 @@ def translate_chunk(
             for error in last_errors
         )
         )
+
+    level_1_fallback_texts = (
+        try_level_1_ocr_fallback(
+            target_blocks,
+            last_translated_texts,
+            last_errors,
+            last_probable_ocr_lines,
+            noise_dictionary=noise_dictionary,
+            glossary_entries=glossary_entries,
+        )
+    )
+
+    if level_1_fallback_texts is not None:
+        return level_1_fallback_texts
 
     if (
         chinese_only_errors

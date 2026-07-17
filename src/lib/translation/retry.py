@@ -284,9 +284,14 @@ def build_latin_ocr_retry_instruction(
 
 def build_untranslated_english_retry_instruction(
     errors: list[str],
+    probable_ocr_lines: dict[str, list[str]],
 ) -> str:
     """
     未翻訳英文またはOCR英字破損の再試行指示を生成する。
+
+    probable_ocr_linesには、
+    translationへそのままコピーされた原文行のうち、
+    OCR破損の可能性が高い行だけを渡す。
     """
     english_errors = [
         error
@@ -303,6 +308,68 @@ def build_untranslated_english_retry_instruction(
         f"* {error}"
         for error in english_errors
     )
+
+    ocr_instruction = ""
+
+    if probable_ocr_lines:
+        ocr_sections: list[str] = []
+
+        for subtitle_id, lines in (
+            probable_ocr_lines.items()
+        ):
+            line_instructions = "\n".join(
+                (
+                    f"* 原文行: {line}\n"
+                    f"  必須形式: [1]{line}[/1]"
+                )
+                for line in lines
+            )
+
+            ocr_sections.append(
+                (
+                    f"字幕ID: {subtitle_id}\n"
+                    f"{line_instructions}"
+                )
+            )
+
+        ocr_details = "\n\n".join(
+            ocr_sections
+        )
+
+        ocr_instruction = f"""
+
+【今回の高確度OCR破損行】
+
+以下の原文行は、
+未翻訳の正常英文ではなく、
+OCRで破損した可能性が高い。
+
+{ocr_details}
+
+上記の各原文行について、
+必ず次を守ること。
+
+* translationへ文字列をそのまま裸で残さない
+* 日本語の助詞や語尾をOCR文字列へ直接付けない
+* 原文行全体を一文字も変更せず[1]と[/1]で囲む
+* [1]タグ内の大文字小文字、空白、数字、記号を変更しない
+* [1]タグは原文の完全な1行だけを囲む
+* [1]タグの中へ別の原文行を含めない
+* [1]タグの中へ日本語訳を含めない
+* 同じ字幕内の正常な英文は日本語へ翻訳する
+* 正常な英文まで[1]タグで囲まない
+
+例:
+
+原文:
+
+AV Cag are T
+the wrong people!
+
+translation:
+
+[1]AV Cag are T[/1]／間違った人たちを！
+"""
 
     return f"""
 
@@ -322,20 +389,21 @@ OCRで壊れた英字列が残っている。
 
 * エラーに記載されたsubtitle_idの英文をすべて日本語へ翻訳する
 * translationへ英文をそのままコピーしない
-* 複数行の字幕は、すべての行を日本語へ翻訳する
-* 一部だけ翻訳して残りの英文を残さない
+* 複数行の字幕は、すべての正常な英文を日本語へ翻訳する
+* 一部だけ翻訳して残りの正常な英文を残さない
 * 人名、作品固有名詞、略語以外の英文を残さない
 * 前回出力した未翻訳英文を再利用しない
 * 正常な英文を「（判読不能）」へ置き換えない
+* 正常な英文を[1]タグで囲まない
 
 OCRで壊れた英字列の場合は、必ず次を守ること。
 
-* 壊れた英字列をtranslationへそのまま残さない
+* 壊れた英字列をtranslationへ裸のまま残さない
 * 壊れた英字列を人名、地名、専門用語として推測しない
 * 壊れた英字列をカタカナへ音写しない
-* 文脈から意味を判断できる場合だけ自然な日本語へ置き換える
-* 文脈から判断できない場合は「（判読不能）」へ置き換える
-* 前回と同じOCR破損文字列を再利用しない
+* 高確度OCR破損行として指定された原文行は[1]タグで囲む
+* [1]タグ内は原文の完全な1行と一字一句一致させる
+* 前回と同じOCR破損文字列を裸のまま再利用しない
 
 出力について、必ず次を守ること。
 
@@ -343,6 +411,8 @@ OCRで壊れた英字列の場合は、必ず次を守ること。
 * JSONの前後へ説明を追加しない
 * Markdownコードブロックを付けない
 * 翻訳方針や判断理由を出力しない
+
+{ocr_instruction}
 """
 
 
