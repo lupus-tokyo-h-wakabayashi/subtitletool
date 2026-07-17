@@ -13,6 +13,8 @@ from lib.translation.hybrid_group import (
     build_hybrid_translation_group,
 )
 from lib.translation.hybrid_recovery import (
+    HYBRID_OCR_PLACEHOLDER,
+    HybridRecoveryError,
     build_hybrid_response_schema,
     recover_translation_with_hybrid,
     validate_hybrid_response,
@@ -242,7 +244,7 @@ def test_validate_hybrid_response_rejects_id_mismatch(
     )
 
 
-def test_validate_hybrid_response_rejects_full_text_mismatch(
+def test_validate_hybrid_response_rebuilds_full_text_from_segments(
     target_blocks: list[SrtBlock],
 ) -> None:
     group = build_hybrid_translation_group(
@@ -277,13 +279,17 @@ def test_validate_hybrid_response_rejects_full_text_mismatch(
         },
     )
 
-    assert validation.valid is False
+    assert validation.valid is True
+    assert validation.reasons == ()
 
-    assert (
-        "Hybrid full translation mismatch: "
-        "segments do not reconstruct "
-        "full_translation"
-        in validation.reasons
+    assert validation.full_translation == (
+        "".join(
+            payload[
+                "group"
+            ][
+                "segments"
+            ].values()
+        )
     )
 
 
@@ -417,3 +423,237 @@ def test_hybrid_recovery_replaces_group_only(
             "以上です。"
         ),
     ]
+
+
+def test_validate_hybrid_response_requires_ocr_placeholder(
+    target_blocks: list[SrtBlock],
+) -> None:
+    group = build_hybrid_translation_group(
+        target_blocks,
+        {
+            "282",
+        },
+    )
+
+    assert group is not None
+
+    payload = valid_hybrid_payload()
+
+    payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "282"
+    ] = "各自の居住区へ戻り、"
+
+    response = json.dumps(
+        payload,
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {
+            "282": [
+                OCR_LINE,
+            ],
+        },
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid OCR placeholder missing: "
+        "subtitle_id='282', "
+        f"required={HYBRID_OCR_PLACEHOLDER!r}"
+        in validation.reasons
+    )
+
+
+def test_e07_mixed_ocr_subtitle_accepts_placeholder_and_translation(
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="562",
+            timestamp=(
+                "00:00:00,000 --> "
+                "00:00:01,000"
+            ),
+            text="sa",
+        ),
+        SrtBlock(
+            number="563",
+            timestamp=(
+                "00:00:01,100 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                "aR at-lacmanl-e\n"
+                "lam a good friend."
+            ),
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "563",
+        },
+    )
+
+    assert group is not None
+
+    payload = {
+        "group": {
+            "full_translation": (
+                "サ"
+                "（判読不能）"
+                "私は良い友人です。"
+            ),
+            "segments": {
+                "562": "サ",
+                "563": (
+                    "（判読不能）"
+                    "私は良い友人です。"
+                ),
+            },
+        },
+    }
+
+    validation = validate_hybrid_response(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+        ),
+        group,
+        {
+            "563": [
+                "aR at-lacmanl-e",
+            ],
+        },
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+    assert validation.segments[
+               "563"
+           ] == (
+               "（判読不能）"
+               "私は良い友人です。"
+           )
+
+
+def test_hybrid_recovery_raises_final_hybrid_error(
+    monkeypatch: pytest.MonkeyPatch,
+    target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    invalid_response = json.dumps(
+        {
+            "group": {
+                "full_translation": "判読不能",
+                "segments": {
+                    "281": "状況は制御下です。",
+                    "282": "居住区へ戻り、",
+                    "283": "そこに留まってください。",
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        lambda *args, **kwargs: (
+            invalid_response
+        ),
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
+    with pytest.raises(
+        HybridRecoveryError,
+        match=(
+            "Hybrid Translation Recovery failed "
+            "after 3 attempts"
+        ),
+    ) as captured:
+        recover_translation_with_hybrid(
+            target_blocks,
+            [
+                "状況は制御下です。",
+                "to their quarters",
+                "そこに留まってください。",
+            ],
+            [
+                (
+                    "Untranslated English sentence "
+                    "detected: subtitle_id='282', "
+                    "text='to their quarters'"
+                ),
+            ],
+            "test-model",
+            noise_dictionary=noise_dictionary,
+            glossary_entries={},
+        )
+
+    assert (
+        "Hybrid OCR placeholder missing:"
+        in str(captured.value)
+    )
+
+
+def test_validate_hybrid_response_requires_translation_for_mixed_ocr_text(
+    target_blocks: list[SrtBlock],
+) -> None:
+    group = build_hybrid_translation_group(
+        target_blocks,
+        {
+            "282",
+        },
+    )
+
+    assert group is not None
+
+    payload = valid_hybrid_payload()
+
+    payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "282"
+    ] = HYBRID_OCR_PLACEHOLDER
+
+    response = json.dumps(
+        payload,
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {
+            "282": [
+                OCR_LINE,
+            ],
+        },
+    )
+
+    assert validation.valid is False
+
+    assert any(
+        reason.startswith(
+            "Hybrid mixed OCR segment "
+            "requires Japanese translation:"
+        )
+        for reason in validation.reasons
+    )

@@ -30,11 +30,24 @@ from .translation_validation import (
     validate_translation_response,
 )
 
-MAX_HYBRID_RECOVERY_ATTEMPTS = 2
+MAX_HYBRID_RECOVERY_ATTEMPTS = 3
+
+HYBRID_OCR_PLACEHOLDER = (
+    "（判読不能）"
+)
 
 JAPANESE_CHARACTER_PATTERN = re.compile(
     r"[ぁ-んァ-ヶ一-龠々ー]"
 )
+
+
+class HybridRecoveryError(
+    RuntimeError
+):
+    """
+    Hybrid Recoveryが対象グループを
+    規定回数内に回復できなかったことを表す。
+    """
 
 
 @dataclass(frozen=True)
@@ -133,6 +146,53 @@ def find_group_ocr_lines(
             results[
                 block.number
             ] = lines
+
+    return results
+
+
+def find_group_text_lines(
+    group: HybridTranslationGroup,
+    ocr_lines: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """
+    Hybridグループ内から、
+    OCR行として分類されていない正常行を抽出する。
+
+    OCR行と正常英文が同じ字幕IDに混在する場合の
+    検証に使用する。
+    """
+    results: dict[
+        str,
+        list[str],
+    ] = {}
+
+    for block in group.blocks:
+        block_ocr_lines = set(
+            ocr_lines.get(
+                block.number,
+                [],
+            )
+        )
+
+        text_lines: list[str] = []
+
+        for raw_line in block.text.splitlines():
+            source_line = raw_line.strip()
+
+            if not source_line:
+                continue
+
+            if source_line in block_ocr_lines:
+                continue
+
+            text_lines.append(
+                source_line
+            )
+
+        if text_lines:
+            results[
+                block.number
+            ] = text_lines
 
     return results
 
@@ -292,9 +352,13 @@ segmentsへ出力する字幕IDは、
 * 別のIDへ同じ全文訳を繰り返さない
 * 英文を残さない
 * 字幕区切りには必要に応じて全角スラッシュを使う
-* OCR行のある字幕には「（判読不能）」を配置する
+* OCR行のある字幕には必ず「（判読不能）」を配置する
 * OCRの原文文字列をsegmentsへコピーしない
 * OCR行以外の正常な英文は必ず日本語へ翻訳する
+* OCR行と正常英文が同じIDにある場合は、
+  「（判読不能）」と正常英文の日本語訳を両方含める
+* OCR行と正常英文が同じIDにある場合に、
+  segment全体を「（判読不能）」だけにしない
 * 各segmentをID順に連結すると、
   full_translationと一致するようにする
 
@@ -304,10 +368,45 @@ segmentsへ出力する字幕IDは、
 意味を推測して翻訳しないこと。
 
 kindがocrの行は、
-対応する字幕IDで「（判読不能）」と表現すること。
+対応する字幕IDで必ず「（判読不能）」と表現すること。
 
 同じ字幕IDにkindがtextの行もある場合、
 その正常な英文は必ず日本語へ翻訳すること。
+
+例:
+
+入力:
+
+字幕ID 563
+
+* kind=ocr:
+  aR at-lacmanl-e
+* kind=text:
+  lam a good friend.
+
+segments["563"]:
+
+（判読不能）／私は良い友人です。
+
+禁止例:
+
+* （判読不能）
+* ラムは良い友人です。
+* aR at-lacmanl-e
+* [1]aR at-lacmanl-e[/1]
+
+【full_translation】
+
+full_translationには、
+segmentsの値を字幕ID順に連結した文字列を
+一字一句そのまま入れること。
+
+segmentsに「（判読不能）」がある場合は、
+full_translationから省略しないこと。
+
+segmentsを作った後、
+その値をID順に連結して
+full_translationへコピーすること。
 
 【入力】
 
@@ -339,8 +438,27 @@ def validate_hybrid_response(
     ocr_lines: dict[str, list[str]],
 ) -> HybridValidationResult:
     """
-    HybridレスポンスのJSON構造、
-    ID対応、全文とsegmentの一致を検証する。
+    Hybridレスポンスを検証する。
+
+    検証内容:
+
+    - JSON構造
+    - 字幕IDと順序
+    - segmentが空でない
+    - segmentに日本語がある
+    - OCR原文をコピーしていない
+    - OCR行のあるIDに
+      「（判読不能）」がある
+    - OCR行と正常行が混在するIDに、
+      判読不能以外の日本語訳がある
+    - segmentsから全文を再構築する
+
+    full_translationはLLMの文章理解用フィールドだが、
+    実際の出力にはsegmentsだけを使用する。
+
+    segmentsがすべて有効な場合は、
+    segmentsをID順に連結した内容を
+    正規のfull_translationとして扱う。
     """
     reasons: list[str] = []
 
@@ -415,12 +533,12 @@ def validate_hybrid_response(
             f"actual={sorted(group_payload.keys())}"
         )
 
-    full_translation = group_payload.get(
+    raw_full_translation = group_payload.get(
         "full_translation"
     )
 
     if not isinstance(
-        full_translation,
+        raw_full_translation,
         str,
     ):
         reasons.append(
@@ -428,22 +546,16 @@ def validate_hybrid_response(
             "expected string"
         )
 
-        normalized_full_translation = None
+        full_translation = None
     else:
         full_translation = (
-            full_translation.strip()
+            raw_full_translation.strip()
         )
 
         if not full_translation:
             reasons.append(
                 "Empty Hybrid full_translation"
             )
-
-        normalized_full_translation = (
-            normalize_hybrid_join_text(
-                full_translation
-            )
-        )
 
     raw_segments = group_payload.get(
         "segments"
@@ -487,6 +599,11 @@ def validate_hybrid_response(
             f"actual={actual_ids}"
         )
 
+    text_lines = find_group_text_lines(
+        group,
+        ocr_lines,
+    )
+
     segments: dict[str, str] = {}
 
     for subtitle_id in expected_ids:
@@ -523,10 +640,12 @@ def validate_hybrid_response(
                 f"text={normalized_segment!r}"
             )
 
-        for ocr_line in ocr_lines.get(
+        block_ocr_lines = ocr_lines.get(
             subtitle_id,
             [],
-        ):
+        )
+
+        for ocr_line in block_ocr_lines:
             if ocr_line in normalized_segment:
                 reasons.append(
                     "Hybrid segment contains OCR source: "
@@ -534,47 +653,72 @@ def validate_hybrid_response(
                     f"text={ocr_line!r}"
                 )
 
+        if (
+            block_ocr_lines
+            and HYBRID_OCR_PLACEHOLDER
+            not in normalized_segment
+        ):
+            reasons.append(
+                "Hybrid OCR placeholder missing: "
+                f"subtitle_id={subtitle_id!r}, "
+                f"required="
+                f"{HYBRID_OCR_PLACEHOLDER!r}"
+            )
+
+        block_text_lines = text_lines.get(
+            subtitle_id,
+            [],
+        )
+
+        if (
+            block_ocr_lines
+            and block_text_lines
+        ):
+            translation_without_placeholder = (
+                normalized_segment.replace(
+                    HYBRID_OCR_PLACEHOLDER,
+                    "",
+                )
+            )
+
+            if not JAPANESE_CHARACTER_PATTERN.search(
+                translation_without_placeholder
+            ):
+                reasons.append(
+                    "Hybrid mixed OCR segment "
+                    "requires Japanese translation: "
+                    f"subtitle_id={subtitle_id!r}, "
+                    f"source_lines="
+                    f"{block_text_lines!r}, "
+                    f"text={normalized_segment!r}"
+                )
+
         segments[
             subtitle_id
         ] = normalized_segment
 
-    if (
-        normalized_full_translation
-        is not None
-        and len(segments)
-        == len(expected_ids)
+    reconstructed_full_translation: (
+        str | None
+    ) = None
+
+    if len(segments) == len(
+        expected_ids
     ):
-        joined_segments = "".join(
-            segments[subtitle_id]
-            for subtitle_id in expected_ids
-        )
-
-        normalized_joined_segments = (
-            normalize_hybrid_join_text(
-                joined_segments
+        reconstructed_full_translation = (
+            "".join(
+                segments[subtitle_id]
+                for subtitle_id in expected_ids
             )
         )
-
-        if (
-            normalized_full_translation
-            != normalized_joined_segments
-        ):
-            reasons.append(
-                "Hybrid full translation mismatch: "
-                "segments do not reconstruct "
-                "full_translation"
-            )
 
     return HybridValidationResult(
         valid=not reasons,
         reasons=tuple(reasons),
         full_translation=(
-            full_translation
-            if isinstance(
-                full_translation,
-                str,
-            )
-            else None
+            reconstructed_full_translation
+            if reconstructed_full_translation
+               is not None
+            else full_translation
         ),
         segments=segments,
     )
@@ -884,4 +1028,16 @@ def recover_translation_with_hybrid(
             standard_validation.translated_texts
         )
 
-    return None
+    raise HybridRecoveryError(
+        "Hybrid Translation Recovery failed "
+        f"after "
+        f"{MAX_HYBRID_RECOVERY_ATTEMPTS} "
+        "attempts for subtitles "
+        + ", ".join(
+            group.target_ids
+        )
+        + ": "
+        + "; ".join(
+            retry_reasons
+        )
+    )
