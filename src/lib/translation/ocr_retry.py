@@ -3,8 +3,13 @@ from __future__ import annotations
 import ast
 import re
 
+from lib.profile.noise import (
+    NoiseDictionary,
+    find_suspicious_latin_sequences,
+)
 from lib.subtitle.srt import SrtBlock
 from lib.subtitle.text import (
+    DEFAULT_ALLOWED_LATIN_TERMS,
     mask_chinese_ocr_text,
     mask_suspicious_latin_sequences,
 )
@@ -124,6 +129,271 @@ def extract_garbled_latin_candidates(
             )
 
     return candidates
+
+
+def extract_untranslated_english_error_ids(
+    errors: list[str],
+) -> set[str]:
+    """
+    未翻訳英文エラーから対象字幕IDを抽出する。
+    """
+    subtitle_ids: set[str] = set()
+
+    pattern = re.compile(
+        r"subtitle_id=(?P<quote>['\"])"
+        r"(?P<id>.+?)"
+        r"(?P=quote)"
+    )
+
+    for error in errors:
+        if not error.startswith(
+            "Untranslated English sentence detected:"
+        ):
+            continue
+
+        match = pattern.search(
+            error
+        )
+
+        if not match:
+            continue
+
+        subtitle_ids.add(
+            match.group("id")
+        )
+
+    return subtitle_ids
+
+
+def is_probable_ocr_source_line(
+    source_line: str,
+    noise_dictionary: NoiseDictionary,
+) -> bool:
+    """
+    原文1行が高確度のOCR英字破損か判定する。
+
+    既存Noise検出で判定された行に加え、
+    複数の大文字トークンと不自然な1文字トークンを含む
+    OCR特有の英字列を検出する。
+
+    正常な英文を誤ってOCR扱いしないため、
+    単一条件だけではTrueにしない。
+    """
+    normalized = source_line.strip()
+
+    if not normalized:
+        return False
+
+    existing_sequences = (
+        find_suspicious_latin_sequences(
+            normalized,
+            noise_dictionary,
+            allowed_terms=(
+                DEFAULT_ALLOWED_LATIN_TERMS
+            ),
+        )
+    )
+
+    if existing_sequences:
+        return True
+
+    tokens = re.findall(
+        r"[A-Za-z]+",
+        normalized,
+    )
+
+    if len(tokens) < 3:
+        return False
+
+    abnormal_single_letter_tokens = [
+        token
+        for token in tokens
+        if (
+            len(token) == 1
+            and token.upper() not in {
+                "A",
+                "I",
+            }
+        )
+    ]
+
+    uppercase_tokens = [
+        token
+        for token in tokens
+        if (
+            len(token) >= 2
+            and token.isupper()
+        )
+    ]
+
+    has_mixed_case_pattern = any(
+        (
+            len(token) >= 3
+            and token[0].isupper()
+            and token[1:].islower()
+        )
+        for token in tokens
+    )
+
+    return (
+        bool(
+            abnormal_single_letter_tokens
+        )
+        and bool(
+        uppercase_tokens
+    )
+        and has_mixed_case_pattern
+    )
+
+
+def find_probable_untranslated_ocr_lines(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    errors: list[str],
+    noise_dictionary: NoiseDictionary,
+) -> dict[str, list[str]]:
+    """
+    未翻訳英文エラーになった字幕について、
+    translationへそのままコピーされた原文行のうち、
+    OCR破損の可能性が高い行を返す。
+
+    戻り値:
+        {
+            "80": [
+                "AV Cag are T",
+            ],
+        }
+    """
+    error_ids = (
+        extract_untranslated_english_error_ids(
+            errors
+        )
+    )
+
+    if not error_ids:
+        return {}
+
+    probable_lines: dict[
+        str,
+        list[str],
+    ] = {}
+
+    for block, translated_text in zip(
+        target_blocks,
+        translated_texts,
+        strict=True,
+    ):
+        if block.number not in error_ids:
+            continue
+
+        matched_lines: list[str] = []
+
+        for raw_line in block.text.splitlines():
+            source_line = raw_line.strip()
+
+            if not source_line:
+                continue
+
+            if source_line not in translated_text:
+                continue
+
+            if not is_probable_ocr_source_line(
+                source_line,
+                noise_dictionary,
+            ):
+                continue
+
+            if source_line in matched_lines:
+                continue
+
+            matched_lines.append(
+                source_line
+            )
+
+        if not matched_lines:
+            continue
+
+        probable_lines[
+            block.number
+        ] = matched_lines
+
+    return probable_lines
+
+
+def apply_level_1_ocr_fallback(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    probable_ocr_lines: dict[str, list[str]],
+) -> tuple[
+    list[str],
+    dict[str, list[str]],
+]:
+    """
+    最終再試行後も高確度OCR文字列が裸で残った場合に、
+    原文の完全な1行だけを[1]タグで囲む。
+
+    正常英文や判定不能な文字列には適用しない。
+
+    戻り値:
+        corrected_texts:
+            [1]タグを適用した翻訳一覧
+
+        applied_lines:
+            実際にタグを適用した字幕IDと原文行
+    """
+    corrected_texts: list[str] = []
+    applied_lines: dict[
+        str,
+        list[str],
+    ] = {}
+
+    for block, translated_text in zip(
+        target_blocks,
+        translated_texts,
+        strict=True,
+    ):
+        corrected_text = translated_text
+        applied_for_block: list[str] = []
+
+        for source_line in probable_ocr_lines.get(
+            block.number,
+            [],
+        ):
+            level_1_text = (
+                f"[1]{source_line}[/1]"
+            )
+
+            if level_1_text in corrected_text:
+                continue
+
+            if source_line not in corrected_text:
+                continue
+
+            corrected_text = (
+                corrected_text.replace(
+                    source_line,
+                    level_1_text,
+                    1,
+                )
+            )
+
+            applied_for_block.append(
+                source_line
+            )
+
+        corrected_texts.append(
+            corrected_text
+        )
+
+        if applied_for_block:
+            applied_lines[
+                block.number
+            ] = applied_for_block
+
+    return (
+        corrected_texts,
+        applied_lines,
+    )
 
 
 def build_chinese_retry_blocks(
