@@ -15,6 +15,9 @@ from .hybrid_group import (
     HybridTranslationGroup,
     build_hybrid_translation_group,
 )
+from .hybrid_inspection import (
+    save_hybrid_attempt_report,
+)
 from .ocr_retry import (
     is_probable_ocr_source_line,
 )
@@ -630,7 +633,11 @@ def recover_translation_with_hybrid(
     通常翻訳に失敗したチャンクを、
     連続文グループ全文翻訳で回復する。
 
-    Phase 1では次の制約を設ける。
+    各Hybrid試行について、
+    Prompt、Schema、レスポンス、
+    検証結果をtmpへ保存する。
+
+    次の制約を設ける。
 
     - 現在のチャンク内だけを対象とする
     - すべての失敗IDを1グループへまとめる
@@ -681,9 +688,7 @@ def recover_translation_with_hybrid(
                 group,
                 ocr_lines,
                 glossary_entries,
-                retry_reasons=(
-                    retry_reasons
-                ),
+                retry_reasons=retry_reasons,
             )
         )
 
@@ -731,12 +736,36 @@ def recover_translation_with_hybrid(
                 hybrid_validation.reasons
             )
 
+            report_path = (
+                save_hybrid_attempt_report(
+                    group=group,
+                    model=model,
+                    attempt=attempt,
+                    prompt=prompt,
+                    response_schema=response_schema,
+                    response=response,
+                    ocr_lines=ocr_lines,
+                    validation_stage=(
+                        "hybrid_validation"
+                    ),
+                    validation_valid=False,
+                    validation_reasons=(
+                        retry_reasons
+                    ),
+                )
+            )
+
             print(
                 "Hybrid validation failed:"
             )
 
             for reason in retry_reasons:
                 print(f"  - {reason}")
+
+            print(
+                "Hybrid report saved:"
+            )
+            print(f"  {report_path}")
 
             continue
 
@@ -792,14 +821,37 @@ def recover_translation_with_hybrid(
                 ],
                 source_speakers=source_speakers,
                 source_texts=source_texts,
-                noise_dictionary=noise_dictionary,
-                glossary_entries=glossary_entries,
+                noise_dictionary=(
+                    noise_dictionary
+                ),
+                glossary_entries=(
+                    glossary_entries
+                ),
             )
         )
 
         if not standard_validation.valid:
             retry_reasons = list(
                 standard_validation.reasons
+            )
+
+            report_path = (
+                save_hybrid_attempt_report(
+                    group=group,
+                    model=model,
+                    attempt=attempt,
+                    prompt=prompt,
+                    response_schema=response_schema,
+                    response=response,
+                    ocr_lines=ocr_lines,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=False,
+                    validation_reasons=(
+                        retry_reasons
+                    ),
+                )
             )
 
             print(
@@ -810,7 +862,27 @@ def recover_translation_with_hybrid(
             for reason in retry_reasons:
                 print(f"  - {reason}")
 
+            print(
+                "Hybrid report saved:"
+            )
+            print(f"  {report_path}")
+
             continue
+
+        report_path = (
+            save_hybrid_attempt_report(
+                group=group,
+                model=model,
+                attempt=attempt,
+                prompt=prompt,
+                response_schema=response_schema,
+                response=response,
+                ocr_lines=ocr_lines,
+                validation_stage="complete",
+                validation_valid=True,
+                validation_reasons=[],
+            )
+        )
 
         print(
             "Hybrid Translation Recovery "
@@ -823,6 +895,11 @@ def recover_translation_with_hybrid(
                 group.target_ids
             )
         )
+
+        print(
+            "Hybrid report saved:"
+        )
+        print(f"  {report_path}")
 
         return (
             standard_validation.translated_texts
