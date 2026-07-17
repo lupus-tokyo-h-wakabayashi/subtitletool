@@ -329,8 +329,11 @@ def apply_level_1_ocr_fallback(
     dict[str, list[str]],
 ]:
     """
-    最終再試行後も高確度OCR文字列が裸で残った場合に、
+    最終再試行後も高確度OCR文字列が残った場合に、
     原文の完全な1行だけを[1]タグで囲む。
+
+    既に[3]または[5]で囲まれている場合は、
+    タグをネストせず、タグ全体を[1]へ置換する。
 
     正常英文や判定不能な文字列には適用しない。
 
@@ -364,6 +367,38 @@ def apply_level_1_ocr_fallback(
             )
 
             if level_1_text in corrected_text:
+                continue
+
+            replaced_existing_tag = False
+
+            for existing_level in (
+                    "3",
+                    "5",
+            ):
+                existing_tag = (
+                    f"[{existing_level}]"
+                    f"{source_line}"
+                    f"[/{existing_level}]"
+                )
+
+                if existing_tag not in corrected_text:
+                    continue
+
+                corrected_text = (
+                    corrected_text.replace(
+                        existing_tag,
+                        level_1_text,
+                        1,
+                    )
+                )
+
+                replaced_existing_tag = True
+                break
+
+            if replaced_existing_tag:
+                applied_for_block.append(
+                    source_line
+                )
                 continue
 
             if source_line not in corrected_text:

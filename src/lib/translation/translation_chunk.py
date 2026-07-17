@@ -523,15 +523,6 @@ def translate_chunk(
     ) = build_expected_source_metadata(
         target_blocks
     )
-    last_errors: list[str] = []
-    last_translated_texts: list[str] = []
-
-    (
-        original_source_speakers,
-        original_source_texts,
-    ) = build_expected_source_metadata(
-        target_blocks
-    )
 
     input_noise_candidates = (
         extract_noise_candidates_from_blocks(
