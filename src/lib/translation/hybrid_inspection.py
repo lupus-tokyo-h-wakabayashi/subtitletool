@@ -186,3 +186,83 @@ def save_hybrid_attempt_report(
     )
 
     return output_path
+
+
+def try_save_hybrid_attempt_report(
+    *,
+    group: HybridTranslationGroup,
+    model: str,
+    attempt: int,
+    prompt: str,
+    response_schema: Mapping[str, object],
+    response: str,
+    ocr_lines: Mapping[str, list[str]],
+    validation_stage: str,
+    validation_valid: bool,
+    validation_reasons: list[str],
+    created_at: datetime | None = None,
+    output_directory: Path | None = None,
+) -> Path | None:
+    """
+    Hybrid Recoveryの観測レポートを
+    best-effortで保存する。
+
+    レポート保存は観測目的であり、
+    翻訳結果や再試行制御より優先しない。
+
+    保存できた場合は保存先を返す。
+
+    ディレクトリ作成、JSON変換、
+    ファイル書き込みに失敗した場合は
+    Warningを表示してNoneを返す。
+    """
+    try:
+        output_path = (
+            save_hybrid_attempt_report(
+                group=group,
+                model=model,
+                attempt=attempt,
+                prompt=prompt,
+                response_schema=(
+                    response_schema
+                ),
+                response=response,
+                ocr_lines=ocr_lines,
+                validation_stage=(
+                    validation_stage
+                ),
+                validation_valid=(
+                    validation_valid
+                ),
+                validation_reasons=(
+                    validation_reasons
+                ),
+                created_at=created_at,
+                output_directory=(
+                    output_directory
+                ),
+            )
+        )
+    except (
+            OSError,
+            TypeError,
+            ValueError,
+    ) as error:
+        print(
+            "Warning: Hybrid report "
+            "could not be saved:"
+        )
+        print(
+            "  "
+            f"{type(error).__name__}: "
+            f"{error}"
+        )
+
+        return None
+
+    print(
+        "Hybrid report saved:"
+    )
+    print(f"  {output_path}")
+
+    return output_path

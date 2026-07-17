@@ -16,7 +16,7 @@ from .hybrid_group import (
     build_hybrid_translation_group,
 )
 from .hybrid_inspection import (
-    save_hybrid_attempt_report,
+    try_save_hybrid_attempt_report,
 )
 from .ocr_retry import (
     is_probable_ocr_source_line,
@@ -736,23 +736,21 @@ def recover_translation_with_hybrid(
                 hybrid_validation.reasons
             )
 
-            report_path = (
-                save_hybrid_attempt_report(
-                    group=group,
-                    model=model,
-                    attempt=attempt,
-                    prompt=prompt,
-                    response_schema=response_schema,
-                    response=response,
-                    ocr_lines=ocr_lines,
-                    validation_stage=(
-                        "hybrid_validation"
-                    ),
-                    validation_valid=False,
-                    validation_reasons=(
-                        retry_reasons
-                    ),
-                )
+            try_save_hybrid_attempt_report(
+                group=group,
+                model=model,
+                attempt=attempt,
+                prompt=prompt,
+                response_schema=response_schema,
+                response=response,
+                ocr_lines=ocr_lines,
+                validation_stage=(
+                    "hybrid_validation"
+                ),
+                validation_valid=False,
+                validation_reasons=(
+                    retry_reasons
+                ),
             )
 
             print(
@@ -761,11 +759,6 @@ def recover_translation_with_hybrid(
 
             for reason in retry_reasons:
                 print(f"  - {reason}")
-
-            print(
-                "Hybrid report saved:"
-            )
-            print(f"  {report_path}")
 
             continue
 
@@ -835,23 +828,21 @@ def recover_translation_with_hybrid(
                 standard_validation.reasons
             )
 
-            report_path = (
-                save_hybrid_attempt_report(
-                    group=group,
-                    model=model,
-                    attempt=attempt,
-                    prompt=prompt,
-                    response_schema=response_schema,
-                    response=response,
-                    ocr_lines=ocr_lines,
-                    validation_stage=(
-                        "standard_validation"
-                    ),
-                    validation_valid=False,
-                    validation_reasons=(
-                        retry_reasons
-                    ),
-                )
+            try_save_hybrid_attempt_report(
+                group=group,
+                model=model,
+                attempt=attempt,
+                prompt=prompt,
+                response_schema=response_schema,
+                response=response,
+                ocr_lines=ocr_lines,
+                validation_stage=(
+                    "standard_validation"
+                ),
+                validation_valid=False,
+                validation_reasons=(
+                    retry_reasons
+                ),
             )
 
             print(
@@ -862,26 +853,19 @@ def recover_translation_with_hybrid(
             for reason in retry_reasons:
                 print(f"  - {reason}")
 
-            print(
-                "Hybrid report saved:"
-            )
-            print(f"  {report_path}")
-
             continue
 
-        report_path = (
-            save_hybrid_attempt_report(
-                group=group,
-                model=model,
-                attempt=attempt,
-                prompt=prompt,
-                response_schema=response_schema,
-                response=response,
-                ocr_lines=ocr_lines,
-                validation_stage="complete",
-                validation_valid=True,
-                validation_reasons=[],
-            )
+        try_save_hybrid_attempt_report(
+            group=group,
+            model=model,
+            attempt=attempt,
+            prompt=prompt,
+            response_schema=response_schema,
+            response=response,
+            ocr_lines=ocr_lines,
+            validation_stage="complete",
+            validation_valid=True,
+            validation_reasons=[],
         )
 
         print(
@@ -895,11 +879,6 @@ def recover_translation_with_hybrid(
                 group.target_ids
             )
         )
-
-        print(
-            "Hybrid report saved:"
-        )
-        print(f"  {report_path}")
 
         return (
             standard_validation.translated_texts

@@ -365,6 +365,12 @@ def test_hybrid_recovery_replaces_group_only(
         lambda *args, **kwargs: response,
     )
 
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
     previous_texts = [
         "制御されていますが、",
         (

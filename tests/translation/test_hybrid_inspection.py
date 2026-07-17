@@ -233,3 +233,60 @@ def test_save_hybrid_attempt_report(
 
     assert "居住区へ戻ってください" in raw_text
     assert "\\u5c45" not in raw_text
+
+
+def test_try_save_hybrid_attempt_report_returns_none_on_io_error(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    from lib.translation.hybrid_inspection import (
+        try_save_hybrid_attempt_report,
+    )
+
+    group = make_group()
+
+    invalid_output_directory = (
+        tmp_path
+        / "not-a-directory"
+    )
+
+    invalid_output_directory.write_text(
+        "This path is a file.",
+        encoding="utf-8",
+    )
+
+    result = try_save_hybrid_attempt_report(
+        group=group,
+        model="test-model",
+        attempt=1,
+        prompt="Translate this group.",
+        response_schema={
+            "type": "object",
+        },
+        response='{"group": {}}',
+        ocr_lines={},
+        validation_stage="complete",
+        validation_valid=True,
+        validation_reasons=[],
+        created_at=datetime(
+            2026,
+            7,
+            17,
+            18,
+            30,
+            45,
+        ),
+        output_directory=(
+            invalid_output_directory
+        ),
+    )
+
+    assert result is None
+
+    captured = capsys.readouterr()
+
+    assert (
+        "Warning: Hybrid report "
+        "could not be saved:"
+        in captured.out
+    )
