@@ -616,3 +616,192 @@ def test_profile_glossary_integration(
                "Chevron = シェブロン\n"
                "P4X351 = P4X-351"
            )
+
+
+def test_parse_glossary_entry_defaults_to_case_insensitive(
+) -> None:
+    document = parse_glossary_document(
+        {
+            "version": 1,
+            "entries": [
+                {
+                    "source": "Destiny",
+                    "target": "デスティニー",
+                },
+            ],
+        },
+        path=Path("glossary.json"),
+        allow_empty=False,
+    )
+
+    entry = document.entries[0]
+
+    assert entry.source == "Destiny"
+    assert entry.target == "デスティニー"
+    assert entry.case_sensitive is False
+
+
+def test_parse_glossary_entry_accepts_case_sensitive(
+) -> None:
+    document = parse_glossary_document(
+        {
+            "version": 1,
+            "entries": [
+                {
+                    "source": "Destiny",
+                    "target": "デスティニー",
+                    "case_sensitive": True,
+                },
+            ],
+        },
+        path=Path("glossary.json"),
+        allow_empty=False,
+    )
+
+    entry = document.entries[0]
+
+    assert entry.case_sensitive is True
+
+
+@pytest.mark.parametrize(
+    "case_sensitive",
+    [
+        "true",
+        1,
+        0,
+        None,
+        [],
+        {},
+    ],
+)
+def test_parse_glossary_entry_rejects_invalid_case_sensitive(
+    case_sensitive,
+) -> None:
+    payload = {
+        "version": 1,
+        "entries": [
+            {
+                "source": "Destiny",
+                "target": "デスティニー",
+                "case_sensitive": case_sensitive,
+            },
+        ],
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Invalid glossary "
+            "case_sensitive"
+        ),
+    ):
+        parse_glossary_document(
+            payload,
+            path=Path("glossary.json"),
+            allow_empty=False,
+        )
+
+
+def test_load_glossary_entries_preserves_case_sensitive_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = (
+        tmp_path
+        / "config"
+    )
+
+    profile_dir = (
+        config_dir
+        / "test-profile"
+    )
+
+    profile_dir.mkdir(
+        parents=True,
+    )
+
+    (
+        config_dir
+        / "prompt.txt"
+    ).write_text(
+        (
+            "{target_count}\n"
+            "{glossary}\n"
+            "{style}\n"
+            "{request_json}\n"
+        ),
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "glossary.json"
+    ).write_text(
+        """
+{
+  "version": 1,
+  "entries": [
+    {
+      "source": "Destiny",
+      "target": "デスティニー",
+      "case_sensitive": true
+    }
+  ]
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "style.json"
+    ).write_text(
+        """
+{
+  "version": 1,
+  "sections": [
+    {
+      "name": "Test",
+      "rules": [
+        "Test style"
+      ]
+    }
+  ]
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    (
+        profile_dir
+        / "noise.json"
+    ).write_text(
+        """
+{
+  "version": 1,
+  "entries": []
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        config_module,
+        "CONFIG_DIR",
+        config_dir,
+    )
+
+    entries = load_glossary_entries(
+        "test-profile"
+    )
+
+    assert entries == {
+        "Destiny": "デスティニー",
+    }
+
+    assert entries.is_case_sensitive(
+        "Destiny"
+    ) is True

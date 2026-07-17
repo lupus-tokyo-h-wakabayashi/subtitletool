@@ -1533,21 +1533,56 @@ def validate_translation_response(
     return result
 
 
+def is_glossary_term_case_sensitive(
+    glossary_entries: Mapping[str, str],
+    source_term: str,
+) -> bool:
+    """
+    用語集のsourceが大小文字区別対象か返す。
+
+    通常のdictが渡された場合は、
+    後方互換性のためFalseを返す。
+    """
+    checker = getattr(
+        glossary_entries,
+        "is_case_sensitive",
+        None,
+    )
+
+    if not callable(checker):
+        return False
+
+    return bool(
+        checker(source_term)
+    )
+
+
 def source_contains_glossary_term(
     source_text: str,
     source_term: str,
+    *,
+    case_sensitive: bool = False,
 ) -> bool:
     """
     原文に用語集の英語表現が含まれているか判定する。
 
     英数字の単語境界を考慮し、
-    Gate が navigate 等へ誤一致しないようにする。
+    Gateがnavigateなどへ誤一致しないようにする。
+
+    case_sensitiveがTrueの場合は、
+    大文字・小文字まで一致した場合だけ対象とする。
     """
+    flags = (
+        0
+        if case_sensitive
+        else re.IGNORECASE
+    )
+
     pattern = re.compile(
         rf"(?<![A-Za-z0-9])"
         rf"{re.escape(source_term)}"
         rf"(?![A-Za-z0-9])",
-        re.IGNORECASE,
+        flags,
     )
 
     return bool(
@@ -1564,6 +1599,9 @@ def find_glossary_violations(
     """
     原文に用語集の英語表現が存在するのに、
     対応する指定訳が翻訳結果へ含まれていない字幕を検出する。
+
+    エントリがcase_sensitiveの場合は、
+    原文の大文字・小文字まで一致した場合だけ検証する。
     """
     violations: list[str] = []
 
@@ -1580,9 +1618,17 @@ def find_glossary_violations(
         for source_term, expected_term in (
             glossary_entries.items()
         ):
+            case_sensitive = (
+                is_glossary_term_case_sensitive(
+                    glossary_entries,
+                    source_term,
+                )
+            )
+
             if not source_contains_glossary_term(
                 source_text,
                 source_term,
+                case_sensitive=case_sensitive,
             ):
                 continue
 
