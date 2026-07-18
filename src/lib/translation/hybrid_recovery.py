@@ -19,6 +19,7 @@ from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
 )
 from .ocr_retry import (
+    is_low_symbol_word_salad_ocr_source_line,
     is_probable_ocr_source_line,
 )
 from .retry import (
@@ -117,6 +118,13 @@ def find_group_ocr_lines(
 ) -> dict[str, list[str]]:
     """
     Hybridグループ内の高確度OCR行を抽出する。
+
+    Noise辞書や既存ヒューリスティックで検出できる
+    OCR行は、グループ内のすべての字幕を対象にする。
+
+    記号をほとんど含まない英字ワードサラダ判定は、
+    正常英文の誤検出を避けるため、通常翻訳で実際に
+    Validationへ失敗した字幕IDだけに適用する。
     """
     results: dict[
         str,
@@ -132,10 +140,28 @@ def find_group_ocr_lines(
             if not source_line:
                 continue
 
-            if not is_probable_ocr_source_line(
-                source_line,
-                noise_dictionary,
+            is_existing_ocr = (
+                is_probable_ocr_source_line(
+                    source_line,
+                    noise_dictionary,
+                )
+            )
+
+            is_failed_word_salad = (
+                block.number
+                in group.failed_ids
+                and is_low_symbol_word_salad_ocr_source_line(
+                source_line
+            )
+            )
+
+            if not (
+                is_existing_ocr
+                or is_failed_word_salad
             ):
+                continue
+
+            if source_line in lines:
                 continue
 
             lines.append(

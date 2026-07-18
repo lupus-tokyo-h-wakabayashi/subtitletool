@@ -10,18 +10,35 @@ from lib.profile.noise import (
 from lib.subtitle.srt import SrtBlock
 from lib.translation import hybrid_recovery
 from lib.translation.hybrid_group import (
+    HybridTranslationGroup,
     build_hybrid_translation_group,
 )
 from lib.translation.hybrid_recovery import (
     HYBRID_OCR_PLACEHOLDER,
     HybridRecoveryError,
     build_hybrid_response_schema,
+    build_hybrid_source_payload,
+    find_group_ocr_lines,
     recover_translation_with_hybrid,
     validate_hybrid_response,
 )
 
 OCR_LINE = (
     "=) EWA eam CO ma = Ae lan"
+)
+
+E08_OCR_LINE = (
+    "Ui maar i mele aah ml iaa"
+)
+
+E08_NORMAL_LINE = (
+    "How can I not"
+)
+
+E08_FOLLOWING_TEXT = (
+    'The "us" on that recording\n'
+    "dropped out of FTL\n"
+    "and went to the planet."
 )
 
 
@@ -83,6 +100,160 @@ def target_blocks(
             ),
         ),
     ]
+
+
+@pytest.fixture
+def e08_target_blocks(
+) -> list[SrtBlock]:
+    return [
+        SrtBlock(
+            number="496",
+            timestamp=(
+                "00:31:59,418 --> "
+                "00:32:01,044"
+            ),
+            text=(
+                f"{E08_NORMAL_LINE}\n"
+                f"{E08_OCR_LINE}"
+            ),
+        ),
+        SrtBlock(
+            number="497",
+            timestamp=(
+                "00:32:01,128 --> "
+                "00:32:04,506"
+            ),
+            text=E08_FOLLOWING_TEXT,
+        ),
+    ]
+
+
+def test_e08_failed_subtitle_detects_only_word_salad_as_ocr(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    assert group.target_ids == (
+        "496",
+        "497",
+    )
+
+    assert group.failed_ids == frozenset(
+        {
+            "496",
+        }
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert actual == {
+        "496": [
+            E08_OCR_LINE,
+        ],
+    }
+
+
+def test_e08_hybrid_source_payload_classifies_lines(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    actual = build_hybrid_source_payload(
+        group,
+        ocr_lines,
+    )
+
+    assert actual == {
+        "subtitles": [
+            {
+                "id": "496",
+                "lines": [
+                    {
+                        "kind": "text",
+                        "text": E08_NORMAL_LINE,
+                    },
+                    {
+                        "kind": "ocr",
+                        "text": E08_OCR_LINE,
+                    },
+                ],
+            },
+            {
+                "id": "497",
+                "lines": [
+                    {
+                        "kind": "text",
+                        "text": (
+                            'The "us" on that recording'
+                        ),
+                    },
+                    {
+                        "kind": "text",
+                        "text": (
+                            "dropped out of FTL"
+                        ),
+                    },
+                    {
+                        "kind": "text",
+                        "text": (
+                            "and went to the planet."
+                        ),
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def test_low_symbol_word_salad_is_limited_to_failed_ids(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+            1,
+        ),
+        blocks=tuple(
+            e08_target_blocks
+        ),
+        failed_ids=frozenset(
+            {
+                "497",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert actual == {}
 
 
 def valid_hybrid_payload(
