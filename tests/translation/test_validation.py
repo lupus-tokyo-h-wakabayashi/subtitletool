@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from lib.profile.glossary import (
     GlossaryEntries,
@@ -10,8 +12,8 @@ from lib.profile.noise import (
 )
 from lib.translation.translation_validation import (
     find_glossary_violations,
-)
-from lib.translation.translation_validation import (
+    find_repeated_sequence_subtitle_ids,
+    find_repeated_translation_subtitle_ids,
     validate_translation_response,
 )
 from .helpers import build_test_noise_dictionary
@@ -1038,3 +1040,195 @@ def test_plain_dictionary_keeps_case_insensitive_behavior(
     )
 
     assert len(violations) == 1
+
+
+def test_find_repeated_translation_subtitle_ids(
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    translated_texts = [
+        "では、容疑者はいますか？"
+        for _ in subtitle_ids
+    ]
+
+    actual = (
+        find_repeated_translation_subtitle_ids(
+            translated_texts,
+            subtitle_ids,
+            "では、容疑者はいますか？",
+        )
+    )
+
+    assert actual == subtitle_ids
+
+
+def test_find_repeated_sequence_subtitle_ids(
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    actual = (
+        find_repeated_sequence_subtitle_ids(
+            subtitle_ids,
+            first_start=1,
+            second_start=4,
+            length=3,
+        )
+    )
+
+    assert actual == [
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+    ]
+
+
+@pytest.mark.parametrize(
+    (
+            "first_start",
+            "second_start",
+            "length",
+    ),
+    [
+        (
+                0,
+                4,
+                3,
+        ),
+        (
+                1,
+                0,
+                3,
+        ),
+        (
+                1,
+                4,
+                0,
+        ),
+        (
+                9,
+                10,
+                3,
+        ),
+    ],
+)
+def test_find_repeated_sequence_subtitle_ids_rejects_invalid_range(
+    first_start: int,
+    second_start: int,
+    length: int,
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    actual = (
+        find_repeated_sequence_subtitle_ids(
+            subtitle_ids,
+            first_start=first_start,
+            second_start=second_start,
+            length=length,
+        )
+    )
+
+    assert actual == []
+
+
+def test_validation_reports_repeated_translation_subtitle_ids(
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    source_texts = [
+        f"Source subtitle {subtitle_id}."
+        for subtitle_id in subtitle_ids
+    ]
+
+    repeated_translation = (
+        "では、容疑者はいますか？"
+    )
+
+    response = json.dumps(
+        {
+            "targets": {
+                subtitle_id: {
+                    "source": {
+                        "speaker": None,
+                        "text": source_text,
+                    },
+                    "translation": (
+                        repeated_translation
+                    ),
+                }
+                for (
+                    subtitle_id,
+                    source_text,
+                ) in zip(
+                    subtitle_ids,
+                    source_texts,
+                    strict=True,
+                )
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    result = validate_translation_response(
+        response,
+        expected_ids=subtitle_ids,
+        source_speakers=[
+            None
+            for _ in subtitle_ids
+        ],
+        source_texts=source_texts,
+        noise_dictionary=(
+            build_test_noise_dictionary(
+                []
+            )
+        ),
+    )
+
+    assert not result.valid
+
+    assert (
+        "Repeated translation detected: "
+        "count=10, "
+        "text='では、容疑者はいますか？', "
+        "subtitle_ids="
+        "['81', '82', '83', '84', '85', "
+        "'86', '87', '88', '89', '90']"
+        in result.reasons
+    )
+
+    assert (
+        "Repeated translation sequence detected: "
+        "first_start=1, "
+        "second_start=4, "
+        "length=3, "
+        "subtitle_ids="
+        "['81', '82', '83', '84', '85', "
+        "'86']"
+        in result.reasons
+    )
