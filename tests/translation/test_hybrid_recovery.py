@@ -2012,3 +2012,341 @@ def test_find_group_sound_effect_lines(
             "(CHIRPING)",
         ],
     }
+
+
+def build_e11_sound_effect_group(
+) -> HybridTranslationGroup:
+    block = SrtBlock(
+        number="321",
+        timestamp=(
+            "00:24:14,119 --> "
+            "00:24:15,204"
+        ),
+        text="(CHIRPING)",
+    )
+
+    return HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "321",
+            }
+        ),
+    )
+
+
+def test_e11_validation_accepts_japanese_sound_effect(
+) -> None:
+    group = build_e11_sound_effect_group()
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "（電子音）"
+                ),
+                "segments": {
+                    "321": "（電子音）",
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+    assert validation.segments == {
+        "321": "（電子音）",
+    }
+
+
+def test_e11_validation_rejects_ocr_placeholder_and_hallucinated_dialogue(
+) -> None:
+    group = build_e11_sound_effect_group()
+
+    invalid_translation = (
+        "（判読不能）／私は良い友人です。"
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    invalid_translation
+                ),
+                "segments": {
+                    "321": invalid_translation,
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is False
+
+    assert any(
+        reason.startswith(
+            "Unexpected Hybrid OCR placeholder: "
+            "subtitle_id='321'"
+        )
+        for reason in validation.reasons
+    )
+
+    assert any(
+        reason.startswith(
+            "Hybrid sound-effect-only segment "
+            "must contain only fullwidth "
+            "parenthesized effects: "
+            "subtitle_id='321'"
+        )
+        for reason in validation.reasons
+    )
+
+
+def test_e11_validation_rejects_unparenthesized_sound_effect(
+) -> None:
+    group = build_e11_sound_effect_group()
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": "電子音",
+                "segments": {
+                    "321": "電子音",
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid sound effect translation missing: "
+        "subtitle_id='321', "
+        "text='電子音'"
+        in validation.reasons
+    )
+
+
+def test_e11_validation_rejects_sound_effect_source_copy(
+) -> None:
+    group = build_e11_sound_effect_group()
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "(CHIRPING)"
+                ),
+                "segments": {
+                    "321": "(CHIRPING)",
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid segment contains sound "
+        "effect source: "
+        "subtitle_id='321', "
+        "text='(CHIRPING)'"
+        in validation.reasons
+    )
+
+    assert (
+        "Hybrid sound effect translation "
+        "missing: "
+        "subtitle_id='321', "
+        "text='(CHIRPING)'"
+        in validation.reasons
+    )
+
+
+def test_e11_validation_rejects_english_in_fullwidth_parentheses(
+) -> None:
+    group = build_e11_sound_effect_group()
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "（CHIRPING）"
+                ),
+                "segments": {
+                    "321": "（CHIRPING）",
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid sound effect requires "
+        "Japanese translation: "
+        "subtitle_id='321', "
+        "values=['CHIRPING'], "
+        "text='（CHIRPING）'"
+        in validation.reasons
+    )
+
+
+def test_validation_accepts_mixed_sound_effect_and_text(
+) -> None:
+    block = SrtBlock(
+        number="160",
+        timestamp=(
+            "00:10:00,000 --> "
+            "00:10:02,000"
+        ),
+        text=(
+            "(ON RADIO)\n"
+            "Colonel Young, come in."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "160",
+            }
+        ),
+    )
+
+    translated_text = (
+        "（無線）ヤング大佐、"
+        "応答してください。"
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    translated_text
+                ),
+                "segments": {
+                    "160": translated_text,
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+
+def test_validation_rejects_missing_effect_in_mixed_subtitle(
+) -> None:
+    block = SrtBlock(
+        number="160",
+        timestamp=(
+            "00:10:00,000 --> "
+            "00:10:02,000"
+        ),
+        text=(
+            "(ON RADIO)\n"
+            "Colonel Young, come in."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "160",
+            }
+        ),
+    )
+
+    translated_text = (
+        "ヤング大佐、応答してください。"
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    translated_text
+                ),
+                "segments": {
+                    "160": translated_text,
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid sound effect translation "
+        "missing: "
+        "subtitle_id='160', "
+        f"text={translated_text!r}"
+        in validation.reasons
+    )

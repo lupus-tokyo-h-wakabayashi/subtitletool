@@ -33,13 +33,25 @@ from .translation_validation import (
 )
 
 MAX_HYBRID_RECOVERY_ATTEMPTS = 3
-
 HYBRID_OCR_PLACEHOLDER = (
     "（判読不能）"
 )
-
 JAPANESE_CHARACTER_PATTERN = re.compile(
     r"[ぁ-んァ-ヶ一-龠々ー]"
+)
+HYBRID_TRANSLATED_SOUND_EFFECT_PATTERN = (
+    re.compile(
+        r"（(?P<content>[^（）]+)）"
+    )
+)
+
+HYBRID_SOUND_EFFECT_ONLY_SEGMENT_PATTERN = (
+    re.compile(
+        r"^"
+        r"(?:（[^（）]+）)"
+        r"(?:[\s／]*（[^（）]+）)*"
+        r"$"
+    )
 )
 
 
@@ -716,6 +728,109 @@ def normalize_hybrid_join_text(
     )
 
 
+def find_hybrid_sound_effect_segment_violations(
+    subtitle_id: str,
+    segment: str,
+    *,
+    source_sound_effect_lines: list[str],
+    source_text_lines: list[str],
+    source_ocr_lines: list[str],
+) -> list[str]:
+    """
+    Hybrid segment内の効果音翻訳を検証する。
+
+    効果音行が存在しない字幕では何も返さない。
+
+    効果音だけの字幕では、
+    segment全体を日本語の全角括弧表現に限定する。
+
+    通常文・OCR行との混在字幕では、
+    segment内に日本語の全角括弧表現が
+    1つ以上存在することを必須とする。
+    """
+    if not source_sound_effect_lines:
+        return []
+
+    violations: list[str] = []
+
+    for source_sound_effect in (
+        source_sound_effect_lines
+    ):
+        if source_sound_effect not in segment:
+            continue
+
+        violations.append(
+            "Hybrid segment contains sound "
+            "effect source: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"text={source_sound_effect!r}"
+        )
+
+    translated_effect_contents = [
+        match.group(
+            "content"
+        )
+        for match in (
+            HYBRID_TRANSLATED_SOUND_EFFECT_PATTERN
+            .finditer(
+                segment
+            )
+        )
+    ]
+
+    if not translated_effect_contents:
+        violations.append(
+            "Hybrid sound effect translation "
+            "missing: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"text={segment!r}"
+        )
+
+        return violations
+
+    non_japanese_effects = [
+        effect_content
+        for effect_content
+        in translated_effect_contents
+        if not JAPANESE_CHARACTER_PATTERN.search(
+            effect_content
+        )
+    ]
+
+    if non_japanese_effects:
+        violations.append(
+            "Hybrid sound effect requires "
+            "Japanese translation: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"values={non_japanese_effects!r}, "
+            f"text={segment!r}"
+        )
+
+    is_sound_effect_only = (
+        not source_text_lines
+        and not source_ocr_lines
+    )
+
+    if (
+        is_sound_effect_only
+        and not (
+        HYBRID_SOUND_EFFECT_ONLY_SEGMENT_PATTERN
+            .fullmatch(
+            segment
+        )
+    )
+    ):
+        violations.append(
+            "Hybrid sound-effect-only segment "
+            "must contain only fullwidth "
+            "parenthesized effects: "
+            f"subtitle_id={subtitle_id!r}, "
+            f"text={segment!r}"
+        )
+
+    return violations
+
+
 def validate_hybrid_response(
     response: str,
     group: HybridTranslationGroup,
@@ -888,6 +1003,12 @@ def validate_hybrid_response(
         ocr_lines,
     )
 
+    sound_effect_lines = (
+        find_group_sound_effect_lines(
+            group
+        )
+    )
+
     segments: dict[str, str] = {}
 
     for subtitle_id in expected_ids:
@@ -963,6 +1084,33 @@ def validate_hybrid_response(
         block_text_lines = text_lines.get(
             subtitle_id,
             [],
+        )
+
+        block_sound_effect_lines = (
+            sound_effect_lines.get(
+                subtitle_id,
+                [],
+            )
+        )
+
+        sound_effect_violations = (
+            find_hybrid_sound_effect_segment_violations(
+                subtitle_id,
+                normalized_segment,
+                source_sound_effect_lines=(
+                    block_sound_effect_lines
+                ),
+                source_text_lines=(
+                    block_text_lines
+                ),
+                source_ocr_lines=(
+                    block_ocr_lines
+                ),
+            )
+        )
+
+        reasons.extend(
+            sound_effect_violations
         )
 
         if (
