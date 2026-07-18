@@ -20,6 +20,7 @@ from lib.translation.hybrid_recovery import (
     build_hybrid_source_payload,
     build_hybrid_translation_prompt,
     find_group_ocr_lines,
+    find_group_sound_effect_lines,
     recover_translation_with_hybrid,
     validate_hybrid_response,
 )
@@ -444,19 +445,43 @@ def test_e08_prompt_contains_segment_requirements(
 
     assert (
         "* 字幕ID 496: "
-        "kind=textの正常英文を日本語へ翻訳し、"
-        "kind=ocrの位置を「（判読不能）」で表現する。"
-        "segmentには日本語訳と「（判読不能）」の"
-        "両方を必ず含める。"
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "kind=ocrの位置を"
+        "「（判読不能）」で表現し、"
+        "OCR原文をコピーしない。"
+        "segmentには"
+        "「（判読不能）」と、"
+        "それ以外の翻訳結果を"
+        "両方とも含める。"
+        "各行の内容を原文順に配置する。"
         in prompt
     )
 
     assert (
         "* 字幕ID 497: "
-        "すべてkind=textなので正常な日本語へ翻訳する。"
-        "英文を残さず、"
-        "「（判読不能）」を含めない。"
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "各行の内容を原文順に配置する。"
         in prompt
+    )
+
+    assert "【OCR行】" in prompt
+
+    assert E08_OCR_LINE in prompt
+
+    assert HYBRID_OCR_PLACEHOLDER in prompt
+
+    assert (
+        "aR at-lacmanl-e"
+        not in prompt
+    )
+
+    assert (
+        "私は良い友人です"
+        not in prompt
     )
 
 
@@ -833,14 +858,26 @@ def test_e08_hybrid_recovery_end_to_end(
 
     assert (
         "* 字幕ID 496: "
-        "kind=textの正常英文を日本語へ翻訳し、"
-        "kind=ocrの位置を「（判読不能）」で表現する。"
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "kind=ocrの位置を"
+        "「（判読不能）」で表現し、"
+        "OCR原文をコピーしない。"
+        "segmentには"
+        "「（判読不能）」と、"
+        "それ以外の翻訳結果を"
+        "両方とも含める。"
+        "各行の内容を原文順に配置する。"
         in prompt
     )
 
     assert (
         "* 字幕ID 497: "
-        "すべてkind=textなので正常な日本語へ翻訳する。"
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "各行の内容を原文順に配置する。"
         in prompt
     )
 
@@ -1797,5 +1834,181 @@ def test_e11_sound_effect_source_payload(
                     },
                 ],
             },
+        ],
+    }
+
+
+def test_e11_sound_effect_prompt_excludes_ocr_example(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="321",
+            timestamp=(
+                "00:24:14,119 --> "
+                "00:24:15,204"
+            ),
+            text="(CHIRPING)",
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "321",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert ocr_lines == {}
+
+    prompt = build_hybrid_translation_prompt(
+        group,
+        ocr_lines,
+        {},
+    )
+
+    assert (
+        '"kind": "sound_effect"'
+        in prompt
+    )
+
+    assert "(CHIRPING)" in prompt
+    assert "【効果音行】" in prompt
+    assert "（電子音）" in prompt
+
+    assert "【OCR行】" not in prompt
+
+    assert (
+        HYBRID_OCR_PLACEHOLDER
+        not in prompt
+    )
+
+    assert (
+        "aR at-lacmanl-e"
+        not in prompt
+    )
+
+    assert (
+        "私は良い友人です"
+        not in prompt
+    )
+
+
+def test_mixed_sound_effect_and_text_prompt_requirements(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="160",
+            timestamp=(
+                "00:10:00,000 --> "
+                "00:10:02,000"
+            ),
+            text=(
+                "(ON RADIO)\n"
+                "Colonel Young, come in."
+            ),
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "160",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    prompt = build_hybrid_translation_prompt(
+        group,
+        ocr_lines,
+        {},
+    )
+
+    assert (
+        "* 字幕ID 160: "
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "kind=sound_effectを"
+        "短い日本語の効果音へ翻訳し、"
+        "その部分を全角括弧で囲む。"
+        "各行の内容を原文順に配置する。"
+        in prompt
+    )
+
+    assert (
+        '"kind": "sound_effect"'
+        in prompt
+    )
+
+    assert '"kind": "text"' in prompt
+    assert "【効果音行】" in prompt
+    assert "【OCR行】" not in prompt
+
+
+def test_find_group_sound_effect_lines(
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="160",
+            timestamp=(
+                "00:10:00,000 --> "
+                "00:10:02,000"
+            ),
+            text=(
+                "(ON RADIO)\n"
+                "Colonel Young, come in."
+            ),
+        ),
+        SrtBlock(
+            number="161",
+            timestamp=(
+                "00:10:02,100 --> "
+                "00:10:03,000"
+            ),
+            text="(CHIRPING)",
+        ),
+    ]
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+            1,
+        ),
+        blocks=tuple(
+            blocks
+        ),
+        failed_ids=frozenset(
+            {
+                "160",
+                "161",
+            }
+        ),
+    )
+
+    actual = find_group_sound_effect_lines(
+        group
+    )
+
+    assert actual == {
+        "160": [
+            "(ON RADIO)",
+        ],
+        "161": [
+            "(CHIRPING)",
         ],
     }

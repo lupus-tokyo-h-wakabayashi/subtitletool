@@ -184,6 +184,47 @@ def find_group_ocr_lines(
     return results
 
 
+def find_group_sound_effect_lines(
+    group: HybridTranslationGroup,
+) -> dict[str, list[str]]:
+    """
+    Hybridグループ内の効果音行を
+    字幕IDごとに抽出する。
+    """
+    results: dict[
+        str,
+        list[str],
+    ] = {}
+
+    for block in group.blocks:
+        sound_effect_lines: list[str] = []
+
+        for raw_line in block.text.splitlines():
+            source_line = raw_line.strip()
+
+            if not source_line:
+                continue
+
+            if not is_source_sound_effect_line(
+                source_line
+            ):
+                continue
+
+            if source_line in sound_effect_lines:
+                continue
+
+            sound_effect_lines.append(
+                source_line
+            )
+
+        if sound_effect_lines:
+            results[
+                block.number
+            ] = sound_effect_lines
+
+    return results
+
+
 def find_group_text_lines(
     group: HybridTranslationGroup,
     ocr_lines: dict[str, list[str]],
@@ -302,7 +343,7 @@ def build_hybrid_segment_requirements(
     Hybrid Promptへ追加する、
     字幕IDごとの出力必須条件を生成する。
 
-    OCR行と正常行の分類結果を使い、
+    通常文・OCR行・効果音行の分類結果を使い、
     各segmentへ必要な内容を具体的に指示する。
     """
     text_lines = find_group_text_lines(
@@ -310,17 +351,16 @@ def build_hybrid_segment_requirements(
         ocr_lines,
     )
 
+    sound_effect_lines = (
+        find_group_sound_effect_lines(
+            group
+        )
+    )
+
     requirements: list[str] = []
 
     for block in group.blocks:
         subtitle_id = block.number
-
-        has_ocr_lines = bool(
-            ocr_lines.get(
-                subtitle_id,
-                [],
-            )
-        )
 
         has_text_lines = bool(
             text_lines.get(
@@ -329,37 +369,160 @@ def build_hybrid_segment_requirements(
             )
         )
 
+        has_ocr_lines = bool(
+            ocr_lines.get(
+                subtitle_id,
+                [],
+            )
+        )
+
+        has_sound_effect_lines = bool(
+            sound_effect_lines.get(
+                subtitle_id,
+                [],
+            )
+        )
+
         if (
-            has_ocr_lines
-            and has_text_lines
+            has_sound_effect_lines
+            and not has_text_lines
+            and not has_ocr_lines
         ):
             requirements.append(
                 f"* 字幕ID {subtitle_id}: "
-                "kind=textの正常英文を日本語へ翻訳し、"
-                "kind=ocrの位置を「（判読不能）」で表現する。"
-                "segmentには日本語訳と「（判読不能）」の"
-                "両方を必ず含める。"
+                "kind=sound_effectだけなので、"
+                "効果音を短い日本語へ翻訳し、"
+                "segment全体を全角括弧で囲む。"
+                "原文にない会話や説明を追加しない。"
             )
             continue
 
+        instructions: list[str] = []
+
+        if has_text_lines:
+            instructions.append(
+                "kind=textの正常英文を"
+                "自然な日本語へ翻訳する。"
+                "英文を残さない。"
+            )
+
+        if has_sound_effect_lines:
+            instructions.append(
+                "kind=sound_effectを"
+                "短い日本語の効果音へ翻訳し、"
+                "その部分を全角括弧で囲む。"
+            )
+
         if has_ocr_lines:
-            requirements.append(
-                f"* 字幕ID {subtitle_id}: "
-                "kind=ocrの位置を「（判読不能）」で表現する。"
+            instructions.append(
+                "kind=ocrの位置を"
+                "「（判読不能）」で表現し、"
                 "OCR原文をコピーしない。"
             )
-            continue
+
+        if (
+            has_ocr_lines
+            and (
+            has_text_lines
+            or has_sound_effect_lines
+        )
+        ):
+            instructions.append(
+                "segmentには"
+                "「（判読不能）」と、"
+                "それ以外の翻訳結果を"
+                "両方とも含める。"
+            )
+
+        instructions.append(
+            "各行の内容を原文順に配置する。"
+        )
 
         requirements.append(
             f"* 字幕ID {subtitle_id}: "
-            "すべてkind=textなので正常な日本語へ翻訳する。"
-            "英文を残さず、"
-            "「（判読不能）」を含めない。"
+            + "".join(
+                instructions
+            )
         )
 
     return "\n".join(
         requirements
     )
+
+
+def build_hybrid_ocr_instruction(
+    ocr_lines: dict[str, list[str]],
+) -> str:
+    """
+    OCR行が存在する場合だけ、
+    Hybrid PromptへOCR指示を追加する。
+    """
+    if not ocr_lines:
+        return ""
+
+    return """
+【OCR行】
+
+入力のkindがocrの行は、
+意味を推測して翻訳しないこと。
+
+kindがocrの行は、
+対応する字幕IDで必ず
+「（判読不能）」と表現すること。
+
+OCR原文をsegmentsへコピーしないこと。
+
+同じ字幕IDにkind=textの行もある場合、
+その正常な英文は必ず日本語へ翻訳すること。
+
+同じ字幕IDにkind=sound_effectの行もある場合、
+その効果音も日本語の括弧形式へ翻訳すること。
+
+OCR行と他の種類の行が同じIDにある場合、
+segment全体を「（判読不能）」だけにしないこと。
+""".strip()
+
+
+def build_hybrid_sound_effect_instruction(
+    group: HybridTranslationGroup,
+) -> str:
+    """
+    効果音行が存在する場合だけ、
+    Hybrid Promptへ効果音指示を追加する。
+    """
+    sound_effect_lines = (
+        find_group_sound_effect_lines(
+            group
+        )
+    )
+
+    if not sound_effect_lines:
+        return ""
+
+    return """
+【効果音行】
+
+入力のkindがsound_effectの行は、
+短く自然な日本語の効果音・動作説明へ翻訳すること。
+
+効果音部分は全角括弧で囲むこと。
+
+例:
+
+(CHIRPING)
+→
+（電子音）
+
+原文の英語効果音を残さないこと。
+
+原文にない会話、人物、状況説明を追加しないこと。
+
+字幕IDがkind=sound_effectだけで構成される場合は、
+segment全体を1つ以上の全角括弧表現にすること。
+
+同じ字幕IDにkind=textもある場合は、
+効果音と会話文の両方を原文順に含めること。
+""".strip()
 
 
 def build_hybrid_translation_prompt(
@@ -371,6 +534,9 @@ def build_hybrid_translation_prompt(
 ) -> str:
     """
     Hybrid Recovery用Promptを生成する。
+
+    OCR指示と効果音指示は、
+    対象グループに該当する行がある場合だけ追加する。
     """
     source_payload = (
         build_hybrid_source_payload(
@@ -397,11 +563,33 @@ def build_hybrid_translation_prompt(
         )
     )
 
+    ocr_instruction = (
+        build_hybrid_ocr_instruction(
+            ocr_lines
+        )
+    )
+
+    sound_effect_instruction = (
+        build_hybrid_sound_effect_instruction(
+            group
+        )
+    )
+
     glossary_instruction = (
         build_required_glossary_instruction(
             list(group.blocks),
             glossary_entries,
         )
+    )
+
+    optional_instructions = "\n\n".join(
+        instruction
+        for instruction in (
+            ocr_instruction,
+            sound_effect_instruction,
+            glossary_instruction,
+        )
+        if instruction.strip()
     )
 
     retry_instruction = ""
@@ -413,7 +601,6 @@ def build_hybrid_translation_prompt(
         )
 
         retry_instruction = f"""
-
 【前回のHybrid出力の修正】
 
 前回は次の問題で検証に失敗した。
@@ -423,15 +610,17 @@ def build_hybrid_translation_prompt(
 同じ問題を繰り返さず、
 full_translationとsegmentsを
 両方とも修正すること。
-"""
+""".strip()
 
-    return f"""
+    prompt_sections = [
+        f"""
 あなたは英語字幕を日本語字幕へ翻訳する。
 
-今回の字幕は複数のタイムスタンプに分割されているが、
-全体として1つ以上の連続した文章を構成している。
+今回の入力は、
+複数のタイムスタンプに分割された会話、
+単独の字幕、効果音、OCR破損行を含む場合がある。
 
-最初にグループ全体の意味を理解して、
+最初にグループ全体の字幕内容を理解して、
 自然な日本語の全文訳を作ること。
 
 その後、全文訳を字幕IDごとのsegmentsへ分割すること。
@@ -456,11 +645,10 @@ segmentsへ出力する字幕IDは、
 
 【full_translation】
 
-* グループ全体を自然な日本語へ翻訳する
+* グループ全体の字幕内容を自然な日本語へ翻訳する
 * 原文の一部を省略しない
 * 原文にない内容を追加しない
 * 正常な英文を残さない
-* OCR文字列をコピーしない
 * segmentsをID順に連結した内容と一致させる
 
 【segments】
@@ -468,66 +656,31 @@ segmentsへ出力する字幕IDは、
 * 各IDへ空でない日本語字幕を割り当てる
 * 原文のID境界に機械的に縛られず、
   日本語として自然な位置で分割する
-* 話の順序を変更しない
+* 話と字幕内容の順序を変更しない
 * 別のIDへ同じ全文訳を繰り返さない
-* 英文を残さない
+* 正常な英文を残さない
 * 字幕区切りには必要に応じて全角スラッシュを使う
-* OCR行のある字幕には必ず「（判読不能）」を配置する
-* OCRの原文文字列をsegmentsへコピーしない
-* OCR行以外の正常な英文は必ず日本語へ翻訳する
-* OCR行と正常英文が同じIDにある場合は、
-  「（判読不能）」と正常英文の日本語訳を両方含める
-* OCR行と正常英文が同じIDにある場合に、
-  segment全体を「（判読不能）」だけにしない
-* OCR行のないIDには「（判読不能）」を含めない
 * 各segmentをID順に連結すると、
   full_translationと一致するようにする
 
 【字幕IDごとの必須条件】
 
 {segment_requirements}
+""".strip(),
+    ]
 
-【OCR行】
+    if optional_instructions:
+        prompt_sections.append(
+            optional_instructions
+        )
 
-入力のkindがocrの行は、
-意味を推測して翻訳しないこと。
-
-kindがocrの行は、
-対応する字幕IDで必ず「（判読不能）」と表現すること。
-
-同じ字幕IDにkindがtextの行もある場合、
-その正常な英文は必ず日本語へ翻訳すること。
-
-例:
-
-入力:
-
-字幕ID 563
-
-* kind=ocr:
-  aR at-lacmanl-e
-* kind=text:
-  lam a good friend.
-
-segments["563"]:
-
-（判読不能）／私は良い友人です。
-
-禁止例:
-
-* （判読不能）
-* ラムは良い友人です。
-* aR at-lacmanl-e
-* [1]aR at-lacmanl-e[/1]
-
-【full_translation】
+    prompt_sections.append(
+        f"""
+【full_translationの組み立て】
 
 full_translationには、
 segmentsの値を字幕ID順に連結した文字列を
 一字一句そのまま入れること。
-
-segmentsに「（判読不能）」がある場合は、
-full_translationから省略しないこと。
 
 segmentsを作った後、
 その値をID順に連結して
@@ -536,11 +689,17 @@ full_translationへコピーすること。
 【入力】
 
 {source_json}
-
-{glossary_instruction}
-
-{retry_instruction}
 """.strip()
+    )
+
+    if retry_instruction:
+        prompt_sections.append(
+            retry_instruction
+        )
+
+    return "\n\n".join(
+        prompt_sections
+    )
 
 
 def normalize_hybrid_join_text(
