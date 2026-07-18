@@ -1349,3 +1349,196 @@ def test_chinese_validation_reports_only_high_confidence_characters(
         "characters='内"
         not in violations[0]
     )
+
+
+def test_e15_standard_validation_accepts_ambiguous_japanese_text(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    ocr_line = (
+        "oX=¥AN(o1) 0 MUA L= S310] KO (otoe"
+    )
+
+    source_texts = [
+        (
+            "Let's consider the gates\n"
+            "within range of the planet\n"
+            "we are on."
+        ),
+        (
+            "This circle represents\n"
+            "the gates within range\n"
+            "of Destiny."
+        ),
+        (
+            "Now, hopefully, there is a gate\n"
+            "within range of each one\n"
+            f"{ocr_line}"
+        ),
+    ]
+
+    translated_texts = [
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートを考えてみよう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表している。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている。"
+            f"[1]{ocr_line}[/1]"
+        ),
+    ]
+
+    response = json.dumps(
+        {
+            "targets": {
+                subtitle_id: {
+                    "source": {
+                        "speaker": None,
+                        "text": source_text,
+                    },
+                    "translation": translation,
+                }
+                for (
+                    subtitle_id,
+                    source_text,
+                    translation,
+                ) in zip(
+                    [
+                        "134",
+                        "136",
+                        "140",
+                    ],
+                    source_texts,
+                    translated_texts,
+                    strict=True,
+                )
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "134",
+            "136",
+            "140",
+        ],
+        source_speakers=[
+            None,
+            None,
+            None,
+        ],
+        source_texts=source_texts,
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result.valid is True
+
+    assert result.reasons == []
+
+    assert not any(
+        reason.startswith(
+            "Chinese-specific characters detected:"
+        )
+        for reason in result.reasons
+    )
+
+    assert result.failed_ids == set()
+
+    assert result.translated_texts == [
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートを考えてみよう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表している。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている。"
+            "（判読不能）"
+        ),
+    ]
+
+    assert result.noise_candidates == [
+        ocr_line,
+    ]
+
+
+def test_e15_standard_validation_still_rejects_real_chinese_text(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    source_text = (
+        "The gates are within range."
+    )
+
+    translated_text = (
+        "ゲートは範囲内にありますが、"
+        "这些人が近くにいます。"
+    )
+
+    response = json.dumps(
+        {
+            "targets": {
+                "136": {
+                    "source": {
+                        "speaker": None,
+                        "text": source_text,
+                    },
+                    "translation": translated_text,
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "136",
+        ],
+        source_speakers=[
+            None,
+        ],
+        source_texts=[
+            source_text,
+        ],
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result.valid is False
+
+    assert any(
+        (
+            reason.startswith(
+                "Chinese-specific characters detected: "
+                "subtitle_id='136'"
+            )
+            and "这" in reason
+        )
+        for reason in result.reasons
+    )
+
+    assert not any(
+        "characters='内"
+        in reason
+        for reason in result.reasons
+    )
