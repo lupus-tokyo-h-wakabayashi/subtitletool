@@ -266,7 +266,8 @@ def valid_e08_hybrid_payload(
         ),
         "497": (
             "録画に映っていた私たちは"
-            "FTLを解除し、惑星へ向かった。"
+            "超光速航行を終了し、"
+            "惑星へ向かった。"
         ),
     }
 
@@ -360,7 +361,8 @@ def test_e08_validation_accepts_mixed_ocr_result(
         ),
         "497": (
             "録画に映っていた私たちは"
-            "FTLを解除し、惑星へ向かった。"
+            "超光速航行を終了し、"
+            "惑星へ向かった。"
         ),
     }
 
@@ -557,6 +559,211 @@ def test_e08_validation_rejects_placeholder_for_497(
         )
         for reason in validation.reasons
     )
+
+
+def test_e08_hybrid_recovery_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    generated_requests: list[
+        dict[str, object]
+    ] = []
+
+    saved_reports: list[
+        dict[str, object]
+    ] = []
+
+    response = json.dumps(
+        valid_e08_hybrid_payload(),
+        ensure_ascii=False,
+    )
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[str, object],
+    ) -> str:
+        generated_requests.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "response_format": response_format,
+            }
+        )
+
+        return response
+
+    def fake_save_report(
+        **kwargs: object,
+    ) -> None:
+        saved_reports.append(
+            dict(
+                kwargs
+            )
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        fake_save_report,
+    )
+
+    previous_texts = [
+        (
+            "How can I not\n"
+            f"{E08_OCR_LINE}"
+        ),
+        E08_FOLLOWING_TEXT,
+    ]
+
+    original_previous_texts = list(
+        previous_texts
+    )
+
+    errors = [
+        (
+            "Untranslated English sentence detected: "
+            "subtitle_id='496', "
+            "text='How can I not\\n"
+            f"{E08_OCR_LINE}'"
+        ),
+    ]
+
+    result = recover_translation_with_hybrid(
+        e08_target_blocks,
+        previous_texts,
+        errors,
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result == [
+        (
+            "無視できるわけがない。"
+            "（判読不能）"
+        ),
+        (
+            "録画に映っていた私たちは"
+            "超光速航行を終了し、"
+            "惑星へ向かった。"
+        ),
+    ]
+
+    assert previous_texts == (
+        original_previous_texts
+    )
+
+    assert len(
+        generated_requests
+    ) == 1
+
+    generated_request = (
+        generated_requests[0]
+    )
+
+    assert generated_request[
+               "model"
+           ] == "test-model"
+
+    prompt = generated_request[
+        "prompt"
+    ]
+
+    assert isinstance(
+        prompt,
+        str,
+    )
+
+    assert (
+        '"kind": "text",\n'
+        f'          "text": "{E08_NORMAL_LINE}"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "ocr",\n'
+        f'          "text": "{E08_OCR_LINE}"'
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 496: "
+        "kind=textの正常英文を日本語へ翻訳し、"
+        "kind=ocrの位置を「（判読不能）」で表現する。"
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 497: "
+        "すべてkind=textなので正常な日本語へ翻訳する。"
+        in prompt
+    )
+
+    response_format = generated_request[
+        "response_format"
+    ]
+
+    assert isinstance(
+        response_format,
+        dict,
+    )
+
+    required_ids = (
+        response_format[
+            "properties"
+        ][
+            "group"
+        ][
+            "properties"
+        ][
+            "segments"
+        ][
+            "required"
+        ]
+    )
+
+    assert required_ids == [
+        "496",
+        "497",
+    ]
+
+    assert len(
+        saved_reports
+    ) == 1
+
+    saved_report = saved_reports[0]
+
+    assert saved_report[
+               "validation_stage"
+           ] == "complete"
+
+    assert (
+        saved_report[
+            "validation_valid"
+        ]
+        is True
+    )
+
+    assert saved_report[
+               "validation_reasons"
+           ] == []
+
+    assert saved_report[
+               "ocr_lines"
+           ] == {
+               "496": [
+                   E08_OCR_LINE,
+               ],
+           }
 
 
 def valid_hybrid_payload(
