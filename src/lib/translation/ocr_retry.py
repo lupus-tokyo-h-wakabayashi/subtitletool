@@ -25,6 +25,11 @@ MAX_LOW_SYMBOL_WORD_SALAD_SHORT_TOKEN_LENGTH = 4
 MIN_LOW_SYMBOL_WORD_SALAD_SHORT_TOKEN_RATIO = 0.75
 MIN_LOW_SYMBOL_WORD_SALAD_SUSPICIOUS_TOKENS = 3
 
+MIN_SHORT_MIXED_CASE_OCR_TOKENS = 4
+MAX_SHORT_MIXED_CASE_OCR_TOKENS = 5
+MAX_SHORT_MIXED_CASE_OCR_TOKEN_LENGTH = 4
+MIN_SHORT_MIXED_CASE_OCR_SHORT_TOKEN_RATIO = 1.0
+
 SYMBOL_DENSE_OCR_STRUCTURAL_PATTERN = re.compile(
     r"[=()\[\]{}<>|~]"
 )
@@ -284,6 +289,113 @@ def is_symbol_dense_ocr_source_line(
         short_token_ratio
         < MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO
     ):
+        return False
+
+    return True
+
+
+def is_short_mixed_case_ocr_source_line(
+    source_line: str,
+) -> bool:
+    """
+    原文1行が、短い英字トークンで構成された
+    大小文字混在型のOCR破損文字列か判定する。
+
+    対象例:
+
+        dam IAN el ESie
+
+    既存の低記号ワードサラダ判定は、
+    正常英文の誤検出を避けるため
+    6トークン以上を要求している。
+
+    この関数は4〜5トークンの短い行を対象にし、
+    次の条件をすべて要求する。
+
+    - 英字中心の1行である
+    - 4〜5トークンである
+    - すべてのトークンが短い
+    - 2文字以上の全大文字トークンがある
+    - 通常のlower/title/upperに該当しない
+      不規則な大小文字トークンがある
+
+    この関数だけで字幕を削除またはマスクしない。
+
+    Hybrid Recoveryまたは通常翻訳の再試行で、
+    未翻訳エラーになった複数行字幕の
+    行分類へ使用する。
+    """
+    normalized = source_line.strip()
+
+    if not normalized:
+        return False
+
+    if SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+        normalized
+    ):
+        return False
+
+    if not LOW_SYMBOL_WORD_SALAD_LINE_PATTERN.fullmatch(
+        normalized
+    ):
+        return False
+
+    tokens = re.findall(
+        r"[A-Za-z]+",
+        normalized,
+    )
+
+    if not (
+        MIN_SHORT_MIXED_CASE_OCR_TOKENS
+        <= len(tokens)
+        <= MAX_SHORT_MIXED_CASE_OCR_TOKENS
+    ):
+        return False
+
+    short_tokens = [
+        token
+        for token in tokens
+        if (
+            len(token)
+            <= MAX_SHORT_MIXED_CASE_OCR_TOKEN_LENGTH
+        )
+    ]
+
+    short_token_ratio = (
+        len(short_tokens)
+        / len(tokens)
+    )
+
+    if (
+        short_token_ratio
+        < MIN_SHORT_MIXED_CASE_OCR_SHORT_TOKEN_RATIO
+    ):
+        return False
+
+    uppercase_tokens = [
+        token
+        for token in tokens
+        if (
+            len(token) >= 2
+            and token.isupper()
+        )
+    ]
+
+    if not uppercase_tokens:
+        return False
+
+    irregular_mixed_case_tokens = [
+        token
+        for token in tokens
+        if (
+            len(token) >= 3
+            and not token.islower()
+            and not token.isupper()
+            and not token.istitle()
+        )
+    ]
+
+    if not irregular_mixed_case_tokens:
         return False
 
     return True

@@ -15,6 +15,7 @@ from lib.translation.ocr_retry import (
     find_probable_untranslated_ocr_lines,
     is_low_symbol_word_salad_ocr_source_line,
     is_probable_ocr_source_line,
+    is_short_mixed_case_ocr_source_line,
     is_symbol_dense_ocr_source_line,
 )
 from lib.translation.retry import (
@@ -639,6 +640,71 @@ def test_symbol_dense_ocr_source_line_is_detected(
     )
 
     assert actual is True
+
+
+def test_short_mixed_case_ocr_source_line_is_detected(
+) -> None:
+    actual = (
+        is_short_mixed_case_ocr_source_line(
+            "dam IAN el ESie"
+        )
+    )
+
+    assert actual is True
+
+
+@pytest.mark.parametrize(
+    "source_line",
+    [
+        "How can I not",
+        "I am not ready",
+        "Plan B is ready",
+        "NASA will send help",
+        "This is my home",
+        "This IS my HOME",
+        "Colonel Young is here",
+        "What do you mean",
+        "I couldn't deal with it",
+        "SG-1 is ready",
+        "(CHIRPING)",
+    ],
+)
+def test_normal_line_is_not_short_mixed_case_ocr(
+    source_line: str,
+) -> None:
+    actual = (
+        is_short_mixed_case_ocr_source_line(
+            source_line
+        )
+    )
+
+    assert actual is False
+
+
+@pytest.mark.parametrize(
+    "source_line",
+    [
+        "",
+        "   ",
+        "sa",
+        "Ui maar i mele",
+        "dam ian el esie",
+        "DAM IAN EL ESIE",
+        "one two three four five",
+        "P4X-351",
+        "x = 10",
+    ],
+)
+def test_ambiguous_line_is_not_short_mixed_case_ocr(
+    source_line: str,
+) -> None:
+    actual = (
+        is_short_mixed_case_ocr_source_line(
+            source_line
+        )
+    )
+
+    assert actual is False
 
 
 def test_low_symbol_word_salad_ocr_source_line_is_detected(
