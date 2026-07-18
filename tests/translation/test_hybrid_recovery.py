@@ -2350,3 +2350,191 @@ def test_validation_rejects_missing_effect_in_mixed_subtitle(
         f"text={translated_text!r}"
         in validation.reasons
     )
+
+
+def test_e11_hybrid_recovery_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    target_blocks = [
+        SrtBlock(
+            number="321",
+            timestamp=(
+                "00:24:14,119 --> "
+                "00:24:15,204"
+            ),
+            text="(CHIRPING)",
+        ),
+    ]
+
+    original_translated_texts = [
+        "(CHIRPING)",
+    ]
+
+    errors = [
+        (
+            "Untranslated English sentence "
+            "detected: subtitle_id='321', "
+            "text='(CHIRPING)'"
+        ),
+    ]
+
+    generated_requests: list[
+        dict[str, object]
+    ] = []
+
+    saved_reports: list[
+        dict[str, object]
+    ] = []
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "（電子音）"
+                ),
+                "segments": {
+                    "321": "（電子音）",
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[
+            str,
+            object,
+        ],
+    ) -> str:
+        generated_requests.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "response_format": (
+                    response_format
+                ),
+            }
+        )
+
+        return response
+
+    def fake_save_report(
+        **kwargs: object,
+    ) -> None:
+        saved_reports.append(
+            dict(
+                kwargs
+            )
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        fake_save_report,
+    )
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        original_translated_texts,
+        errors,
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result == [
+        "（電子音）",
+    ]
+
+    assert original_translated_texts == [
+        "(CHIRPING)",
+    ]
+
+    assert len(
+        generated_requests
+    ) == 1
+
+    generated_request = (
+        generated_requests[0]
+    )
+
+    assert (
+        generated_request[
+            "model"
+        ]
+        == "test-model"
+    )
+
+    prompt = generated_request[
+        "prompt"
+    ]
+
+    assert isinstance(
+        prompt,
+        str,
+    )
+
+    assert (
+        '"kind": "sound_effect"'
+        in prompt
+    )
+
+    assert "(CHIRPING)" in prompt
+    assert "【効果音行】" in prompt
+    assert "（電子音）" in prompt
+
+    assert "【OCR行】" not in prompt
+
+    assert (
+        HYBRID_OCR_PLACEHOLDER
+        not in prompt
+    )
+
+    assert (
+        "aR at-lacmanl-e"
+        not in prompt
+    )
+
+    assert (
+        "私は良い友人です"
+        not in prompt
+    )
+
+    assert len(
+        saved_reports
+    ) == 1
+
+    saved_report = (
+        saved_reports[0]
+    )
+
+    assert (
+        saved_report[
+            "validation_stage"
+        ]
+        == "complete"
+    )
+
+    assert (
+        saved_report[
+            "validation_valid"
+        ]
+        is True
+    )
+
+    assert (
+        saved_report[
+            "validation_reasons"
+        ]
+        == []
+    )
