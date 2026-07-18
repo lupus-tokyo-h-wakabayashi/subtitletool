@@ -2997,3 +2997,493 @@ def test_e13_hybrid_recovery_end_to_end(
             ],
         }
     )
+
+
+def test_e15_hybrid_recovery_accepts_ambiguous_japanese_text(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    generated_requests: list[
+        dict[str, object]
+    ] = []
+
+    saved_reports: list[
+        dict[str, object]
+    ] = []
+
+    target_blocks = [
+        SrtBlock(
+            number="136",
+            timestamp=(
+                "00:08:00,000 --> "
+                "00:08:03,000"
+            ),
+            text=(
+                "This circle represents\n"
+                "the gates within range\n"
+                "of Destiny"
+            ),
+        ),
+        SrtBlock(
+            number="137",
+            timestamp=(
+                "00:08:03,100 --> "
+                "00:08:05,000"
+            ),
+            text=(
+                "Next time we drop\n"
+                "out of FTL,"
+            ),
+        ),
+    ]
+
+    segments = {
+        "136": (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表しています。"
+        ),
+        "137": (
+            "次にFTLから離脱するとき、"
+        ),
+    }
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    segments["136"]
+                    + segments["137"]
+                ),
+                "segments": segments,
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[str, object],
+    ) -> str:
+        generated_requests.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "response_format": response_format,
+            }
+        )
+
+        return response
+
+    def fake_save_report(
+        **kwargs: object,
+    ) -> None:
+        saved_reports.append(
+            dict(
+                kwargs
+            )
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        fake_save_report,
+    )
+
+    previous_texts = [
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表しています。"
+        ),
+        (
+            "次にFTLから離脱するとき、"
+        ),
+    ]
+
+    original_previous_texts = list(
+        previous_texts
+    )
+
+    errors = [
+        (
+            "Chinese-specific characters detected: "
+            "subtitle_id='136', "
+            "characters='内', "
+            "text='この円は、デスティニーの範囲内にある"
+            "ゲートを表しています。'"
+        ),
+    ]
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        previous_texts,
+        errors,
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result == [
+        segments["136"],
+        segments["137"],
+    ]
+
+    assert previous_texts == (
+        original_previous_texts
+    )
+
+    assert len(
+        generated_requests
+    ) == 1
+
+    generated_request = (
+        generated_requests[0]
+    )
+
+    assert (
+        generated_request["model"]
+        == "test-model"
+    )
+
+    prompt = generated_request[
+        "prompt"
+    ]
+
+    assert isinstance(
+        prompt,
+        str,
+    )
+
+    assert (
+        '"id": "136"'
+        in prompt
+    )
+
+    assert (
+        '"id": "137"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "ocr"'
+        not in prompt
+    )
+
+    response_format = generated_request[
+        "response_format"
+    ]
+
+    assert isinstance(
+        response_format,
+        dict,
+    )
+
+    required_ids = (
+        response_format[
+            "properties"
+        ][
+            "group"
+        ][
+            "properties"
+        ][
+            "segments"
+        ][
+            "required"
+        ]
+    )
+
+    assert required_ids == [
+        "136",
+        "137",
+    ]
+
+    assert len(
+        saved_reports
+    ) == 1
+
+    saved_report = (
+        saved_reports[0]
+    )
+
+    assert (
+        saved_report[
+            "validation_stage"
+        ]
+        == "complete"
+    )
+
+    assert (
+        saved_report[
+            "validation_valid"
+        ]
+        is True
+    )
+
+    assert (
+        saved_report[
+            "validation_reasons"
+        ]
+        == []
+    )
+
+    assert (
+        saved_report[
+            "ocr_lines"
+        ]
+        == {}
+    )
+
+
+def test_e15_hybrid_recovery_handles_ocr_and_ambiguous_text(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    generated_requests: list[
+        dict[str, object]
+    ] = []
+
+    saved_reports: list[
+        dict[str, object]
+    ] = []
+
+    ocr_line = (
+        "oX=¥AN(o1) 0 MUA L= S310] KO (otoe"
+    )
+
+    source_text = (
+        "Now, hopefully, there is a gate\n"
+        "within range of each one\n"
+        f"{ocr_line}"
+    )
+
+    target_blocks = [
+        SrtBlock(
+            number="140",
+            timestamp=(
+                "00:08:09,000 --> "
+                "00:08:12,000"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    recovered_translation = (
+        "現在、幸いにも、それぞれの範囲内にある"
+        "ゲートが存在することを願っています。"
+        "（判読不能）"
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    recovered_translation
+                ),
+                "segments": {
+                    "140": (
+                        recovered_translation
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[str, object],
+    ) -> str:
+        generated_requests.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "response_format": response_format,
+            }
+        )
+
+        return response
+
+    def fake_save_report(
+        **kwargs: object,
+    ) -> None:
+        saved_reports.append(
+            dict(
+                kwargs
+            )
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        fake_save_report,
+    )
+
+    previous_texts = [
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている"
+            f"{ocr_line}"
+        ),
+    ]
+
+    original_previous_texts = list(
+        previous_texts
+    )
+
+    errors = [
+        (
+            "Untranslated English sentence detected: "
+            "subtitle_id='140', "
+            "text='現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている"
+            f"{ocr_line}'"
+        ),
+    ]
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        previous_texts,
+        errors,
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result == [
+        recovered_translation,
+    ]
+
+    assert previous_texts == (
+        original_previous_texts
+    )
+
+    assert len(
+        generated_requests
+    ) == 1
+
+    generated_request = (
+        generated_requests[0]
+    )
+
+    assert (
+        generated_request["model"]
+        == "test-model"
+    )
+
+    prompt = generated_request[
+        "prompt"
+    ]
+
+    assert isinstance(
+        prompt,
+        str,
+    )
+
+    assert (
+        '"id": "140"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "text",\n'
+        '          "text": "Now, hopefully, there is a gate"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "text",\n'
+        '          "text": "within range of each one"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "ocr",\n'
+        f'          "text": "{ocr_line}"'
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 140: "
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "kind=ocrの位置を"
+        "「（判読不能）」で表現し、"
+        "OCR原文をコピーしない。"
+        "segmentには"
+        "「（判読不能）」と、"
+        "それ以外の翻訳結果を"
+        "両方とも含める。"
+        "各行の内容を原文順に配置する。"
+        in prompt
+    )
+
+    assert (
+        "範囲内"
+        in result[0]
+    )
+
+    assert (
+        "（判読不能）"
+        in result[0]
+    )
+
+    assert (
+        ocr_line
+        not in result[0]
+    )
+
+    assert len(
+        saved_reports
+    ) == 1
+
+    saved_report = (
+        saved_reports[0]
+    )
+
+    assert (
+        saved_report[
+            "validation_stage"
+        ]
+        == "complete"
+    )
+
+    assert (
+        saved_report[
+            "validation_valid"
+        ]
+        is True
+    )
+
+    assert (
+        saved_report[
+            "validation_reasons"
+        ]
+        == []
+    )
+
+    assert (
+        saved_report[
+            "ocr_lines"
+        ]
+        == {
+            "140": [
+                ocr_line,
+            ],
+        }
+    )
