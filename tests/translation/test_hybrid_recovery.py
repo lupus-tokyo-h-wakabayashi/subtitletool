@@ -21,8 +21,10 @@ from lib.translation.hybrid_recovery import (
     build_hybrid_translation_prompt,
     find_group_ocr_lines,
     find_group_sound_effect_lines,
-    recover_translation_with_hybrid,
     validate_hybrid_response,
+)
+from lib.translation.hybrid_recovery import (
+    recover_translation_with_hybrid,
 )
 
 OCR_LINE = (
@@ -2757,4 +2759,243 @@ def test_e13_hybrid_prompt_requires_translation_and_ocr_placeholder(
         "両方とも含める。"
         "各行の内容を原文順に配置する。"
         in prompt
+    )
+
+
+def valid_e13_hybrid_payload(
+) -> dict[str, object]:
+    segments = {
+        "490": (
+            "では、何について？"
+            "（判読不能）"
+        ),
+    }
+
+    return {
+        "group": {
+            "full_translation": (
+                segments["490"]
+            ),
+            "segments": segments,
+        },
+    }
+
+
+def test_e13_hybrid_recovery_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    generated_requests: list[
+        dict[str, object]
+    ] = []
+
+    saved_reports: list[
+        dict[str, object]
+    ] = []
+
+    response = json.dumps(
+        valid_e13_hybrid_payload(),
+        ensure_ascii=False,
+    )
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[str, object],
+    ) -> str:
+        generated_requests.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "response_format": response_format,
+            }
+        )
+
+        return response
+
+    def fake_save_report(
+        **kwargs: object,
+    ) -> None:
+        saved_reports.append(
+            dict(
+                kwargs
+            )
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        fake_save_report,
+    )
+
+    target_blocks = [
+        SrtBlock(
+            number="490",
+            timestamp=(
+                "00:35:00,000 --> "
+                "00:35:02,000"
+            ),
+            text=E13_SOURCE_TEXT,
+        ),
+    ]
+
+    previous_texts = [
+        E13_SOURCE_TEXT,
+    ]
+
+    original_previous_texts = list(
+        previous_texts
+    )
+
+    errors = [
+        (
+            "Untranslated English sentence detected: "
+            "subtitle_id='490', "
+            "text='Okay, what about\\n"
+            f"{E13_SHORT_OCR_LINE}'"
+        ),
+    ]
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        previous_texts,
+        errors,
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result == [
+        (
+            "では、何について？"
+            "（判読不能）"
+        ),
+    ]
+
+    assert previous_texts == (
+        original_previous_texts
+    )
+
+    assert len(
+        generated_requests
+    ) == 1
+
+    generated_request = (
+        generated_requests[0]
+    )
+
+    assert (
+        generated_request["model"]
+        == "test-model"
+    )
+
+    prompt = generated_request[
+        "prompt"
+    ]
+
+    assert isinstance(
+        prompt,
+        str,
+    )
+
+    assert (
+        '"kind": "text",\n'
+        f'          "text": "{E13_NORMAL_LINE}"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "ocr",\n'
+        f'          "text": "{E13_SHORT_OCR_LINE}"'
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 490: "
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "kind=ocrの位置を"
+        "「（判読不能）」で表現し、"
+        "OCR原文をコピーしない。"
+        "segmentには"
+        "「（判読不能）」と、"
+        "それ以外の翻訳結果を"
+        "両方とも含める。"
+        "各行の内容を原文順に配置する。"
+        in prompt
+    )
+
+    response_format = generated_request[
+        "response_format"
+    ]
+
+    assert isinstance(
+        response_format,
+        dict,
+    )
+
+    required_ids = (
+        response_format[
+            "properties"
+        ][
+            "group"
+        ][
+            "properties"
+        ][
+            "segments"
+        ][
+            "required"
+        ]
+    )
+
+    assert required_ids == [
+        "490",
+    ]
+
+    assert len(
+        saved_reports
+    ) == 1
+
+    saved_report = (
+        saved_reports[0]
+    )
+
+    assert (
+        saved_report[
+            "validation_stage"
+        ]
+        == "complete"
+    )
+
+    assert (
+        saved_report[
+            "validation_valid"
+        ]
+        is True
+    )
+
+    assert (
+        saved_report[
+            "validation_reasons"
+        ]
+        == []
+    )
+
+    assert (
+        saved_report[
+            "ocr_lines"
+        ]
+        == {
+            "490": [
+                E13_SHORT_OCR_LINE,
+            ],
+        }
     )
