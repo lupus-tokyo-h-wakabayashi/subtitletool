@@ -32,15 +32,24 @@ OCR_LINE = (
 E08_OCR_LINE = (
     "Ui maar i mele aah ml iaa"
 )
-
 E08_NORMAL_LINE = (
     "How can I not"
 )
-
 E08_FOLLOWING_TEXT = (
     'The "us" on that recording\n'
     "dropped out of FTL\n"
     "and went to the planet."
+)
+
+E13_NORMAL_LINE = (
+    "Okay, what about"
+)
+E13_SHORT_OCR_LINE = (
+    "dam IAN el ESie"
+)
+E13_SOURCE_TEXT = (
+    f"{E13_NORMAL_LINE}\n"
+    f"{E13_SHORT_OCR_LINE}"
 )
 
 E09_SOURCE_TEXTS = (
@@ -81,11 +90,9 @@ E09_SOURCE_TEXTS = (
         "several confrontations."
     ),
 )
-
 E09_REPEATED_TRANSLATION = (
     "では、容疑者はいますか？"
 )
-
 E09_RECOVERED_TRANSLATIONS = (
     "容疑者に心当たりは？",
     "率直に言って悪いが、",
@@ -2537,4 +2544,217 @@ def test_e11_hybrid_recovery_end_to_end(
             "validation_reasons"
         ]
         == []
+    )
+
+
+def build_e13_mixed_ocr_group(
+) -> HybridTranslationGroup:
+    block = SrtBlock(
+        number="490",
+        timestamp=(
+            "00:35:00,000 --> "
+            "00:35:02,000"
+        ),
+        text=E13_SOURCE_TEXT,
+    )
+
+    return HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "490",
+            }
+        ),
+    )
+
+
+def test_e13_short_mixed_case_line_is_classified_as_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_e13_mixed_ocr_group()
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert actual == {
+        "490": [
+            E13_SHORT_OCR_LINE,
+        ],
+    }
+
+
+def test_e13_normal_line_is_not_classified_as_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_e13_mixed_ocr_group()
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert (
+        E13_NORMAL_LINE
+        not in ocr_lines.get(
+        "490",
+        [],
+    )
+    )
+
+
+def test_short_mixed_case_line_without_normal_sibling_is_not_hybrid_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    block = SrtBlock(
+        number="490",
+        timestamp=(
+            "00:35:00,000 --> "
+            "00:35:02,000"
+        ),
+        text=E13_SHORT_OCR_LINE,
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "490",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert actual == {}
+
+
+def test_short_mixed_case_line_in_non_failed_subtitle_is_not_hybrid_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    block = SrtBlock(
+        number="490",
+        timestamp=(
+            "00:35:00,000 --> "
+            "00:35:02,000"
+        ),
+        text=E13_SOURCE_TEXT,
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert actual == {}
+
+
+def test_e13_hybrid_source_payload_separates_text_and_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_e13_mixed_ocr_group()
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    payload = build_hybrid_source_payload(
+        group,
+        ocr_lines,
+    )
+
+    assert payload == {
+        "subtitles": [
+            {
+                "id": "490",
+                "lines": [
+                    {
+                        "kind": "text",
+                        "text": E13_NORMAL_LINE,
+                    },
+                    {
+                        "kind": "ocr",
+                        "text": E13_SHORT_OCR_LINE,
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def test_e13_hybrid_prompt_requires_translation_and_ocr_placeholder(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_e13_mixed_ocr_group()
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    prompt = build_hybrid_translation_prompt(
+        group,
+        ocr_lines,
+        {},
+    )
+
+    assert (
+        '"kind": "text"'
+        in prompt
+    )
+
+    assert (
+        f'"text": "{E13_NORMAL_LINE}"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "ocr"'
+        in prompt
+    )
+
+    assert (
+        f'"text": "{E13_SHORT_OCR_LINE}"'
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 490: "
+        "kind=textの正常英文を"
+        "自然な日本語へ翻訳する。"
+        "英文を残さない。"
+        "kind=ocrの位置を"
+        "「（判読不能）」で表現し、"
+        "OCR原文をコピーしない。"
+        "segmentには"
+        "「（判読不能）」と、"
+        "それ以外の翻訳結果を"
+        "両方とも含める。"
+        "各行の内容を原文順に配置する。"
+        in prompt
     )
