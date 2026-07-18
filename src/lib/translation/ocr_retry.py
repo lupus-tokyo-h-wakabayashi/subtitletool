@@ -20,8 +20,27 @@ MIN_SYMBOL_DENSE_OCR_SHORT_TOKENS = 3
 MIN_SYMBOL_DENSE_OCR_STRUCTURAL_SYMBOLS = 3
 MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO = 0.6
 
+MIN_LOW_SYMBOL_WORD_SALAD_TOKENS = 6
+MAX_LOW_SYMBOL_WORD_SALAD_SHORT_TOKEN_LENGTH = 4
+MIN_LOW_SYMBOL_WORD_SALAD_SHORT_TOKEN_RATIO = 0.75
+MIN_LOW_SYMBOL_WORD_SALAD_SUSPICIOUS_TOKENS = 3
+
 SYMBOL_DENSE_OCR_STRUCTURAL_PATTERN = re.compile(
     r"[=()\[\]{}<>|~]"
+)
+
+LOW_SYMBOL_WORD_SALAD_LINE_PATTERN = re.compile(
+    r"^[A-Za-z]+(?:[ '-][A-Za-z]+)*$"
+)
+
+LOW_SYMBOL_WORD_SALAD_VOWEL_RUN_PATTERN = re.compile(
+    r"([aeiou])\1",
+    re.IGNORECASE,
+)
+
+LOW_SYMBOL_WORD_SALAD_VOWEL_PATTERN = re.compile(
+    r"[aeiou]",
+    re.IGNORECASE,
 )
 
 SOUND_EFFECT_ONLY_PATTERN = re.compile(
@@ -264,6 +283,125 @@ def is_symbol_dense_ocr_source_line(
     if (
         short_token_ratio
         < MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO
+    ):
+        return False
+
+    return True
+
+
+def is_low_symbol_word_salad_ocr_source_line(
+    source_line: str,
+) -> bool:
+    """
+    原文1行が、記号をほとんど含まない短い英字トークンの
+    連続によるOCR破損文字列か判定する。
+
+    記号密度を利用する既存判定では検出できない、
+    次のような英字ワードサラダを対象とする。
+
+        Ui maar i mele aah ml iaa
+
+    正常な短文や固有名詞を誤検出しないよう、
+    次の条件をすべて要求する。
+
+    - 英字中心の1行である
+    - 一定数以上のトークンがある
+    - 短いトークンの割合が高い
+    - 不自然なトークンが複数ある
+
+    この関数は単独で字幕を削除またはマスクしない。
+    Hybrid Recoveryで失敗した字幕の行を分類するための
+    補助判定として使用する。
+    """
+    normalized = source_line.strip()
+
+    if not normalized:
+        return False
+
+    if SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+        normalized
+    ):
+        return False
+
+    if not LOW_SYMBOL_WORD_SALAD_LINE_PATTERN.fullmatch(
+        normalized
+    ):
+        return False
+
+    tokens = re.findall(
+        r"[A-Za-z]+",
+        normalized,
+    )
+
+    if (
+        len(tokens)
+        < MIN_LOW_SYMBOL_WORD_SALAD_TOKENS
+    ):
+        return False
+
+    short_tokens = [
+        token
+        for token in tokens
+        if (
+            len(token)
+            <= MAX_LOW_SYMBOL_WORD_SALAD_SHORT_TOKEN_LENGTH
+        )
+    ]
+
+    short_token_ratio = (
+        len(short_tokens)
+        / len(tokens)
+    )
+
+    if (
+        short_token_ratio
+        < MIN_LOW_SYMBOL_WORD_SALAD_SHORT_TOKEN_RATIO
+    ):
+        return False
+
+    suspicious_tokens: list[str] = []
+
+    for token in tokens:
+        normalized_token = token.lower()
+
+        is_invalid_single_letter = (
+            len(token) == 1
+            and token not in {
+                "a",
+                "A",
+                "I",
+            }
+        )
+
+        has_no_vowel = (
+            len(token) >= 2
+            and not LOW_SYMBOL_WORD_SALAD_VOWEL_PATTERN.search(
+            token
+        )
+        )
+
+        has_long_vowel_run = (
+            len(token) >= 3
+            and LOW_SYMBOL_WORD_SALAD_VOWEL_RUN_PATTERN.search(
+            normalized_token
+        )
+            is not None
+        )
+
+        if not (
+            is_invalid_single_letter
+            or has_no_vowel
+            or has_long_vowel_run
+        ):
+            continue
+
+        suspicious_tokens.append(
+            token
+        )
+
+    if (
+        len(suspicious_tokens)
+        < MIN_LOW_SYMBOL_WORD_SALAD_SUSPICIOUS_TOKENS
     ):
         return False
 

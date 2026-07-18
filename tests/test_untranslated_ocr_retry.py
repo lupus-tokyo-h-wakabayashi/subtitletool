@@ -13,6 +13,7 @@ from lib.translation.ocr_retry import (
     apply_level_1_ocr_fallback,
     extract_untranslated_english_error_ids,
     find_probable_untranslated_ocr_lines,
+    is_low_symbol_word_salad_ocr_source_line,
     is_probable_ocr_source_line,
     is_symbol_dense_ocr_source_line,
 )
@@ -629,6 +630,75 @@ def test_symbol_dense_ocr_source_line_is_detected(
     )
 
     assert actual is True
+
+
+def test_symbol_dense_ocr_source_line_is_detected(
+) -> None:
+    actual = is_symbol_dense_ocr_source_line(
+        SYMBOL_DENSE_OCR_LINE
+    )
+
+    assert actual is True
+
+
+def test_low_symbol_word_salad_ocr_source_line_is_detected(
+) -> None:
+    actual = (
+        is_low_symbol_word_salad_ocr_source_line(
+            "Ui maar i mele aah ml iaa"
+        )
+    )
+
+    assert actual is True
+
+
+@pytest.mark.parametrize(
+    "source_line",
+    [
+        "How can I not",
+        'The "us" on that recording',
+        "I couldn't deal with it",
+        "Hopefully we have proven that",
+        "We need to find a way home",
+        "(CONSOLE BEEPS)",
+        "SG-1 is ready",
+        "Colonel Young is in command",
+    ],
+)
+def test_normal_line_is_not_low_symbol_word_salad_ocr(
+    source_line: str,
+) -> None:
+    actual = (
+        is_low_symbol_word_salad_ocr_source_line(
+            source_line
+        )
+    )
+
+    assert actual is False
+
+
+@pytest.mark.parametrize(
+    "source_line",
+    [
+        "",
+        "   ",
+        "sa",
+        "Ui maar i mele",
+        "one two three four five",
+        "P4X-351",
+        "x = 10",
+    ],
+)
+def test_ambiguous_line_is_not_low_symbol_word_salad_ocr(
+    source_line: str,
+) -> None:
+    actual = (
+        is_low_symbol_word_salad_ocr_source_line(
+            source_line
+        )
+    )
+
+    assert actual is False
 
 
 @pytest.mark.parametrize(
