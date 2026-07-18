@@ -801,15 +801,6 @@ def test_symbol_dense_ocr_source_line_is_detected(
     assert actual is True
 
 
-def test_symbol_dense_ocr_source_line_is_detected(
-) -> None:
-    actual = is_symbol_dense_ocr_source_line(
-        SYMBOL_DENSE_OCR_LINE
-    )
-
-    assert actual is True
-
-
 def test_short_mixed_case_ocr_source_line_is_detected(
 ) -> None:
     actual = (
