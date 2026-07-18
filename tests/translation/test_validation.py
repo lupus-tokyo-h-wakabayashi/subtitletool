@@ -11,6 +11,7 @@ from lib.profile.noise import (
     NoiseEntry,
 )
 from lib.translation.translation_validation import (
+    find_chinese_specific_characters,
     find_glossary_violations,
     find_repeated_sequence_subtitle_ids,
     find_repeated_translation_subtitle_ids,
@@ -1231,4 +1232,120 @@ def test_validation_reports_repeated_translation_subtitle_ids(
         "['81', '82', '83', '84', '85', "
         "'86']"
         in result.reasons
+    )
+
+
+def test_chinese_validation_accepts_ambiguous_japanese_character(
+) -> None:
+    translated_text = (
+        "この円は、デスティニーの範囲内にある"
+        "ゲートを表しています。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "136",
+            ],
+        )
+    )
+
+    assert violations == []
+
+
+def test_chinese_validation_accepts_e15_japanese_phrases(
+) -> None:
+    translated_texts = [
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートについて考えましょう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表しています。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っています。"
+        ),
+    ]
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=translated_texts,
+            subtitle_ids=[
+                "134",
+                "136",
+                "140",
+            ],
+        )
+    )
+
+    assert violations == []
+
+
+def test_chinese_validation_rejects_high_confidence_chinese(
+) -> None:
+    translated_text = (
+        "これらは这些人です。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "140",
+            ],
+        )
+    )
+
+    assert len(
+        violations
+    ) == 1
+
+    assert violations[0].startswith(
+        "Chinese-specific characters detected: "
+        "subtitle_id='140'"
+    )
+
+    assert (
+        "这"
+        in violations[0]
+    )
+
+
+def test_chinese_validation_reports_only_high_confidence_characters(
+) -> None:
+    translated_text = (
+        "範囲内に这些人がいる。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "140",
+            ],
+        )
+    )
+
+    assert len(
+        violations
+    ) == 1
+
+    assert (
+        "这"
+        in violations[0]
+    )
+
+    assert (
+        "characters='内"
+        not in violations[0]
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lib.subtitle.text import (
     detect_simplified_chinese,
+    mask_chinese_ocr_text,
 )
 
 
@@ -96,3 +97,87 @@ def test_e15_japanese_phrases_are_not_detected_as_chinese(
         assert detection.ambiguous_characters == (
             "内",
         )
+
+
+def test_chinese_mask_preserves_ambiguous_japanese_text(
+) -> None:
+    source_text = (
+        "この円は、デスティニーの範囲内にある"
+        "ゲートを表している。"
+    )
+
+    actual = mask_chinese_ocr_text(
+        source_text
+    )
+
+    assert actual == source_text
+
+    assert (
+        "（OCR判読不能）"
+        not in actual
+    )
+
+
+def test_chinese_mask_preserves_all_e15_japanese_phrases(
+) -> None:
+    source_texts = (
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートを考えてみよう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表している。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている。"
+        ),
+    )
+
+    for source_text in source_texts:
+        actual = mask_chinese_ocr_text(
+            source_text
+        )
+
+        assert actual == source_text
+
+        assert (
+            "（OCR判読不能）"
+            not in actual
+        )
+
+
+def test_chinese_mask_replaces_high_confidence_chinese_sequence(
+) -> None:
+    source_text = (
+        "兵曹、这些人を落ち着かせてくれ。"
+    )
+
+    actual = mask_chinese_ocr_text(
+        source_text
+    )
+
+    assert actual == (
+        "兵曹、（OCR判読不能）"
+        "を落ち着かせてくれ。"
+    )
+
+
+def test_chinese_mask_uses_only_high_confidence_characters(
+) -> None:
+    source_text = (
+        "範囲内に这些人がいる。"
+    )
+
+    actual = mask_chinese_ocr_text(
+        source_text
+    )
+
+    assert actual == (
+        "範囲内に"
+        "（OCR判読不能）"
+        "がいる。"
+    )
+
+    assert "範囲内" in actual
