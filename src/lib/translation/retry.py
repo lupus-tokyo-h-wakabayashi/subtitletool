@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 
@@ -59,15 +60,32 @@ def extract_error_subtitle_ids(
     prefixes: tuple[str, ...] | None = None,
 ) -> set[str]:
     """
-    subtitle_idを含む検証エラーから、
-    修正対象のSRT字幕IDを抽出する。
+    検証エラーから修正対象のSRT字幕IDを抽出する。
+
+    次の両形式に対応する。
+
+    単一ID:
+        subtitle_id='83'
+
+    複数ID:
+        subtitle_ids=['81', '82', '83']
+
+    同じエラーに両形式が含まれる場合は、
+    すべてのIDを重複なしで返す。
     """
     subtitle_ids: set[str] = set()
 
-    pattern = re.compile(
+    single_id_pattern = re.compile(
+        r"(?<![A-Za-z_])"
         r"subtitle_id=(?P<quote>['\"])"
         r"(?P<id>.+?)"
         r"(?P=quote)"
+    )
+
+    multiple_ids_pattern = re.compile(
+        r"(?<![A-Za-z_])"
+        r"subtitle_ids="
+        r"(?P<ids>\[[^\]]*\])"
     )
 
     for error in errors:
@@ -77,14 +95,58 @@ def extract_error_subtitle_ids(
         ):
             continue
 
-        match = pattern.search(error)
+        for match in single_id_pattern.finditer(
+            error
+        ):
+            subtitle_id = match.group(
+                "id"
+            ).strip()
 
-        if not match:
-            continue
+            if not subtitle_id:
+                continue
 
-        subtitle_ids.add(
-            match.group("id")
-        )
+            subtitle_ids.add(
+                subtitle_id
+            )
+
+        for match in multiple_ids_pattern.finditer(
+            error
+        ):
+            raw_ids = match.group(
+                "ids"
+            )
+
+            try:
+                parsed_ids = ast.literal_eval(
+                    raw_ids
+                )
+            except (
+                    SyntaxError,
+                    ValueError,
+            ):
+                continue
+
+            if not isinstance(
+                parsed_ids,
+                list,
+            ):
+                continue
+
+            for parsed_id in parsed_ids:
+                if not isinstance(
+                    parsed_id,
+                    str,
+                ):
+                    continue
+
+                subtitle_id = parsed_id.strip()
+
+                if not subtitle_id:
+                    continue
+
+                subtitle_ids.add(
+                    subtitle_id
+                )
 
     return subtitle_ids
 
