@@ -18,6 +18,7 @@ from lib.translation.hybrid_recovery import (
     HybridRecoveryError,
     build_hybrid_response_schema,
     build_hybrid_source_payload,
+    build_hybrid_translation_prompt,
     find_group_ocr_lines,
     recover_translation_with_hybrid,
     validate_hybrid_response,
@@ -254,6 +255,308 @@ def test_low_symbol_word_salad_is_limited_to_failed_ids(
     )
 
     assert actual == {}
+
+
+def valid_e08_hybrid_payload(
+) -> dict[str, object]:
+    segments = {
+        "496": (
+            "無視できるわけがない。"
+            "（判読不能）"
+        ),
+        "497": (
+            "録画に映っていた私たちは"
+            "FTLを解除し、惑星へ向かった。"
+        ),
+    }
+
+    return {
+        "group": {
+            "full_translation": (
+                segments["496"]
+                + segments["497"]
+            ),
+            "segments": segments,
+        },
+    }
+
+
+def test_e08_prompt_contains_segment_requirements(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    prompt = build_hybrid_translation_prompt(
+        group,
+        ocr_lines,
+        {},
+    )
+
+    assert (
+        "* 字幕ID 496: "
+        "kind=textの正常英文を日本語へ翻訳し、"
+        "kind=ocrの位置を「（判読不能）」で表現する。"
+        "segmentには日本語訳と「（判読不能）」の"
+        "両方を必ず含める。"
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 497: "
+        "すべてkind=textなので正常な日本語へ翻訳する。"
+        "英文を残さず、"
+        "「（判読不能）」を含めない。"
+        in prompt
+    )
+
+
+def test_e08_validation_accepts_mixed_ocr_result(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    validation = validate_hybrid_response(
+        json.dumps(
+            valid_e08_hybrid_payload(),
+            ensure_ascii=False,
+        ),
+        group,
+        ocr_lines,
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+    assert validation.segments == {
+        "496": (
+            "無視できるわけがない。"
+            "（判読不能）"
+        ),
+        "497": (
+            "録画に映っていた私たちは"
+            "FTLを解除し、惑星へ向かった。"
+        ),
+    }
+
+
+def test_e08_validation_rejects_placeholder_only_for_496(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    payload = valid_e08_hybrid_payload()
+
+    payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "496"
+    ] = HYBRID_OCR_PLACEHOLDER
+
+    validation = validate_hybrid_response(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+        ),
+        group,
+        ocr_lines,
+    )
+
+    assert validation.valid is False
+
+    assert any(
+        reason.startswith(
+            "Hybrid mixed OCR segment "
+            "requires Japanese translation:"
+        )
+        for reason in validation.reasons
+    )
+
+
+def test_e08_validation_rejects_missing_placeholder_for_496(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    payload = valid_e08_hybrid_payload()
+
+    payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "496"
+    ] = "無視できるわけがない。"
+
+    validation = validate_hybrid_response(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+        ),
+        group,
+        ocr_lines,
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid OCR placeholder missing: "
+        "subtitle_id='496', "
+        f"required={HYBRID_OCR_PLACEHOLDER!r}"
+        in validation.reasons
+    )
+
+
+def test_e08_validation_rejects_english_for_497(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    payload = valid_e08_hybrid_payload()
+
+    payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "497"
+    ] = E08_FOLLOWING_TEXT
+
+    validation = validate_hybrid_response(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+        ),
+        group,
+        ocr_lines,
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid segment requires Japanese: "
+        "subtitle_id='497', "
+        f"text={E08_FOLLOWING_TEXT!r}"
+        in validation.reasons
+    )
+
+
+def test_e08_validation_rejects_placeholder_for_497(
+    e08_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    group = build_hybrid_translation_group(
+        e08_target_blocks,
+        {
+            "496",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    payload = valid_e08_hybrid_payload()
+
+    payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "497"
+    ] = (
+        "（判読不能）"
+        "録画に映っていた私たちは"
+        "惑星へ向かった。"
+    )
+
+    validation = validate_hybrid_response(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+        ),
+        group,
+        ocr_lines,
+    )
+
+    assert validation.valid is False
+
+    assert any(
+        reason.startswith(
+            "Unexpected Hybrid OCR placeholder: "
+            "subtitle_id='497'"
+        )
+        for reason in validation.reasons
+    )
 
 
 def valid_hybrid_payload(

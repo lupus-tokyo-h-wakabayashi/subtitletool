@@ -275,6 +275,74 @@ def build_hybrid_source_payload(
     }
 
 
+def build_hybrid_segment_requirements(
+    group: HybridTranslationGroup,
+    ocr_lines: dict[str, list[str]],
+) -> str:
+    """
+    Hybrid Promptへ追加する、
+    字幕IDごとの出力必須条件を生成する。
+
+    OCR行と正常行の分類結果を使い、
+    各segmentへ必要な内容を具体的に指示する。
+    """
+    text_lines = find_group_text_lines(
+        group,
+        ocr_lines,
+    )
+
+    requirements: list[str] = []
+
+    for block in group.blocks:
+        subtitle_id = block.number
+
+        has_ocr_lines = bool(
+            ocr_lines.get(
+                subtitle_id,
+                [],
+            )
+        )
+
+        has_text_lines = bool(
+            text_lines.get(
+                subtitle_id,
+                [],
+            )
+        )
+
+        if (
+            has_ocr_lines
+            and has_text_lines
+        ):
+            requirements.append(
+                f"* 字幕ID {subtitle_id}: "
+                "kind=textの正常英文を日本語へ翻訳し、"
+                "kind=ocrの位置を「（判読不能）」で表現する。"
+                "segmentには日本語訳と「（判読不能）」の"
+                "両方を必ず含める。"
+            )
+            continue
+
+        if has_ocr_lines:
+            requirements.append(
+                f"* 字幕ID {subtitle_id}: "
+                "kind=ocrの位置を「（判読不能）」で表現する。"
+                "OCR原文をコピーしない。"
+            )
+            continue
+
+        requirements.append(
+            f"* 字幕ID {subtitle_id}: "
+            "すべてkind=textなので正常な日本語へ翻訳する。"
+            "英文を残さず、"
+            "「（判読不能）」を含めない。"
+        )
+
+    return "\n".join(
+        requirements
+    )
+
+
 def build_hybrid_translation_prompt(
     group: HybridTranslationGroup,
     ocr_lines: dict[str, list[str]],
@@ -301,6 +369,13 @@ def build_hybrid_translation_prompt(
     target_ids_json = json.dumps(
         list(group.target_ids),
         ensure_ascii=False,
+    )
+
+    segment_requirements = (
+        build_hybrid_segment_requirements(
+            group,
+            ocr_lines,
+        )
     )
 
     glossary_instruction = (
@@ -385,8 +460,13 @@ segmentsへ出力する字幕IDは、
   「（判読不能）」と正常英文の日本語訳を両方含める
 * OCR行と正常英文が同じIDにある場合に、
   segment全体を「（判読不能）」だけにしない
+* OCR行のないIDには「（判読不能）」を含めない
 * 各segmentをID順に連結すると、
   full_translationと一致するようにする
+
+【字幕IDごとの必須条件】
+
+{segment_requirements}
 
 【OCR行】
 
@@ -689,6 +769,17 @@ def validate_hybrid_response(
                 f"subtitle_id={subtitle_id!r}, "
                 f"required="
                 f"{HYBRID_OCR_PLACEHOLDER!r}"
+            )
+
+        if (
+            not block_ocr_lines
+            and HYBRID_OCR_PLACEHOLDER
+            in normalized_segment
+        ):
+            reasons.append(
+                "Unexpected Hybrid OCR placeholder: "
+                f"subtitle_id={subtitle_id!r}, "
+                f"text={normalized_segment!r}"
             )
 
         block_text_lines = text_lines.get(
