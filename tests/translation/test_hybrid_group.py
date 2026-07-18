@@ -3,6 +3,8 @@ from lib.translation.hybrid_group import (
     build_hybrid_translation_group,
     build_hybrid_translation_groups,
     crosses_hybrid_time_boundary,
+    is_sound_effect_only_source,
+    is_source_sound_effect_line,
     parse_srt_timestamp_range,
     source_text_ends_sentence,
     subtitle_gap_milliseconds,
@@ -544,4 +546,136 @@ def test_build_hybrid_translation_groups_merges_overlapping_groups(
                 "283",
             }
         )
+    )
+
+
+def test_source_sound_effect_line_detection(
+) -> None:
+    assert is_source_sound_effect_line(
+        "(CHIRPING)"
+    ) is True
+
+    assert is_source_sound_effect_line(
+        "(CONSOLE BEEPS)"
+    ) is True
+
+    assert is_source_sound_effect_line(
+        "(LOW MECHANICAL HUM)"
+    ) is True
+
+    assert is_source_sound_effect_line(
+        "Colonel Young, come in."
+    ) is False
+
+    assert is_source_sound_effect_line(
+        "Ui maar i mele aah ml iaa"
+    ) is False
+
+
+def test_sound_effect_only_source_detection(
+) -> None:
+    assert is_sound_effect_only_source(
+        "(CHIRPING)"
+    ) is True
+
+    assert is_sound_effect_only_source(
+        "(SIGHS)\n(CONSOLE BEEPS)"
+    ) is True
+
+    assert is_sound_effect_only_source(
+        "(ON RADIO)\nColonel Young, come in."
+    ) is False
+
+    assert is_sound_effect_only_source(
+        ""
+    ) is False
+
+
+def test_failed_sound_effect_stays_in_independent_group(
+) -> None:
+    blocks = [
+        make_block(
+            "320",
+            "Listen carefully",
+            (
+                "00:24:12,000 --> "
+                "00:24:13,000"
+            ),
+        ),
+        make_block(
+            "321",
+            "(CHIRPING)",
+            (
+                "00:24:14,119 --> "
+                "00:24:15,204"
+            ),
+        ),
+        make_block(
+            "322",
+            "I heard something",
+            (
+                "00:24:15,300 --> "
+                "00:24:16,300"
+            ),
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "321",
+        },
+    )
+
+    assert group is not None
+
+    assert group.target_ids == (
+        "321",
+    )
+
+    assert group.positions == (
+        1,
+    )
+
+
+def test_hybrid_group_does_not_cross_sound_effect_boundary(
+) -> None:
+    blocks = [
+        make_block(
+            "320",
+            "We need to find",
+            (
+                "00:24:12,000 --> "
+                "00:24:13,000"
+            ),
+        ),
+        make_block(
+            "321",
+            "(CHIRPING)",
+            (
+                "00:24:13,100 --> "
+                "00:24:14,000"
+            ),
+        ),
+        make_block(
+            "322",
+            "a way home.",
+            (
+                "00:24:14,100 --> "
+                "00:24:15,000"
+            ),
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "320",
+        },
+    )
+
+    assert group is not None
+
+    assert group.target_ids == (
+        "320",
     )

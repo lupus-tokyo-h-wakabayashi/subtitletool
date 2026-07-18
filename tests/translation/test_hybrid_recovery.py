@@ -1720,3 +1720,82 @@ def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
     assert result == (
         recovered_translations
     )
+
+
+def test_e11_sound_effect_is_not_classified_as_ocr(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="321",
+            timestamp=(
+                "00:24:14,119 --> "
+                "00:24:15,204"
+            ),
+            text="(CHIRPING)",
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "321",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    assert ocr_lines == {}
+
+
+def test_e11_sound_effect_source_payload(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="321",
+            timestamp=(
+                "00:24:14,119 --> "
+                "00:24:15,204"
+            ),
+            text="(CHIRPING)",
+        ),
+    ]
+
+    group = build_hybrid_translation_group(
+        blocks,
+        {
+            "321",
+        },
+    )
+
+    assert group is not None
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+    )
+
+    payload = build_hybrid_source_payload(
+        group,
+        ocr_lines,
+    )
+
+    assert payload == {
+        "subtitles": [
+            {
+                "id": "321",
+                "lines": [
+                    {
+                        "kind": "sound_effect",
+                        "text": "(CHIRPING)",
+                    },
+                ],
+            },
+        ],
+    }

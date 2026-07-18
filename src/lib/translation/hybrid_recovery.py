@@ -14,6 +14,7 @@ from lib.subtitle.srt import (
 from .hybrid_group import (
     HybridTranslationGroup,
     build_hybrid_translation_groups,
+    is_source_sound_effect_line,
 )
 from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
@@ -125,6 +126,8 @@ def find_group_ocr_lines(
     記号をほとんど含まない英字ワードサラダ判定は、
     正常英文の誤検出を避けるため、通常翻訳で実際に
     Validationへ失敗した字幕IDだけに適用する。
+
+    効果音行はOCR破損として扱わない。
     """
     results: dict[
         str,
@@ -138,6 +141,11 @@ def find_group_ocr_lines(
             source_line = raw_line.strip()
 
             if not source_line:
+                continue
+
+            if is_source_sound_effect_line(
+                source_line
+            ):
                 continue
 
             is_existing_ocr = (
@@ -182,7 +190,8 @@ def find_group_text_lines(
 ) -> dict[str, list[str]]:
     """
     Hybridグループ内から、
-    OCR行として分類されていない正常行を抽出する。
+    OCR行・効果音行として分類されていない
+    正常行を抽出する。
 
     OCR行と正常英文が同じ字幕IDに混在する場合の
     検証に使用する。
@@ -211,6 +220,11 @@ def find_group_text_lines(
             if source_line in block_ocr_lines:
                 continue
 
+            if is_source_sound_effect_line(
+                source_line
+            ):
+                continue
+
             text_lines.append(
                 source_line
             )
@@ -229,7 +243,8 @@ def build_hybrid_source_payload(
 ) -> dict[str, object]:
     """
     Hybrid Promptへ渡す原文を、
-    通常行とOCR行に分類して構造化する。
+    通常行・OCR行・効果音行に分類して
+    構造化する。
     """
     subtitles: list[
         dict[str, object]
@@ -251,14 +266,18 @@ def build_hybrid_source_payload(
             if not source_line:
                 continue
 
+            if is_source_sound_effect_line(
+                source_line
+            ):
+                line_kind = "sound_effect"
+            elif source_line in block_ocr_lines:
+                line_kind = "ocr"
+            else:
+                line_kind = "text"
+
             lines.append(
                 {
-                    "kind": (
-                        "ocr"
-                        if source_line
-                           in block_ocr_lines
-                        else "text"
-                    ),
+                    "kind": line_kind,
                     "text": source_line,
                 }
             )

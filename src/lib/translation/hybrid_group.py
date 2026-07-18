@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from lib.subtitle.srt import SrtBlock
 
 DEFAULT_MAX_HYBRID_GROUP_BLOCKS = 6
-
 DEFAULT_MAX_HYBRID_GAP_MILLISECONDS = 1_500
-
 SENTENCE_END_PATTERN = re.compile(
     r"""[.!?]["'”’)]*\s*$"""
 )
-
+SOURCE_SOUND_EFFECT_PATTERN = re.compile(
+    r"^\s*\([A-Z0-9 ,.'’!?-]+\)\s*$"
+)
 SRT_TIMESTAMP_PATTERN = re.compile(
     r"""
     ^
@@ -58,6 +58,71 @@ class HybridTranslationGroup:
             block.number
             for block in self.blocks
         )
+
+
+def is_source_sound_effect_line(
+    text: str,
+) -> bool:
+    """
+    原文の1行が効果音・動作説明だけか判定する。
+
+    例:
+        (CHIRPING)
+        (SIGHS)
+        (CONSOLE BEEPS)
+        (LOW MECHANICAL HUM)
+    """
+    return bool(
+        SOURCE_SOUND_EFFECT_PATTERN.fullmatch(
+            text.strip()
+        )
+    )
+
+
+def is_sound_effect_only_source(
+    text: str,
+) -> bool:
+    """
+    字幕内の空でない行が、
+    すべて効果音行か判定する。
+
+    効果音と会話が混在する字幕はFalseを返す。
+    """
+    source_lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    if not source_lines:
+        return False
+
+    return all(
+        is_source_sound_effect_line(
+            source_line
+        )
+        for source_line in source_lines
+    )
+
+
+def crosses_hybrid_content_boundary(
+    previous_block: SrtBlock,
+    next_block: SrtBlock,
+) -> bool:
+    """
+    効果音だけの字幕をHybridグループ境界として扱う。
+
+    効果音字幕と通常字幕を、
+    1つの連続文章として結合しない。
+    """
+    return (
+        is_sound_effect_only_source(
+            previous_block.text
+        )
+        or is_sound_effect_only_source(
+        next_block.text
+    )
+    )
 
 
 def source_text_ends_sentence(
@@ -230,6 +295,7 @@ def build_hybrid_translation_group(
     グループの拡張を停止する。
 
     - 明確な英文末記号がある
+    - 効果音だけの字幕がある
     - 字幕間隔が上限を超えている
     - タイムスタンプを解析できない
     - 最大字幕数へ到達した
@@ -284,9 +350,23 @@ def build_hybrid_translation_group(
         start,
         end,
     ):
+        current_block = target_blocks[
+            position
+        ]
+
+        next_block = target_blocks[
+            position + 1
+            ]
+
+        if crosses_hybrid_content_boundary(
+            current_block,
+            next_block,
+        ):
+            return None
+
         if crosses_hybrid_time_boundary(
-            target_blocks[position],
-            target_blocks[position + 1],
+            current_block,
+            next_block,
             maximum_gap_milliseconds=(
                 maximum_gap_milliseconds
             ),
@@ -303,6 +383,12 @@ def build_hybrid_translation_group(
         current_block = target_blocks[
             start
         ]
+
+        if crosses_hybrid_content_boundary(
+            previous_block,
+            current_block,
+        ):
+            break
 
         if source_text_ends_sentence(
             previous_block.text
@@ -338,6 +424,12 @@ def build_hybrid_translation_group(
         next_block = target_blocks[
             next_position
         ]
+
+        if crosses_hybrid_content_boundary(
+            current_block,
+            next_block,
+        ):
+            break
 
         if source_text_ends_sentence(
             current_block.text
