@@ -42,6 +42,142 @@ E08_FOLLOWING_TEXT = (
     "and went to the planet."
 )
 
+E09_SOURCE_TEXTS = (
+    "So, any suspects?",
+    (
+        "Well, excuse me\n"
+        "for being blunt,"
+    ),
+    (
+        "el mal em)\n"
+        "a killer onboard the ship."
+    ),
+    (
+        "Do we have any\n"
+        "idea who did this?"
+    ),
+    (
+        "I'm still trying to\n"
+        "wrap my head around it."
+    ),
+    "It's unbelievable.",
+    (
+        "You put ordinary people\n"
+        "under enough stress,"
+    ),
+    (
+        "I think you'll find\n"
+        "they're capable of\n"
+        "just about anything."
+    ),
+    (
+        "Add to that the fact\n"
+        "he was hoarding\n"
+        "water and food,"
+    ),
+    (
+        "involved in\n"
+        "several confrontations."
+    ),
+)
+
+E09_REPEATED_TRANSLATION = (
+    "では、容疑者はいますか？"
+)
+
+E09_RECOVERED_TRANSLATIONS = (
+    "容疑者に心当たりは？",
+    "率直に言って悪いが、",
+    "船に殺人犯がいる。",
+    "誰がやったか分かるのか？",
+    "まだ理解しようとしている。",
+    "信じられない。",
+    (
+        "普通の人でも強い圧力を"
+        "受ければ、"
+    ),
+    (
+        "ほとんど何でも"
+        "できてしまう。"
+    ),
+    (
+        "彼は水と食料を"
+        "ため込んでいたうえ、"
+    ),
+    (
+        "何度も衝突を"
+        "起こしていた。"
+    ),
+)
+
+
+@pytest.fixture
+def e09_target_blocks(
+) -> list[SrtBlock]:
+    timestamps = (
+        (
+            "00:05:00,000 --> "
+            "00:05:01,000"
+        ),
+        (
+            "00:05:01,100 --> "
+            "00:05:02,000"
+        ),
+        (
+            "00:05:02,100 --> "
+            "00:05:03,000"
+        ),
+        (
+            "00:05:03,100 --> "
+            "00:05:04,000"
+        ),
+        (
+            "00:05:04,100 --> "
+            "00:05:05,000"
+        ),
+        (
+            "00:05:05,100 --> "
+            "00:05:06,000"
+        ),
+        (
+            "00:05:06,100 --> "
+            "00:05:07,000"
+        ),
+        (
+            "00:05:07,100 --> "
+            "00:05:08,000"
+        ),
+        (
+            "00:05:08,100 --> "
+            "00:05:09,000"
+        ),
+        (
+            "00:05:09,100 --> "
+            "00:05:10,000"
+        ),
+    )
+
+    return [
+        SrtBlock(
+            number=str(number),
+            timestamp=timestamp,
+            text=source_text,
+        )
+        for (
+            number,
+            timestamp,
+            source_text,
+        ) in zip(
+            range(
+                81,
+                91,
+            ),
+            timestamps,
+            E09_SOURCE_TEXTS,
+            strict=True,
+        )
+    ]
+
 
 @pytest.fixture
 def noise_dictionary(
@@ -1495,3 +1631,92 @@ def test_hybrid_recovery_handles_multiple_independent_groups(
         ),
         "耐えられませんでした。",
     ]
+
+
+def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    e09_target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    captured_failed_ids: set[str] = set()
+    recovered_translations = list(
+        E09_RECOVERED_TRANSLATIONS
+    )
+
+    def fake_recover_single_hybrid_group(
+        *,
+        group: HybridTranslationGroup,
+        target_blocks: list[SrtBlock],
+        translated_texts: list[str],
+        model: str,
+        noise_dictionary: NoiseDictionary,
+        glossary_entries: object,
+    ) -> list[str]:
+        captured_failed_ids.update(
+            group.failed_ids
+        )
+
+        merged_texts = list(
+            translated_texts
+        )
+
+        for position in group.positions:
+            merged_texts[position] = (
+                recovered_translations[
+                    position
+                ]
+            )
+
+        return merged_texts
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "recover_single_hybrid_group",
+        fake_recover_single_hybrid_group,
+    )
+
+    repeated_translation_error = (
+        "Repeated translation detected: "
+        "count=10, "
+        "text='では、容疑者はいますか？', "
+        "subtitle_ids="
+        "['81', '82', '83', '84', '85', "
+        "'86', '87', '88', '89', '90']"
+    )
+
+    repeated_sequence_error = (
+        "Repeated translation sequence detected: "
+        "first_start=1, "
+        "second_start=4, "
+        "length=3, "
+        "subtitle_ids="
+        "['81', '82', '83', '84', '85', "
+        "'86']"
+    )
+
+    result = recover_translation_with_hybrid(
+        e09_target_blocks,
+        [
+            E09_REPEATED_TRANSLATION
+            for _ in e09_target_blocks
+        ],
+        [
+            repeated_translation_error,
+            repeated_sequence_error,
+        ],
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert captured_failed_ids == {
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    }
+
+    assert result == (
+        recovered_translations
+    )
