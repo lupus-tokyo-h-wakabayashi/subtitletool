@@ -13,6 +13,7 @@ from lib.translation.ocr_retry import (
     apply_level_1_ocr_fallback,
     extract_untranslated_english_error_ids,
     find_probable_untranslated_ocr_lines,
+    find_short_mixed_case_ocr_lines_in_source,
     is_low_symbol_word_salad_ocr_source_line,
     is_probable_ocr_source_line,
     is_short_mixed_case_ocr_source_line,
@@ -51,6 +52,26 @@ SYMBOL_DENSE_UNTRANSLATED_ERROR = (
     f"text={SYMBOL_DENSE_TRANSLATION!r}"
 )
 
+E13_NORMAL_LINE = (
+    "Okay, what about"
+)
+E13_SHORT_OCR_LINE = (
+    "dam IAN el ESie"
+)
+E13_SOURCE_TEXT = (
+    f"{E13_NORMAL_LINE}\n"
+    f"{E13_SHORT_OCR_LINE}"
+)
+E13_UNTRANSLATED_RESULT = (
+    f"{E13_NORMAL_LINE}\n"
+    f"{E13_SHORT_OCR_LINE}"
+)
+E13_UNTRANSLATED_ERROR = (
+    "Untranslated English sentence detected: "
+    "subtitle_id='490', "
+    f"text={E13_UNTRANSLATED_RESULT!r}"
+)
+
 OCR_LINE = "AV Cag are T"
 NORMAL_LINE = "the wrong people!"
 
@@ -69,6 +90,153 @@ UNTRANSLATED_ERROR = (
     "subtitle_id='80', "
     f"text={UNTRANSLATED_RESULT!r}"
 )
+
+
+def test_find_short_mixed_case_ocr_line_in_mixed_source(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    actual = (
+        find_short_mixed_case_ocr_lines_in_source(
+            E13_SOURCE_TEXT,
+            noise_dictionary,
+        )
+    )
+
+    assert actual == [
+        E13_SHORT_OCR_LINE,
+    ]
+
+
+def test_short_mixed_case_ocr_line_requires_normal_sibling(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    actual = (
+        find_short_mixed_case_ocr_lines_in_source(
+            E13_SHORT_OCR_LINE,
+            noise_dictionary,
+        )
+    )
+
+    assert actual == []
+
+
+def test_find_probable_untranslated_e13_short_ocr_line(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    target_block = SrtBlock(
+        number="490",
+        timestamp=(
+            "00:35:00,000 --> "
+            "00:35:02,000"
+        ),
+        text=E13_SOURCE_TEXT,
+    )
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            target_blocks=[
+                target_block,
+            ],
+            translated_texts=[
+                E13_UNTRANSLATED_RESULT,
+            ],
+            errors=[
+                E13_UNTRANSLATED_ERROR,
+            ],
+            noise_dictionary=(
+                noise_dictionary
+            ),
+        )
+    )
+
+    assert actual == {
+        "490": [
+            E13_SHORT_OCR_LINE,
+        ],
+    }
+
+
+def test_e13_short_ocr_line_is_not_selected_without_matching_error(
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    target_block = SrtBlock(
+        number="490",
+        timestamp=(
+            "00:35:00,000 --> "
+            "00:35:02,000"
+        ),
+        text=E13_SOURCE_TEXT,
+    )
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            target_blocks=[
+                target_block,
+            ],
+            translated_texts=[
+                E13_UNTRANSLATED_RESULT,
+            ],
+            errors=[
+                (
+                    "Untranslated English sentence "
+                    "detected: subtitle_id='489', "
+                    "text='other subtitle'"
+                ),
+            ],
+            noise_dictionary=(
+                noise_dictionary
+            ),
+        )
+    )
+
+    assert actual == {}
+
+
+def test_e13_level_1_fallback_wraps_only_complete_ocr_line(
+) -> None:
+    target_block = SrtBlock(
+        number="490",
+        timestamp=(
+            "00:35:00,000 --> "
+            "00:35:02,000"
+        ),
+        text=E13_SOURCE_TEXT,
+    )
+
+    (
+        corrected_texts,
+        applied_lines,
+    ) = apply_level_1_ocr_fallback(
+        target_blocks=[
+            target_block,
+        ],
+        translated_texts=[
+            E13_UNTRANSLATED_RESULT,
+        ],
+        probable_ocr_lines={
+            "490": [
+                E13_SHORT_OCR_LINE,
+            ],
+        },
+    )
+
+    assert corrected_texts == [
+        (
+            f"{E13_NORMAL_LINE}\n"
+            f"[1]{E13_SHORT_OCR_LINE}[/1]"
+        ),
+    ]
+
+    assert applied_lines == {
+        "490": [
+            E13_SHORT_OCR_LINE,
+        ],
+    }
+
+    assert (
+        f"[1]{E13_NORMAL_LINE}"
+        not in corrected_texts[0]
+    )
 
 
 @pytest.fixture

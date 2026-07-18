@@ -20,9 +20,9 @@ from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
 )
 from .ocr_retry import (
+    find_short_mixed_case_ocr_lines_in_source,
     is_low_symbol_word_salad_ocr_source_line,
     is_probable_ocr_source_line,
-    is_short_mixed_case_ocr_source_line,
 )
 from .retry import (
     build_required_glossary_instruction,
@@ -140,12 +140,9 @@ def find_group_ocr_lines(
     正常英文の誤検出を避けるため、通常翻訳で実際に
     Validationへ失敗した字幕IDだけに適用する。
 
-    短い大小文字混在型のOCR判定は、
-    次の条件をすべて満たす場合だけ適用する。
-
-    - 通常翻訳で失敗した字幕IDである
-    - 字幕内に空でない非効果音行が複数ある
-    - OCR候補以外に正常行と判断できる行がある
+    短い大小文字混在型のOCR行は、
+    共通の混在字幕判定を使用し、
+    通常翻訳で失敗した字幕IDだけに適用する。
 
     効果音行はOCR破損として扱わない。
     """
@@ -155,22 +152,29 @@ def find_group_ocr_lines(
     ] = {}
 
     for block in group.blocks:
-        source_lines = [
-            raw_line.strip()
-            for raw_line in block.text.splitlines()
-            if (
-                raw_line.strip()
-                and not is_source_sound_effect_line(
-                raw_line.strip()
+        short_mixed_case_lines = set()
+
+        if block.number in group.failed_ids:
+            short_mixed_case_lines = set(
+                find_short_mixed_case_ocr_lines_in_source(
+                    block.text,
+                    noise_dictionary,
+                )
             )
-            )
-        ]
 
         lines: list[str] = []
 
-        for position, source_line in enumerate(
-            source_lines
-        ):
+        for raw_line in block.text.splitlines():
+            source_line = raw_line.strip()
+
+            if not source_line:
+                continue
+
+            if is_source_sound_effect_line(
+                source_line
+            ):
+                continue
+
             is_existing_ocr = (
                 is_probable_ocr_source_line(
                     source_line,
@@ -186,45 +190,9 @@ def find_group_ocr_lines(
             )
             )
 
-            is_short_mixed_case_candidate = (
-                is_short_mixed_case_ocr_source_line(
-                    source_line
-                )
-            )
-
-            has_normal_sibling_line = any(
-                (
-                    sibling_position
-                    != position
-                    and not is_probable_ocr_source_line(
-                    sibling_line,
-                    noise_dictionary,
-                )
-                    and not (
-                    is_low_symbol_word_salad_ocr_source_line(
-                        sibling_line
-                    )
-                )
-                    and not (
-                    is_short_mixed_case_ocr_source_line(
-                        sibling_line
-                    )
-                )
-                )
-                for (
-                    sibling_position,
-                    sibling_line,
-                ) in enumerate(
-                    source_lines
-                )
-            )
-
             is_failed_short_mixed_case = (
-                block.number
-                in group.failed_ids
-                and len(source_lines) >= 2
-                and is_short_mixed_case_candidate
-                and has_normal_sibling_line
+                source_line
+                in short_mixed_case_lines
             )
 
             if not (

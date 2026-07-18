@@ -602,6 +602,174 @@ def is_probable_ocr_source_line(
     )
 
 
+def find_short_mixed_case_ocr_lines_in_source(
+    source_text: str,
+    noise_dictionary: NoiseDictionary,
+) -> list[str]:
+    """
+    複数行の字幕原文から、
+    正常行と混在する短い大小文字型OCR行を抽出する。
+
+    次の条件をすべて満たす行だけを返す。
+
+    - 空でない非効果音行が2行以上ある
+    - 対象行が短い大小文字型OCR判定を通る
+    - 同じ字幕内に正常と判断できる別行がある
+
+    単独の短文や、すべての行がOCR候補になる字幕は
+    誤検出防止のため対象にしない。
+
+    この関数は字幕IDやValidation結果を判断しない。
+    呼出側で失敗した字幕だけに適用する。
+    """
+    source_lines = [
+        raw_line.strip()
+        for raw_line in source_text.splitlines()
+        if (
+            raw_line.strip()
+            and not SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+            raw_line.strip()
+        )
+        )
+    ]
+
+    if len(source_lines) < 2:
+        return []
+
+    results: list[str] = []
+
+    for position, source_line in enumerate(
+        source_lines
+    ):
+        if not is_short_mixed_case_ocr_source_line(
+            source_line
+        ):
+            continue
+
+        has_normal_sibling_line = any(
+            (
+                sibling_position
+                != position
+                and not is_probable_ocr_source_line(
+                sibling_line,
+                noise_dictionary,
+            )
+                and not (
+                is_low_symbol_word_salad_ocr_source_line(
+                    sibling_line
+                )
+            )
+                and not (
+                is_short_mixed_case_ocr_source_line(
+                    sibling_line
+                )
+            )
+            )
+            for (
+                sibling_position,
+                sibling_line,
+            ) in enumerate(
+                source_lines
+            )
+        )
+
+        if not has_normal_sibling_line:
+            continue
+
+        if source_line in results:
+            continue
+
+        results.append(
+            source_line
+        )
+
+    return results
+
+
+def find_short_mixed_case_ocr_lines_in_source(
+    source_text: str,
+    noise_dictionary: NoiseDictionary,
+) -> list[str]:
+    """
+    複数行の字幕原文から、
+    正常行と混在する短い大小文字型OCR行を抽出する。
+
+    次の条件をすべて満たす行だけを返す。
+
+    - 空でない非効果音行が2行以上ある
+    - 対象行が短い大小文字型OCR判定を通る
+    - 同じ字幕内に正常と判断できる別行がある
+
+    単独の短文や、すべての行がOCR候補になる字幕は
+    誤検出防止のため対象にしない。
+
+    この関数は字幕IDやValidation結果を判断しない。
+    呼出側で失敗した字幕だけに適用する。
+    """
+    source_lines = [
+        raw_line.strip()
+        for raw_line in source_text.splitlines()
+        if (
+            raw_line.strip()
+            and not SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+            raw_line.strip()
+        )
+        )
+    ]
+
+    if len(source_lines) < 2:
+        return []
+
+    results: list[str] = []
+
+    for position, source_line in enumerate(
+        source_lines
+    ):
+        if not is_short_mixed_case_ocr_source_line(
+            source_line
+        ):
+            continue
+
+        has_normal_sibling_line = any(
+            (
+                sibling_position
+                != position
+                and not is_probable_ocr_source_line(
+                sibling_line,
+                noise_dictionary,
+            )
+                and not (
+                is_low_symbol_word_salad_ocr_source_line(
+                    sibling_line
+                )
+            )
+                and not (
+                is_short_mixed_case_ocr_source_line(
+                    sibling_line
+                )
+            )
+            )
+            for (
+                sibling_position,
+                sibling_line,
+            ) in enumerate(
+                source_lines
+            )
+        )
+
+        if not has_normal_sibling_line:
+            continue
+
+        if source_line in results:
+            continue
+
+        results.append(
+            source_line
+        )
+
+    return results
+
+
 def find_probable_untranslated_ocr_lines(
     target_blocks: list[SrtBlock],
     translated_texts: list[str],
@@ -613,10 +781,21 @@ def find_probable_untranslated_ocr_lines(
     translationへそのままコピーされた原文行のうち、
     OCR破損の可能性が高い行を返す。
 
+    Noise辞書や既存ヒューリスティックに加えて、
+    正常行と混在する短い大小文字型OCR行も対象にする。
+
+    短い大小文字型OCR行は、
+    次の条件をすべて満たす場合だけ返す。
+
+    - 未翻訳英文エラーの対象字幕IDである
+    - 同じ字幕内に正常な兄弟行がある
+    - OCR候補の完全な原文行がtranslationに残っている
+
     戻り値:
+
         {
-            "80": [
-                "AV Cag are T",
+            "490": [
+                "dam IAN el ESie",
             ],
         }
     """
@@ -642,6 +821,13 @@ def find_probable_untranslated_ocr_lines(
         if block.number not in error_ids:
             continue
 
+        short_mixed_case_lines = set(
+            find_short_mixed_case_ocr_lines_in_source(
+                block.text,
+                noise_dictionary,
+            )
+        )
+
         matched_lines: list[str] = []
 
         for raw_line in block.text.splitlines():
@@ -653,9 +839,21 @@ def find_probable_untranslated_ocr_lines(
             if source_line not in translated_text:
                 continue
 
-            if not is_probable_ocr_source_line(
-                source_line,
-                noise_dictionary,
+            is_existing_ocr = (
+                is_probable_ocr_source_line(
+                    source_line,
+                    noise_dictionary,
+                )
+            )
+
+            is_short_mixed_case_ocr = (
+                source_line
+                in short_mixed_case_lines
+            )
+
+            if not (
+                is_existing_ocr
+                or is_short_mixed_case_ocr
             ):
                 continue
 
