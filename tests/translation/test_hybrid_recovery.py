@@ -22,8 +22,6 @@ from lib.translation.hybrid_recovery import (
     find_group_ocr_lines,
     find_group_sound_effect_lines,
     validate_hybrid_response,
-)
-from lib.translation.hybrid_recovery import (
     recover_translation_with_hybrid,
 )
 
