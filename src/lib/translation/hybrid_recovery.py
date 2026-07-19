@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -28,6 +29,12 @@ from .retry import (
     build_required_glossary_instruction,
     extract_error_subtitle_ids,
     has_structural_validation_error,
+)
+from .translation_metrics import (
+    HybridGroupMetric,
+    TranslationAttemptMetric,
+    TranslationChunkMetric,
+    build_validation_reason_codes,
 )
 from .translation_validation import (
     validate_translation_response,
@@ -1236,6 +1243,8 @@ def recover_single_hybrid_group(
     model: str,
     noise_dictionary: NoiseDictionary,
     glossary_entries: Mapping[str, str],
+    group_number: int = 1,
+    metrics: TranslationChunkMetric | None = None,
 ) -> list[str]:
     """
     1つのHybridグループを回復し、
@@ -1250,12 +1259,43 @@ def recover_single_hybrid_group(
         noise_dictionary,
     )
 
+    # Phase 1-7：対象Hybridグループを取得する
+    metrics_group: HybridGroupMetric | None = None
+
+    if metrics is not None:
+        try:
+            metrics_group = (
+                metrics.find_hybrid_group(
+                    group_number
+                )
+            )
+        except ValueError:
+            metrics_group = HybridGroupMetric(
+                group_number=group_number,
+                target_ids=tuple(
+                    group.target_ids
+                ),
+                failed_ids=tuple(
+                    sorted(
+                        group.failed_ids
+                    )
+                ),
+            )
+
+            metrics.add_hybrid_group(
+                metrics_group
+            )
+
     retry_reasons: list[str] = []
 
     for attempt in range(
         1,
         MAX_HYBRID_RECOVERY_ATTEMPTS + 1,
     ):
+        attempt_started_at = (
+            time.monotonic()
+        )
+
         prompt = (
             build_hybrid_translation_prompt(
                 group,
@@ -1286,11 +1326,42 @@ def recover_single_hybrid_group(
             )
         )
 
-        response = generate(
-            prompt,
-            model=model,
-            response_format=response_schema,
-        )
+        try:
+            response = generate(
+                prompt,
+                model=model,
+                response_format=response_schema,
+            )
+        except Exception as error:
+            if metrics_group is not None:
+                metrics_group.add_attempt(
+                    TranslationAttemptMetric(
+                        pipeline="hybrid",
+                        attempt=attempt,
+                        target_ids=tuple(
+                            group.target_ids
+                        ),
+                        elapsed_seconds=(
+                            time.monotonic()
+                            - attempt_started_at
+                        ),
+                        response_received=False,
+                        validation_stage=(
+                            "generation_exception"
+                        ),
+                        validation_valid=None,
+                        exception_type=(
+                            type(error).__name__
+                        ),
+                        exception_message=str(
+                            error
+                        ),
+                    )
+                )
+
+                metrics_group.mark_failed()
+
+            raise
 
         print("=" * 80)
         print(response)
@@ -1308,6 +1379,38 @@ def recover_single_hybrid_group(
             retry_reasons = list(
                 hybrid_validation.reasons
             )
+
+            if metrics_group is not None:
+                validation_reasons = tuple(
+                    retry_reasons
+                )
+
+                metrics_group.add_attempt(
+                    TranslationAttemptMetric(
+                        pipeline="hybrid",
+                        attempt=attempt,
+                        target_ids=tuple(
+                            group.target_ids
+                        ),
+                        elapsed_seconds=(
+                            time.monotonic()
+                            - attempt_started_at
+                        ),
+                        response_received=True,
+                        validation_stage=(
+                            "hybrid_validation"
+                        ),
+                        validation_valid=False,
+                        validation_reasons=(
+                            validation_reasons
+                        ),
+                        reason_codes=(
+                            build_validation_reason_codes(
+                                validation_reasons
+                            )
+                        ),
+                    )
+                )
 
             try_save_hybrid_attempt_report(
                 group=group,
@@ -1391,6 +1494,58 @@ def recover_single_hybrid_group(
                 standard_validation.reasons
             )
 
+            if metrics_group is not None:
+                validation_reasons = tuple(
+                    retry_reasons
+                )
+
+                metrics_group.add_attempt(
+                    TranslationAttemptMetric(
+                        pipeline="hybrid",
+                        attempt=attempt,
+                        target_ids=tuple(
+                            group.target_ids
+                        ),
+                        elapsed_seconds=(
+                            time.monotonic()
+                            - attempt_started_at
+                        ),
+                        response_received=True,
+                        validation_stage=(
+                            "standard_validation"
+                        ),
+                        validation_valid=False,
+                        validation_reasons=(
+                            validation_reasons
+                        ),
+                        reason_codes=(
+                            build_validation_reason_codes(
+                                validation_reasons
+                            )
+                        ),
+                    )
+                )
+
+        if metrics_group is not None:
+            metrics_group.add_attempt(
+                TranslationAttemptMetric(
+                    pipeline="hybrid",
+                    attempt=attempt,
+                    target_ids=tuple(
+                        group.target_ids
+                    ),
+                    elapsed_seconds=(
+                        time.monotonic()
+                        - attempt_started_at
+                    ),
+                    response_received=True,
+                    validation_stage="complete",
+                    validation_valid=True,
+                )
+            )
+
+            metrics_group.mark_success()
+
             try_save_hybrid_attempt_report(
                 group=group,
                 model=model,
@@ -1458,6 +1613,9 @@ def recover_single_hybrid_group(
 
         return merged_texts
 
+    if metrics_group is not None:
+        metrics_group.mark_failed()
+
     raise HybridRecoveryError(
         "Hybrid Translation Recovery failed "
         f"after "
@@ -1481,6 +1639,7 @@ def recover_translation_with_hybrid(
     *,
     noise_dictionary: NoiseDictionary,
     glossary_entries: Mapping[str, str],
+    metrics: TranslationChunkMetric | None = None,
 ) -> list[str] | None:
     """
     通常翻訳に失敗したチャンクを、
@@ -1519,6 +1678,32 @@ def recover_translation_with_hybrid(
 
     if not groups:
         return None
+
+    # Phase 1-7：グループ生成後にHybrid開始を記録する
+    if metrics is not None:
+        metrics.trigger_hybrid(
+            errors
+        )
+
+        for group_number, group in enumerate(
+            groups,
+            start=1,
+        ):
+            metrics.add_hybrid_group(
+                HybridGroupMetric(
+                    group_number=(
+                        group_number
+                    ),
+                    target_ids=tuple(
+                        group.target_ids
+                    ),
+                    failed_ids=tuple(
+                        sorted(
+                            group.failed_ids
+                        )
+                    ),
+                )
+            )
 
     print()
     print(
@@ -1576,6 +1761,8 @@ def recover_translation_with_hybrid(
                 glossary_entries=(
                     glossary_entries
                 ),
+                group_number=group_number,
+                metrics=metrics,
             )
         )
 

@@ -996,6 +996,7 @@ def translate_chunk(
                 glossary_entries=(
                     glossary_entries
                 ),
+                metrics=metrics,
             )
         )
     except Exception as error:
