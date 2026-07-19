@@ -2201,6 +2201,14 @@ def test_run_translation_session_applies_adaptive_chunk_size(
         ]
     ] = []
 
+    displayed_completions: list[
+        tuple[
+            str,
+            int,
+            Path,
+        ]
+    ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -2323,6 +2331,25 @@ def test_run_translation_session_applies_adaptive_chunk_size(
             )
         )
 
+    def fake_print_translation_complete(
+        *,
+        session_result: str,
+        translated_count: int,
+        progress: object,
+        total_elapsed: float,
+        output_path: Path,
+    ) -> None:
+        del progress
+        del total_elapsed
+
+        displayed_completions.append(
+            (
+                session_result,
+                translated_count,
+                output_path,
+            )
+        )
+
     monkeypatch.setattr(
         translation_session,
         "translate_chunk",
@@ -2339,6 +2366,12 @@ def test_run_translation_session_applies_adaptive_chunk_size(
         translation_session,
         "print_adaptive_translation_decision",
         fake_print_adaptive_translation_decision,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_translation_complete",
+        fake_print_translation_complete,
     )
 
     result = (
@@ -2545,3 +2578,16 @@ def test_run_translation_session_applies_adaptive_chunk_size(
     assert len(
         displayed_decisions
     ) == 2
+
+    # 標準リトライを使用したセッションは
+    # 回復ありの完了結果として表示する
+    assert displayed_completions == [
+        (
+            "completed_with_recovery",
+            8,
+            (
+                tmp_path
+                / "output.srt"
+            ),
+        ),
+    ]
