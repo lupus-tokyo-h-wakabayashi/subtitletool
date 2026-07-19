@@ -186,3 +186,54 @@ def test_filter_empty_source_blocks_preserves_order() -> None:
            ] == [
                "11",
            ]
+
+
+def test_filter_empty_source_blocks_removes_speaker_only_text() -> None:
+    blocks = [
+        SrtBlock(
+            number="15",
+            timestamp=(
+                "00:00:15,000 --> "
+                "00:00:16,000"
+            ),
+            text="Previous subtitle.",
+        ),
+        SrtBlock(
+            number="16",
+            timestamp=(
+                "00:00:16,000 --> "
+                "00:00:17,000"
+            ),
+            text="VARRO:",
+        ),
+        SrtBlock(
+            number="17",
+            timestamp=(
+                "00:00:17,000 --> "
+                "00:00:18,000"
+            ),
+            text="VARRO: Actual dialogue.",
+        ),
+    ]
+
+    (
+        translation_blocks,
+        skipped_blocks,
+    ) = filter_empty_source_blocks(
+        blocks
+    )
+
+    assert [
+               block.number
+               for block in translation_blocks
+           ] == [
+               "15",
+               "17",
+           ]
+
+    assert [
+               block.number
+               for block in skipped_blocks
+           ] == [
+               "16",
+           ]

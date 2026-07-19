@@ -19,6 +19,7 @@ from .translation_resume import (
     load_resume_blocks,
 )
 from .translation_session import (
+    cleanup_block,
     run_translation_session,
 )
 
@@ -35,23 +36,32 @@ def filter_empty_source_blocks(
     blocks: list[SrtBlock],
 ) -> tuple[list[SrtBlock], list[SrtBlock]]:
     """
-    本文が空または空白だけの字幕を翻訳対象から除外する。
+    本文が空、空白のみ、またはOCR前処理後に
+    本文が残らない字幕を翻訳対象から除外する。
 
     戻り値:
         translation_blocks:
             LLMへ送信する有効な字幕
 
         skipped_blocks:
-            本文が空のため除外した字幕
+            有効な本文がないため除外した字幕
     """
     translation_blocks: list[SrtBlock] = []
     skipped_blocks: list[SrtBlock] = []
 
     for block in blocks:
-        if block.text.strip():
-            translation_blocks.append(block)
+        cleaned_block = cleanup_block(
+            block
+        )
+
+        if cleaned_block.text.strip():
+            translation_blocks.append(
+                block
+            )
         else:
-            skipped_blocks.append(block)
+            skipped_blocks.append(
+                block
+            )
 
     return (
         translation_blocks,
