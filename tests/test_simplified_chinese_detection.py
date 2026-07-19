@@ -26,6 +26,27 @@ def test_japanese_inner_character_is_ambiguous(
     )
 
 
+# "占" を曖昧文字として分類する
+def test_japanese_occupation_character_is_ambiguous(
+) -> None:
+    detection = detect_simplified_chinese(
+        "敵が施設を占領している。"
+    )
+
+    assert detection.detected is False
+
+    assert detection.characters == ()
+
+    assert detection.ambiguous_characters == (
+        "占",
+    )
+
+    assert (
+        detection.simplified_to_traditional
+        != detection.source_text
+    )
+
+
 def test_repeated_ambiguous_character_is_deduplicated(
 ) -> None:
     detection = detect_simplified_chinese(
@@ -69,6 +90,24 @@ def test_high_confidence_and_ambiguous_characters_are_separated(
     )
 
 
+# 曖昧文字と本物の簡体字を分離する
+def test_high_confidence_chinese_is_detected_with_japanese_occupation_text(
+) -> None:
+    detection = detect_simplified_chinese(
+        "敵が施設を占領し、这些人が中にいる。"
+    )
+
+    assert detection.detected is True
+
+    assert "这" in detection.characters
+
+    assert "占" not in detection.characters
+
+    assert detection.ambiguous_characters == (
+        "占",
+    )
+
+
 def test_e15_japanese_phrases_are_not_detected_as_chinese(
 ) -> None:
     source_texts = (
@@ -104,6 +143,25 @@ def test_chinese_mask_preserves_ambiguous_japanese_text(
     source_text = (
         "この円は、デスティニーの範囲内にある"
         "ゲートを表している。"
+    )
+
+    actual = mask_chinese_ocr_text(
+        source_text
+    )
+
+    assert actual == source_text
+
+    assert (
+        "（OCR判読不能）"
+        not in actual
+    )
+
+
+# "占" をOCRマスクしない
+def test_chinese_mask_preserves_japanese_occupation_text(
+) -> None:
+    source_text = (
+        "敵が施設を占領している。"
     )
 
     actual = mask_chinese_ocr_text(

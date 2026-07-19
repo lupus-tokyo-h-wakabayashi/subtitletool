@@ -58,6 +58,7 @@ _JAPANESE_TO_TRADITIONAL = OpenCC(
 OPENCC_AMBIGUOUS_JAPANESE_CHARACTERS = frozenset(
     {
         "内",
+        "占",
     }
 )
 

@@ -1322,6 +1322,27 @@ def test_chinese_validation_accepts_ambiguous_japanese_character(
     assert violations == []
 
 
+# E19-2-3：翻訳Validationの回帰テストを追加する
+def test_chinese_validation_accepts_japanese_occupation_character(
+) -> None:
+    translated_text = (
+        "敵が施設を占領している。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "316",
+            ],
+        )
+    )
+
+    assert violations == []
+
+
 def test_chinese_validation_accepts_e15_japanese_phrases(
 ) -> None:
     translated_texts = [
