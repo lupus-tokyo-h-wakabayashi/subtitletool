@@ -32,6 +32,7 @@ from .translation_metrics_inspection import (
     try_save_translation_metrics_reports,
 )
 from .translation_output import (
+    print_adaptive_translation_decision,
     print_chunk_start,
     print_translation_complete,
     print_translation_progress,
@@ -487,6 +488,15 @@ def run_translation_session(
                     chunk_size
                 ),
             )
+        )
+
+        print_adaptive_translation_decision(
+            decision=(
+                current_adaptive_decision
+            ),
+            next_chunk_size=(
+                current_chunk_size
+            ),
         )
 
         start = end

@@ -13,6 +13,10 @@ from lib.profile.noise import (
     NoiseDictionary,
     NoiseEntry,
 )
+from .translation_policy import (
+    ADAPTIVE_TRIGGER_NONE,
+    AdaptiveTranslationDecision,
+)
 
 
 def print_profile_resolution(
@@ -231,6 +235,66 @@ def print_translation_progress(
     print(
         "ETA         : "
         f"{format_duration(progress.eta_seconds)}"
+    )
+
+
+def print_adaptive_translation_decision(
+    *,
+    decision: AdaptiveTranslationDecision,
+    next_chunk_size: int,
+) -> None:
+    """
+    次チャンクへ適用する適応制御を表示する。
+
+    通常戦略を維持する場合は表示しない。
+    """
+    if decision.trigger == (
+        ADAPTIVE_TRIGGER_NONE
+    ):
+        return
+
+    trigger_codes = (
+        ", ".join(
+            decision.trigger_codes
+        )
+        if decision.trigger_codes
+        else "-"
+    )
+
+    source_chunk_number = (
+        str(
+            decision.source_chunk_number
+        )
+        if (
+            decision.source_chunk_number
+            is not None
+        )
+        else "-"
+    )
+
+    print()
+    print(
+        "Adaptive Translation:"
+    )
+    print(
+        "  Source Chunk   : "
+        f"{source_chunk_number}"
+    )
+    print(
+        "  Strategy       : "
+        f"{decision.strategy}"
+    )
+    print(
+        "  Trigger        : "
+        f"{decision.trigger}"
+    )
+    print(
+        "  Next Chunk Size: "
+        f"{next_chunk_size}"
+    )
+    print(
+        "  Trigger Codes  : "
+        f"{trigger_codes}"
     )
 
 

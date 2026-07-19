@@ -131,6 +131,12 @@ def patch_session_dependencies(
 
     monkeypatch.setattr(
         translation_session,
+        "print_adaptive_translation_decision",
+        lambda *args, **kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
         "print_translation_complete",
         lambda *args, **kwargs: None,
     )
