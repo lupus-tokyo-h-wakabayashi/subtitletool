@@ -1526,26 +1526,6 @@ def recover_single_hybrid_group(
                     )
                 )
 
-        if metrics_group is not None:
-            metrics_group.add_attempt(
-                TranslationAttemptMetric(
-                    pipeline="hybrid",
-                    attempt=attempt,
-                    target_ids=tuple(
-                        group.target_ids
-                    ),
-                    elapsed_seconds=(
-                        time.monotonic()
-                        - attempt_started_at
-                    ),
-                    response_received=True,
-                    validation_stage="complete",
-                    validation_valid=True,
-                )
-            )
-
-            metrics_group.mark_success()
-
             try_save_hybrid_attempt_report(
                 group=group,
                 model=model,
@@ -1572,6 +1552,26 @@ def recover_single_hybrid_group(
                 print(f"  - {reason}")
 
             continue
+
+        if metrics_group is not None:
+            metrics_group.add_attempt(
+                TranslationAttemptMetric(
+                    pipeline="hybrid",
+                    attempt=attempt,
+                    target_ids=tuple(
+                        group.target_ids
+                    ),
+                    elapsed_seconds=(
+                        time.monotonic()
+                        - attempt_started_at
+                    ),
+                    response_received=True,
+                    validation_stage="complete",
+                    validation_valid=True,
+                )
+            )
+
+            metrics_group.mark_success()
 
         try_save_hybrid_attempt_report(
             group=group,

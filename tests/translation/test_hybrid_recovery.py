@@ -26,7 +26,6 @@ from lib.translation.hybrid_recovery import (
     recover_translation_with_hybrid,
 )
 from lib.translation.translation_metrics import (
-    HybridGroupMetric,
     TranslationChunkMetric,
 )
 from lib.translation.translation_validation import (
@@ -1471,6 +1470,7 @@ def test_standard_validation_failure_is_recorded(
 
     validations = iter(
         [
+            # Hybrid試行1回目のグループ検証
             ValidationResult(
                 valid=False,
                 reasons=[
@@ -1481,6 +1481,26 @@ def test_standard_validation_failure_is_recorded(
                 ],
                 translated_texts=[],
             ),
+            # Hybrid試行2回目のグループ検証
+            ValidationResult(
+                valid=True,
+                translated_texts=[
+                    (
+                        "事態は制御下です。"
+                        "しかし念のため、"
+                    ),
+                    (
+                        "（判読不能）"
+                        "各自の居住区へ戻り、"
+                    ),
+                    (
+                        "追って通知があるまで"
+                        "そこに留まってください。"
+                        "以上です。"
+                    ),
+                ],
+            ),
+            # Hybrid反映後のチャンク全体検証
             ValidationResult(
                 valid=True,
                 translated_texts=[
@@ -2165,9 +2185,11 @@ def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
         model: str,
         noise_dictionary: NoiseDictionary,
         glossary_entries: object,
-        group_metric: HybridGroupMetric | None,
+        group_number: int = 1,
+        metrics: TranslationChunkMetric | None = None,
     ) -> list[str]:
-        del group_metric
+        del group_number
+        del metrics
 
         captured_failed_ids.update(
             group.failed_ids
