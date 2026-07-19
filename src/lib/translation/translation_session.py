@@ -36,6 +36,10 @@ from .translation_output import (
     print_translation_progress,
     print_translation_start,
 )
+from .translation_policy import (
+    build_adaptive_translation_decision,
+    resolve_adaptive_chunk_size,
+)
 
 
 def rebuild_speaker_text(
@@ -210,18 +214,33 @@ def run_translation_session(
         remaining_chunks=remaining_chunks,
     )
 
-    chunk_starts = range(
-        resume_start,
-        total_blocks,
-        chunk_size,
-    )
+    # Phase 2-3：チャンクサイズを
+    # 直前の処理結果から動的に変更する
+    start = resume_start
+    chunk_number = 1
+    current_chunk_size = chunk_size
 
-    for chunk_number, start in enumerate(
-        chunk_starts,
-        start=1,
-    ):
+    while start < total_blocks:
+        current_remaining_blocks = (
+            total_blocks - start
+        )
+
+        remaining_chunks = (
+            (
+                current_remaining_blocks
+                + current_chunk_size
+                - 1
+            )
+            // current_chunk_size
+        )
+
+        progress.total_chunks = (
+            progress.completed_chunks
+            + remaining_chunks
+        )
+
         end = min(
-            start + chunk_size,
+            start + current_chunk_size,
             total_blocks,
         )
 
@@ -407,6 +426,26 @@ def run_translation_session(
             session=session_metrics,
             chunk=chunk_metrics,
         )
+
+        # Phase 2-3：完了チャンクから
+        # 次チャンクのサイズを決定する
+        adaptive_decision = (
+            build_adaptive_translation_decision(
+                chunk_metrics
+            )
+        )
+
+        current_chunk_size = (
+            resolve_adaptive_chunk_size(
+                adaptive_decision,
+                configured_chunk_size=(
+                    chunk_size
+                ),
+            )
+        )
+
+        start = end
+        chunk_number += 1
 
     total_elapsed = (
         time.monotonic()

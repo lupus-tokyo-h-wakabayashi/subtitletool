@@ -9,6 +9,7 @@ from lib.translation import translation_session
 from lib.translation.translation_metrics import (
     TRANSLATION_RESULT_FAILED,
     TRANSLATION_RESULT_STANDARD_SUCCESS,
+    TranslationAttemptMetric,
     TranslationChunkMetric,
     TranslationSessionMetric,
 )
@@ -830,3 +831,235 @@ def test_run_translation_session_records_resume_position(
         "3",
         "4",
     )
+
+
+# 通常再試行後に次チャンクを縮小する
+def test_run_translation_session_applies_adaptive_chunk_size(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    source_blocks = [
+        SrtBlock(
+            number=str(number),
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                f"Subtitle {number}."
+            ),
+        )
+        for number in range(
+            1,
+            9,
+        )
+    ]
+
+    received_target_ids: list[
+        tuple[str, ...]
+    ] = []
+
+    saved_chunks: list[
+        TranslationChunkMetric
+    ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        assert metrics is not None
+
+        received_target_ids.append(
+            metrics.target_ids
+        )
+
+        if metrics.chunk_number == 1:
+            metrics.add_standard_attempt(
+                TranslationAttemptMetric(
+                    pipeline="standard",
+                    attempt=1,
+                    target_ids=(
+                        metrics.target_ids
+                    ),
+                    elapsed_seconds=1.0,
+                    response_received=True,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=False,
+                    validation_reasons=(
+                        (
+                            "Glossary violation: "
+                            "subtitle_id='1'"
+                        ),
+                    ),
+                    reason_codes=(
+                        "glossary_violation",
+                    ),
+                )
+            )
+
+            metrics.add_standard_attempt(
+                TranslationAttemptMetric(
+                    pipeline="standard",
+                    attempt=2,
+                    target_ids=(
+                        metrics.target_ids
+                    ),
+                    elapsed_seconds=1.0,
+                    response_received=True,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=True,
+                )
+            )
+        else:
+            metrics.add_standard_attempt(
+                TranslationAttemptMetric(
+                    pipeline="standard",
+                    attempt=1,
+                    target_ids=(
+                        metrics.target_ids
+                    ),
+                    elapsed_seconds=1.0,
+                    response_received=True,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=True,
+                )
+            )
+
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+            elapsed_seconds=1.0,
+        )
+
+        return [
+            f"翻訳結果 {subtitle_id}"
+            for subtitle_id
+            in metrics.target_ids
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+    ) -> tuple[Path, Path]:
+        del session
+        del output_directory
+
+        saved_chunks.append(
+            chunk
+        )
+
+        return (
+            Path(
+                f"chunk-{chunk.chunk_number}.json"
+            ),
+            Path(
+                "summary.json"
+            ),
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    result = (
+        translation_session.run_translation_session(
+            source_blocks=source_blocks,
+            translated_blocks_all=[],
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=4,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+        )
+    )
+
+    assert result is None
+
+    assert received_target_ids == [
+        (
+            "1",
+            "2",
+            "3",
+            "4",
+        ),
+        (
+            "5",
+            "6",
+        ),
+        (
+            "7",
+            "8",
+        ),
+    ]
+
+    assert len(
+        saved_chunks
+    ) == 3
+
+    assert [
+               chunk.chunk_number
+               for chunk in saved_chunks
+           ] == [
+               1,
+               2,
+               3,
+           ]
+
+    assert [
+               (
+                   chunk.chunk_start,
+                   chunk.chunk_end,
+               )
+               for chunk in saved_chunks
+           ] == [
+               (
+                   1,
+                   4,
+               ),
+               (
+                   5,
+                   6,
+               ),
+               (
+                   7,
+                   8,
+               ),
+           ]
