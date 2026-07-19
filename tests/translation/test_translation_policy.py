@@ -14,12 +14,13 @@ from lib.translation.translation_policy import (
     ADAPTIVE_STRATEGY_REDUCED_CHUNK,
     ADAPTIVE_STRATEGY_SINGLE_SUBTITLE,
     ADAPTIVE_STRATEGY_STANDARD,
-    AdaptiveTranslationDecision,
-    AdaptiveTranslationStrategy,
     ADAPTIVE_TRIGGER_FAILED,
     ADAPTIVE_TRIGGER_HYBRID,
     ADAPTIVE_TRIGGER_NONE,
     ADAPTIVE_TRIGGER_STANDARD_RETRY,
+    AdaptiveTranslationDecision,
+    AdaptiveTranslationStrategy,
+    build_adaptive_failure_recovery_decision,
     build_adaptive_translation_decision,
     resolve_adaptive_chunk_size,
 )
@@ -411,6 +412,98 @@ def test_failed_chunk_has_priority_over_hybrid_trigger(
     assert (
         decision.trigger
         == ADAPTIVE_TRIGGER_FAILED
+    )
+
+
+# 複数字幕の失敗は単一字幕で再処理する
+def test_failed_group_retries_with_single_subtitle(
+) -> None:
+    metrics = build_chunk_metrics()
+
+    metrics.complete(
+        final_result=(
+            TRANSLATION_RESULT_FAILED
+        ),
+        elapsed_seconds=1.0,
+        failed_ids=(
+            "1",
+            "2",
+        ),
+    )
+
+    decision = (
+        build_adaptive_failure_recovery_decision(
+            metrics
+        )
+    )
+
+    assert (
+        decision.retry_with_single_subtitle
+        is True
+    )
+
+    assert decision.next_chunk_size == 1
+
+    assert (
+        decision.source_chunk_number
+        == 1
+    )
+
+    assert decision.trigger_codes == (
+        "translation_failed",
+    )
+
+
+# 単一字幕の失敗は再処理しない
+def test_failed_single_subtitle_does_not_retry(
+) -> None:
+    metrics = TranslationChunkMetric(
+        chunk_number=2,
+        chunk_start=5,
+        chunk_end=5,
+        target_ids=(
+            "5",
+        ),
+        started_at=datetime(
+            2026,
+            7,
+            19,
+            12,
+            0,
+            0,
+        ),
+    )
+
+    metrics.complete(
+        final_result=(
+            TRANSLATION_RESULT_FAILED
+        ),
+        elapsed_seconds=1.0,
+        failed_ids=(
+            "5",
+        ),
+    )
+
+    decision = (
+        build_adaptive_failure_recovery_decision(
+            metrics
+        )
+    )
+
+    assert (
+        decision.retry_with_single_subtitle
+        is False
+    )
+
+    assert decision.next_chunk_size == 1
+
+    assert (
+        decision.source_chunk_number
+        == 2
+    )
+
+    assert decision.trigger_codes == (
+        "translation_failed",
     )
 
 

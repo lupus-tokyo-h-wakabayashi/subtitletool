@@ -67,6 +67,63 @@ class AdaptiveTranslationDecision:
     ] = ()
 
 
+@dataclass(frozen=True)
+class AdaptiveFailureRecoveryDecision:
+    """
+    失敗チャンクを単一字幕へ縮小して
+    再処理するかどうかを保持する。
+    """
+
+    retry_with_single_subtitle: bool
+    next_chunk_size: int
+    source_chunk_number: int
+    trigger_codes: tuple[
+        str,
+        ...
+    ]
+
+
+def build_adaptive_failure_recovery_decision(
+    chunk: TranslationChunkMetric,
+) -> AdaptiveFailureRecoveryDecision:
+    """
+    失敗チャンクの計測結果から、
+    単一字幕で再処理するかを決定する。
+
+    複数字幕を処理して失敗した場合:
+        同じ開始位置を字幕1件で再処理する。
+
+    字幕1件の処理でも失敗した場合:
+        これ以上縮小できないため再処理しない。
+    """
+    decision = (
+        build_adaptive_translation_decision(
+            chunk
+        )
+    )
+
+    retry_with_single_subtitle = (
+        decision.strategy
+        == ADAPTIVE_STRATEGY_SINGLE_SUBTITLE
+        and len(
+        chunk.target_ids
+    ) > 1
+    )
+
+    return AdaptiveFailureRecoveryDecision(
+        retry_with_single_subtitle=(
+            retry_with_single_subtitle
+        ),
+        next_chunk_size=1,
+        source_chunk_number=(
+            chunk.chunk_number
+        ),
+        trigger_codes=(
+            decision.trigger_codes
+        ),
+    )
+
+
 def build_adaptive_translation_decision(
     chunk: TranslationChunkMetric,
 ) -> AdaptiveTranslationDecision:
