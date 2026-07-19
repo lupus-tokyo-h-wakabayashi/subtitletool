@@ -8,6 +8,7 @@ from lib.subtitle.srt import SrtBlock
 from lib.translation import translation_session
 from lib.translation.translation_metrics import (
     TRANSLATION_RESULT_FAILED,
+    TRANSLATION_RESULT_HYBRID_SUCCESS,
     TRANSLATION_RESULT_STANDARD_SUCCESS,
     TranslationAttemptMetric,
     TranslationChunkMetric,
@@ -1741,6 +1742,330 @@ def test_run_translation_session_records_resume_position(
     assert chunk_metrics.target_ids == (
         "3",
         "4",
+    )
+
+
+# Hybrid成功後に次チャンクを縮小し、
+# 通常成功後は設定サイズへ戻す
+def test_run_translation_session_applies_reduced_chunk_after_hybrid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    source_blocks = [
+        SrtBlock(
+            number=str(number),
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                f"Subtitle {number}."
+            ),
+        )
+        for number in range(
+            1,
+            9,
+        )
+    ]
+
+    received_target_ids: list[
+        tuple[str, ...]
+    ] = []
+
+    saved_chunks: list[
+        TranslationChunkMetric
+    ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        assert metrics is not None
+
+        received_target_ids.append(
+            metrics.target_ids
+        )
+
+        if metrics.chunk_number == 1:
+            hybrid_reasons = (
+                (
+                    "Untranslated English sentence "
+                    "detected: subtitle_id='2'"
+                ),
+            )
+
+            metrics.add_standard_attempt(
+                TranslationAttemptMetric(
+                    pipeline="standard",
+                    attempt=1,
+                    target_ids=(
+                        metrics.target_ids
+                    ),
+                    elapsed_seconds=1.0,
+                    response_received=True,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=False,
+                    validation_reasons=(
+                        hybrid_reasons
+                    ),
+                    reason_codes=(
+                        "untranslated_english_sentence_detected",
+                    ),
+                )
+            )
+
+            metrics.trigger_hybrid(
+                hybrid_reasons
+            )
+
+            metrics.complete(
+                final_result=(
+                    TRANSLATION_RESULT_HYBRID_SUCCESS
+                ),
+                elapsed_seconds=2.0,
+            )
+        else:
+            metrics.add_standard_attempt(
+                TranslationAttemptMetric(
+                    pipeline="standard",
+                    attempt=1,
+                    target_ids=(
+                        metrics.target_ids
+                    ),
+                    elapsed_seconds=1.0,
+                    response_received=True,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=True,
+                )
+            )
+
+            metrics.complete(
+                final_result=(
+                    TRANSLATION_RESULT_STANDARD_SUCCESS
+                ),
+                elapsed_seconds=1.0,
+            )
+
+        return [
+            f"翻訳結果 {subtitle_id}"
+            for subtitle_id
+            in metrics.target_ids
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+    ) -> tuple[Path, Path]:
+        del session
+        del output_directory
+
+        saved_chunks.append(
+            chunk
+        )
+
+        return (
+            Path(
+                f"chunk-{chunk.chunk_number}.json"
+            ),
+            Path(
+                "summary.json"
+            ),
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    translated_blocks: list[
+        SrtBlock
+    ] = []
+
+    result = (
+        translation_session.run_translation_session(
+            source_blocks=source_blocks,
+            translated_blocks_all=(
+                translated_blocks
+            ),
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=4,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+        )
+    )
+
+    assert result is None
+
+    # 最初は設定サイズ4、
+    # Hybrid成功後は2、
+    # 通常成功後は設定サイズ4へ戻る
+    assert received_target_ids == [
+        (
+            "1",
+            "2",
+            "3",
+            "4",
+        ),
+        (
+            "5",
+            "6",
+        ),
+        (
+            "7",
+            "8",
+        ),
+    ]
+
+    assert [
+               block.number
+               for block in translated_blocks
+           ] == [
+               "1",
+               "2",
+               "3",
+               "4",
+               "5",
+               "6",
+               "7",
+               "8",
+           ]
+
+    assert len(
+        saved_chunks
+    ) == 3
+
+    first_chunk = saved_chunks[0]
+    reduced_chunk = saved_chunks[1]
+    resumed_chunk = saved_chunks[2]
+
+    assert (
+        first_chunk.final_result
+        == TRANSLATION_RESULT_HYBRID_SUCCESS
+    )
+
+    assert first_chunk.hybrid_triggered is True
+
+    assert first_chunk.hybrid_trigger_codes == (
+        "untranslated_english_sentence_detected",
+    )
+
+    first_adaptive = (
+        first_chunk.adaptive
+    )
+
+    assert first_adaptive is not None
+
+    assert (
+        first_adaptive.strategy
+        == "standard"
+    )
+
+    assert (
+        first_adaptive.trigger
+        == "none"
+    )
+
+    reduced_adaptive = (
+        reduced_chunk.adaptive
+    )
+
+    assert reduced_adaptive is not None
+
+    assert (
+        reduced_adaptive.strategy
+        == "reduced_chunk"
+    )
+
+    assert (
+        reduced_adaptive.trigger
+        == "hybrid"
+    )
+
+    assert (
+        reduced_adaptive.source_chunk_number
+        == 1
+    )
+
+    assert (
+        reduced_adaptive.configured_chunk_size
+        == 4
+    )
+
+    assert (
+        reduced_adaptive.applied_chunk_size
+        == 2
+    )
+
+    assert reduced_adaptive.trigger_codes == (
+        "untranslated_english_sentence_detected",
+    )
+
+    resumed_adaptive = (
+        resumed_chunk.adaptive
+    )
+
+    assert resumed_adaptive is not None
+
+    assert (
+        resumed_adaptive.strategy
+        == "standard"
+    )
+
+    assert (
+        resumed_adaptive.trigger
+        == "none"
+    )
+
+    assert (
+        resumed_adaptive.source_chunk_number
+        == 2
+    )
+
+    assert (
+        resumed_adaptive.configured_chunk_size
+        == 4
+    )
+
+    # 設定サイズは4だが、
+    # 残り字幕数は2件
+    assert (
+        resumed_adaptive.applied_chunk_size
+        == 2
     )
 
 
