@@ -144,6 +144,12 @@ def patch_session_dependencies(
         lambda *args, **kwargs: None,
     )
 
+    monkeypatch.setattr(
+        translation_session,
+        "print_translation_failed",
+        lambda *args, **kwargs: None,
+    )
+
 
 # 正常終了チャンクの計測保存
 def test_run_translation_session_saves_success_metrics(
@@ -162,6 +168,18 @@ def test_run_translation_session_saves_success_metrics(
         tuple[
             TranslationSessionMetric,
             TranslationChunkMetric,
+        ]
+    ] = []
+
+    displayed_failures: list[
+        tuple[
+            str,
+            int,
+            int,
+            tuple[str, ...],
+            str,
+            str,
+            Path,
         ]
     ] = []
 
@@ -213,6 +231,29 @@ def test_run_translation_session_saves_success_metrics(
             Path(
                 "summary.json"
             ),
+        )
+
+    def fake_print_translation_failed(
+        *,
+        session_result: str,
+        translated_count: int,
+        total_blocks: int,
+        failed_ids: tuple[str, ...],
+        error: Exception,
+        output_path: Path,
+    ) -> None:
+        displayed_failures.append(
+            (
+                session_result,
+                translated_count,
+                total_blocks,
+                failed_ids,
+                type(error).__name__,
+                str(
+                    error
+                ),
+                output_path,
+            )
         )
 
     monkeypatch.setattr(
@@ -352,6 +393,18 @@ def test_run_translation_session_reraises_single_subtitle_failure(
         ]
     ] = []
 
+    displayed_failures: list[
+        tuple[
+            str,
+            int,
+            int,
+            tuple[str, ...],
+            str,
+            str,
+            Path,
+        ]
+    ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -400,6 +453,29 @@ def test_run_translation_session_reraises_single_subtitle_failure(
             ),
         )
 
+    def fake_print_translation_failed(
+        *,
+        session_result: str,
+        translated_count: int,
+        total_blocks: int,
+        failed_ids: tuple[str, ...],
+        error: Exception,
+        output_path: Path,
+    ) -> None:
+        displayed_failures.append(
+            (
+                session_result,
+                translated_count,
+                total_blocks,
+                failed_ids,
+                type(error).__name__,
+                str(
+                    error
+                ),
+                output_path,
+            )
+        )
+
     monkeypatch.setattr(
         translation_session,
         "translate_chunk",
@@ -410,6 +486,12 @@ def test_run_translation_session_reraises_single_subtitle_failure(
         translation_session,
         "try_save_translation_metrics_reports",
         fake_save_metrics,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_translation_failed",
+        fake_print_translation_failed,
     )
 
     source_blocks = [
@@ -511,6 +593,23 @@ def test_run_translation_session_reraises_single_subtitle_failure(
     assert adaptive.configured_chunk_size == 2
     assert adaptive.applied_chunk_size == 1
     assert adaptive.trigger_codes == ()
+
+    assert displayed_failures == [
+        (
+            "failed",
+            0,
+            1,
+            (
+                "1",
+            ),
+            "RuntimeError",
+            "translation failed",
+            (
+                tmp_path
+                / "output.srt"
+            ),
+        ),
+    ]
 
 
 # 複数字幕の失敗後は先頭から単一字幕で再処理する

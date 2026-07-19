@@ -36,6 +36,7 @@ from .translation_output import (
     print_adaptive_translation_decision,
     print_chunk_start,
     print_translation_complete,
+    print_translation_failed,
     print_translation_progress,
     print_translation_start,
 )
@@ -434,7 +435,7 @@ def run_translation_session(
                 profile_name=resolved_profile,
                 metrics=chunk_metrics,
             )
-        except Exception:
+        except Exception as error:
             session_metrics.complete(
                 elapsed_seconds=(
                     time.monotonic()
@@ -457,6 +458,25 @@ def run_translation_session(
                 failure_recovery
                     .retry_with_single_subtitle
             ):
+                session_result = (
+                    build_translation_session_result(
+                        session_metrics
+                    )
+                )
+
+                print_translation_failed(
+                    session_result=session_result,
+                    translated_count=len(
+                        translated_blocks_all
+                    ),
+                    total_blocks=total_blocks,
+                    failed_ids=(
+                        chunk_metrics.failed_ids
+                    ),
+                    error=error,
+                    output_path=output_path,
+                )
+
                 raise
 
             # Phase 3-2：複数字幕チャンクの失敗後は

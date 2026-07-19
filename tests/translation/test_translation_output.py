@@ -8,10 +8,12 @@ from lib.infrastructure.progress import (
 )
 from lib.translation.translation_metrics_inspection import (
     TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY,
+    TRANSLATION_SESSION_RESULT_FAILED,
 )
 from lib.translation.translation_output import (
     print_adaptive_translation_decision,
     print_translation_complete,
+    print_translation_failed,
 )
 from lib.translation.translation_policy import (
     ADAPTIVE_STRATEGY_REDUCED_CHUNK,
@@ -183,5 +185,60 @@ def test_print_translation_complete_displays_session_result(
 
     assert (
         "Output      : output.srt"
+        in captured.out
+    )
+
+
+# 回復不能な翻訳失敗表示
+def test_print_translation_failed_displays_terminal_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    print_translation_failed(
+        session_result=(
+            TRANSLATION_SESSION_RESULT_FAILED
+        ),
+        translated_count=1,
+        total_blocks=4,
+        failed_ids=(
+            "2",
+        ),
+        error=RuntimeError(
+            "single subtitle failed"
+        ),
+        output_path=Path(
+            "output.srt"
+        ),
+    )
+
+    captured = capsys.readouterr()
+
+    assert (
+        "Translation Failed"
+        in captured.out
+    )
+
+    assert (
+        "Result      : failed"
+        in captured.out
+    )
+
+    assert (
+        "Completed   : 1 / 4"
+        in captured.out
+    )
+
+    assert (
+        "Failed IDs  : 2"
+        in captured.out
+    )
+
+    assert (
+        "Error       : RuntimeError: "
+        "single subtitle failed"
+        in captured.out
+    )
+
+    assert (
+        "Partial     : output.srt"
         in captured.out
     )

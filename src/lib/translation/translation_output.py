@@ -301,6 +301,46 @@ def print_adaptive_translation_decision(
     )
 
 
+def print_translation_failed(
+    *,
+    session_result: str,
+    translated_count: int,
+    total_blocks: int,
+    failed_ids: tuple[str, ...],
+    error: Exception,
+    output_path: Path,
+) -> None:
+    """
+    適応回復できずに翻訳セッションを
+    終了する場合の結果を表示する。
+    """
+    failed_ids_text = (
+        ", ".join(
+            failed_ids
+        )
+        if failed_ids
+        else "-"
+    )
+
+    print()
+    print("========================================")
+    print("Translation Failed")
+    print("========================================")
+    print(f"Result      : {session_result}")
+    print(
+        "Completed   : "
+        f"{translated_count} / {total_blocks}"
+    )
+    print(f"Failed IDs  : {failed_ids_text}")
+    print(
+        "Error       : "
+        f"{type(error).__name__}: "
+        f"{error}"
+    )
+    print(f"Partial     : {output_path}")
+    print("========================================")
+
+
 def print_translation_complete(
     *,
     session_result: str,
