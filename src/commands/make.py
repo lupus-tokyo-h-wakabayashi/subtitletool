@@ -19,7 +19,10 @@ from lib.subtitle.paths import (
     ja_mkv_path,
     ja_srt_path,
 )
-from lib.translation.translate import translate_srt
+from lib.translation.translate import (
+    MODEL,
+    translate_srt,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,6 +36,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input_mkv",
         help="Input MKV file",
+    )
+
+    parser.add_argument(
+        "--model",
+        default=MODEL,
+        help=(
+            "Ollama model name. "
+            f"Uses {MODEL} when omitted."
+        ),
     )
 
     parser.add_argument(
@@ -102,6 +114,7 @@ def main() -> None:
     print(f"ENG   : {eng_srt}")
     print(f"JPN   : {ja_srt}")
     print(f"Output: {output_mkv}")
+    print(f"Model : {args.model}")
 
     if args.profile is not None:
         print(f"Profile: {args.profile}")
@@ -113,6 +126,7 @@ def main() -> None:
     translate_srt(
         eng_srt,
         ja_srt,
+        model=args.model,
         profile_name=args.profile,
     )
     result_mkv = mux_japanese_srt(

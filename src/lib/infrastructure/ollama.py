@@ -27,6 +27,7 @@ def build_generate_payload(
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "think": False,
         "options": {
             "temperature": temperature,
             "top_p": top_p,

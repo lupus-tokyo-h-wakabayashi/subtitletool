@@ -19,6 +19,7 @@ def test_build_generate_payload_without_response_format(
         "model": "qwen3:14b",
         "prompt": "Translate this subtitle.",
         "stream": False,
+        "think": False,
         "options": {
             "temperature": 0.2,
             "top_p": 0.9,
@@ -55,6 +56,7 @@ def test_build_generate_payload_with_response_format(
         "model": "qwen3:14b",
         "prompt": "Translate this subtitle.",
         "stream": False,
+        "think": False,
         "options": {
             "temperature": 0.2,
             "top_p": 0.9,
