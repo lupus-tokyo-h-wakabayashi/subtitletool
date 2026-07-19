@@ -238,6 +238,18 @@ def run_translation_session(
         )
     )
 
+    # Phase 3-3：失敗した元チャンクの終了位置まで
+    # 単一字幕処理を継続する
+    single_subtitle_recovery_end: (
+        int
+        | None
+    ) = None
+
+    single_subtitle_recovery_decision: (
+        AdaptiveTranslationDecision
+        | None
+    ) = None
+
     while start < total_blocks:
         current_remaining_blocks = (
             total_blocks - start
@@ -443,6 +455,12 @@ def run_translation_session(
                 failure_recovery.next_chunk_size
             )
 
+            single_subtitle_recovery_end = end
+
+            single_subtitle_recovery_decision = (
+                current_adaptive_decision
+            )
+
             print_adaptive_translation_decision(
                 decision=(
                     current_adaptive_decision
@@ -508,22 +526,54 @@ def run_translation_session(
             chunk=chunk_metrics,
         )
 
-        # Phase 2-3：完了チャンクから
-        # 次チャンクのサイズを決定する
-        current_adaptive_decision = (
-            build_adaptive_translation_decision(
-                chunk_metrics
-            )
-        )
+        # Phase 3-3：失敗した元チャンクの範囲内は
+        # 単一字幕戦略を維持する
+        if (
+            single_subtitle_recovery_end
+            is not None
+            and end
+            < single_subtitle_recovery_end
+        ):
+            if (
+                single_subtitle_recovery_decision
+                is None
+            ):
+                raise RuntimeError(
+                    "Single subtitle recovery "
+                    "decision is missing"
+                )
 
-        current_chunk_size = (
-            resolve_adaptive_chunk_size(
-                current_adaptive_decision,
-                configured_chunk_size=(
-                    chunk_size
-                ),
+            current_adaptive_decision = (
+                single_subtitle_recovery_decision
             )
-        )
+
+            current_chunk_size = 1
+        else:
+            # 失敗した元チャンクの末尾まで
+            # 再処理できた場合は回復状態を解除する
+            if (
+                single_subtitle_recovery_end
+                is not None
+            ):
+                single_subtitle_recovery_end = None
+                single_subtitle_recovery_decision = None
+
+            # Phase 2-3：完了チャンクから
+            # 次チャンクのサイズを決定する
+            current_adaptive_decision = (
+                build_adaptive_translation_decision(
+                    chunk_metrics
+                )
+            )
+
+            current_chunk_size = (
+                resolve_adaptive_chunk_size(
+                    current_adaptive_decision,
+                    configured_chunk_size=(
+                        chunk_size
+                    ),
+                )
+            )
 
         # Phase 2-9：次チャンクが存在する場合だけ
         # 適応制御の決定内容を表示する

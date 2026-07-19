@@ -337,7 +337,7 @@ def test_run_translation_session_saves_success_metrics(
 
 
 # 単一字幕の翻訳例外は計測保存後に再送出する
-def test_run_translation_session_saves_failed_metrics_before_reraising(
+def test_run_translation_session_reraises_single_subtitle_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -522,6 +522,23 @@ def test_run_translation_session_retries_failed_group_individually(
         monkeypatch
     )
 
+    source_blocks = [
+        SrtBlock(
+            number=str(number),
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                f"Subtitle {number}."
+            ),
+        )
+        for number in range(
+            1,
+            7,
+        )
+    ]
+
     received_target_ids: list[
         tuple[str, ...]
     ] = []
@@ -555,6 +572,8 @@ def test_run_translation_session_retries_failed_group_individually(
                 failed_ids=(
                     "1",
                     "2",
+                    "3",
+                    "4",
                 ),
             )
 
@@ -629,9 +648,7 @@ def test_run_translation_session_retries_failed_group_individually(
 
     result = (
         translation_session.run_translation_session(
-            source_blocks=(
-                build_source_blocks()
-            ),
+            source_blocks=source_blocks,
             translated_blocks_all=(
                 translated_blocks
             ),
@@ -640,7 +657,7 @@ def test_run_translation_session_retries_failed_group_individually(
                 / "output.srt"
             ),
             model="test-model",
-            chunk_size=2,
+            chunk_size=4,
             context_size=1,
             profile_config=(
                 build_profile_config(
@@ -662,12 +679,24 @@ def test_run_translation_session_retries_failed_group_individually(
         (
             "1",
             "2",
+            "3",
+            "4",
         ),
         (
             "1",
         ),
         (
             "2",
+        ),
+        (
+            "3",
+        ),
+        (
+            "4",
+        ),
+        (
+            "5",
+            "6",
         ),
     ]
 
@@ -677,15 +706,23 @@ def test_run_translation_session_retries_failed_group_individually(
            ] == [
                "1",
                "2",
+               "3",
+               "4",
+               "5",
+               "6",
            ]
 
     assert len(
         saved_chunks
-    ) == 3
+    ) == 6
 
     failed_chunk = saved_chunks[0]
-    first_retry_chunk = saved_chunks[1]
-    second_retry_chunk = saved_chunks[2]
+
+    retry_chunks = (
+        saved_chunks[1:5]
+    )
+
+    resumed_chunk = saved_chunks[5]
 
     assert (
         failed_chunk.final_result
@@ -695,6 +732,8 @@ def test_run_translation_session_retries_failed_group_individually(
     assert failed_chunk.target_ids == (
         "1",
         "2",
+        "3",
+        "4",
     )
 
     assert (
@@ -702,67 +741,94 @@ def test_run_translation_session_retries_failed_group_individually(
         == "group translation failed"
     )
 
-    first_retry_adaptive = (
-        first_retry_chunk.adaptive
-    )
+    assert [
+               chunk.target_ids
+               for chunk in retry_chunks
+           ] == [
+               (
+                   "1",
+               ),
+               (
+                   "2",
+               ),
+               (
+                   "3",
+               ),
+               (
+                   "4",
+               ),
+           ]
 
-    assert first_retry_adaptive is not None
-
-    assert (
-        first_retry_adaptive.strategy
-        == "single_subtitle"
-    )
-
-    assert (
-        first_retry_adaptive.trigger
-        == "failed"
-    )
-
-    assert (
-        first_retry_adaptive
-        .source_chunk_number
-        == 1
-    )
-
-    assert (
-        first_retry_adaptive
-        .applied_chunk_size
-        == 1
-    )
-
-    assert (
-        first_retry_adaptive.trigger_codes
-        == (
-            "translation_failed",
+    for retry_chunk in retry_chunks:
+        retry_adaptive = (
+            retry_chunk.adaptive
         )
+
+        assert retry_adaptive is not None
+
+        assert (
+            retry_adaptive.strategy
+            == "single_subtitle"
+        )
+
+        assert (
+            retry_adaptive.trigger
+            == "failed"
+        )
+
+        assert (
+            retry_adaptive
+            .source_chunk_number
+            == 1
+        )
+
+        assert (
+            retry_adaptive.applied_chunk_size
+            == 1
+        )
+
+        assert (
+            retry_adaptive.trigger_codes
+            == (
+                "translation_failed",
+            )
+        )
+
+    assert resumed_chunk.target_ids == (
+        "5",
+        "6",
     )
 
-    second_retry_adaptive = (
-        second_retry_chunk.adaptive
+    resumed_adaptive = (
+        resumed_chunk.adaptive
     )
 
-    assert second_retry_adaptive is not None
+    assert resumed_adaptive is not None
 
     assert (
-        second_retry_adaptive.strategy
+        resumed_adaptive.strategy
         == "standard"
     )
 
     assert (
-        second_retry_adaptive.trigger
+        resumed_adaptive.trigger
         == "none"
     )
 
     assert (
-        second_retry_adaptive
+        resumed_adaptive
         .source_chunk_number
-        == 2
+        == 5
     )
 
     assert (
-        second_retry_adaptive
-        .applied_chunk_size
-        == 1
+        resumed_adaptive.configured_chunk_size
+        == 4
+    )
+
+    assert (
+        resumed_adaptive.applied_chunk_size
+        == 2
     )
 
 
