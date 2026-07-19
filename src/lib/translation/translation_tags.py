@@ -310,6 +310,22 @@ def render_translation_tags(
     )
 
 
+def normalize_level_3_source_match_text(
+    text: str,
+) -> str:
+    """
+    Level 3タグと原文を照合するため、
+    空白文字の違いを正規化する。
+
+    元の文字列は変更せず、
+    比較時だけ改行・タブ・連続空白を
+    単一の半角スペースとして扱う。
+    """
+    return " ".join(
+        text.split()
+    )
+
+
 def process_translation_tags(
     translated_texts: list[str],
     subtitle_ids: list[str],
@@ -429,7 +445,29 @@ def process_translation_tags(
                     # Level5はタグ構造のみ検証する
                     continue
 
-                if tag.value in source_text:
+                tag_value_for_match = (
+                    tag.value
+                )
+                source_text_for_match = (
+                    source_text
+                )
+
+                if tag.level == 3:
+                    tag_value_for_match = (
+                        normalize_level_3_source_match_text(
+                            tag.value
+                        )
+                    )
+                    source_text_for_match = (
+                        normalize_level_3_source_match_text(
+                            source_text
+                        )
+                    )
+
+                if (
+                    tag_value_for_match
+                    in source_text_for_match
+                ):
                     continue
 
                 item_errors.append(

@@ -55,21 +55,43 @@ _JAPANESE_TO_TRADITIONAL = OpenCC(
     "jp2t"
 )
 
+OPENCC_AMBIGUOUS_JAPANESE_CHARACTERS = frozenset(
+    {
+        "内",
+        "占",
+    }
+)
+
 
 @dataclass(frozen=True)
 class SimplifiedChineseDetection:
     """
     OpenCCのs2tとjp2tの変換差分から取得した
-    簡体字候補。
+    簡体字候補の分類結果。
+
+    charactersには、
+    中国語混入として扱う高確度文字を保持する。
+
+    ambiguous_charactersには、
+    OpenCC上は簡体字候補になるが、
+    日本語でも正常に使われるため
+    文字単体では中国語固有と断定できない文字を保持する。
     """
 
     source_text: str
     simplified_to_traditional: str
     japanese_to_traditional: str
     characters: tuple[str, ...]
+    ambiguous_characters: tuple[str, ...]
 
     @property
     def detected(self) -> bool:
+        """
+        高確度の簡体字文字が存在する場合だけTrueを返す。
+
+        曖昧文字だけが存在する場合は、
+        日本語文章を誤検出しないためFalseを返す。
+        """
         return bool(
             self.characters
         )
@@ -83,11 +105,19 @@ def detect_simplified_chinese(
 ) -> SimplifiedChineseDetection:
     """
     各文字をOpenCCのs2tとjp2tで個別変換し、
-    簡体字専用と判断できる元文字を返す。
+    簡体字候補を高確度文字と曖昧文字へ分類する。
 
-    判定条件:
+    OpenCC候補の基本条件:
+
         s2t変換では変化する
         jp2t変換では変化しない
+
+    基本条件を満たした文字のうち、
+    日本語でも正常に使用されることが確認されている文字は
+    ambiguous_charactersへ分類する。
+
+    それ以外はcharactersへ分類し、
+    中国語混入として扱う。
 
     文全体の変換結果は診断情報として保持するが、
     文字位置の比較には使用しない。
@@ -105,6 +135,7 @@ def detect_simplified_chinese(
     )
 
     detected_characters: list[str] = []
+    ambiguous_characters: list[str] = []
 
     for source_character in text:
         simplified_character = (
@@ -133,6 +164,20 @@ def detect_simplified_chinese(
 
         if (
             source_character
+            in OPENCC_AMBIGUOUS_JAPANESE_CHARACTERS
+        ):
+            if (
+                source_character
+                not in ambiguous_characters
+            ):
+                ambiguous_characters.append(
+                    source_character
+                )
+
+            continue
+
+        if (
+            source_character
             in detected_characters
         ):
             continue
@@ -151,6 +196,9 @@ def detect_simplified_chinese(
         ),
         characters=tuple(
             detected_characters
+        ),
+        ambiguous_characters=tuple(
+            ambiguous_characters
         ),
     )
 

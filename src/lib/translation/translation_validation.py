@@ -835,6 +835,42 @@ def find_repeated_lines(
     return repeated
 
 
+def find_repeated_translation_subtitle_ids(
+    translated_texts: list[str],
+    subtitle_ids: list[str],
+    repeated_text: str,
+) -> list[str]:
+    """
+    同一翻訳を返した字幕IDを入力順で返す。
+    """
+    if len(translated_texts) != len(
+        subtitle_ids
+    ):
+        return []
+
+    normalized_repeated_text = (
+        normalize_line_for_comparison(
+            repeated_text
+        )
+    )
+
+    return [
+        subtitle_id
+        for (
+            subtitle_id,
+            translated_text,
+        ) in zip(
+            subtitle_ids,
+            translated_texts,
+            strict=True,
+        )
+        if normalize_line_for_comparison(
+            translated_text
+        )
+           == normalized_repeated_text
+    ]
+
+
 def find_chinese_specific_characters(
     translated_texts: list[str],
     subtitle_ids: list[str],
@@ -1395,10 +1431,20 @@ def validate_translation_response(
     )
 
     for repeated_text, count in repeated_lines:
+        repeated_subtitle_ids = (
+            find_repeated_translation_subtitle_ids(
+                translated_texts,
+                expected_ids,
+                repeated_text,
+            )
+        )
+
         result.add_error(
             "Repeated translation detected: "
             f"count={count}, "
-            f"text={repeated_text[:80]!r}"
+            f"text={repeated_text[:80]!r}, "
+            "subtitle_ids="
+            f"{repeated_subtitle_ids!r}"
         )
 
     if (
@@ -1523,11 +1569,22 @@ def validate_translation_response(
             repeated_sequences[0]
         )
 
+        repeated_subtitle_ids = (
+            find_repeated_sequence_subtitle_ids(
+                expected_ids,
+                first_start=first_start,
+                second_start=second_start,
+                length=length,
+            )
+        )
+
         result.add_error(
             "Repeated translation sequence detected: "
             f"first_start={first_start}, "
             f"second_start={second_start}, "
-            f"length={length}"
+            f"length={length}, "
+            "subtitle_ids="
+            f"{repeated_subtitle_ids!r}"
         )
 
     return result
@@ -1851,3 +1908,55 @@ def find_repeated_sequences(
                 )
 
     return repeated
+
+
+def find_repeated_sequence_subtitle_ids(
+    subtitle_ids: list[str],
+    *,
+    first_start: int,
+    second_start: int,
+    length: int,
+) -> list[str]:
+    """
+    1始まりの重複シーケンス位置を
+    字幕IDへ変換する。
+    """
+    if (
+        first_start < 1
+        or second_start < 1
+        or length < 1
+    ):
+        return []
+
+    first_index = first_start - 1
+    second_index = second_start - 1
+
+    if (
+        first_index + length
+        > len(subtitle_ids)
+        or second_index + length
+        > len(subtitle_ids)
+    ):
+        return []
+
+    repeated_indices = set(
+        range(
+            first_index,
+            first_index + length,
+        )
+    )
+
+    repeated_indices.update(
+        range(
+            second_index,
+            second_index + length,
+        )
+    )
+
+    return [
+        subtitle_id
+        for index, subtitle_id in enumerate(
+            subtitle_ids
+        )
+        if index in repeated_indices
+    ]

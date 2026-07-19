@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from lib.profile.glossary import (
     GlossaryEntries,
@@ -8,10 +10,14 @@ from lib.profile.glossary import (
 from lib.profile.noise import (
     NoiseEntry,
 )
-from lib.translation.translation_validation import (
-    find_glossary_violations,
+from lib.translation.translation_tags import (
+    process_translation_tags,
 )
 from lib.translation.translation_validation import (
+    find_chinese_specific_characters,
+    find_glossary_violations,
+    find_repeated_sequence_subtitle_ids,
+    find_repeated_translation_subtitle_ids,
     validate_translation_response,
 )
 from .helpers import build_test_noise_dictionary
@@ -287,6 +293,69 @@ def test_validation_processes_level_3_with_normal_validation(
     assert result.translated_texts == [
         "船名はDestinyです。",
     ]
+
+
+def test_level_3_source_match_normalizes_whitespace(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            (
+                "[3]CIN Maal- male Ws "
+                "of the land.[/3]"
+            ),
+        ],
+        subtitle_ids=[
+            "316",
+        ],
+        source_texts=[
+            (
+                "CIN Maal- male Ws\n"
+                "of the land."
+            ),
+        ],
+    )
+
+    assert result.errors == ()
+
+    assert result.translated_texts == (
+        "CIN Maal- male Ws of the land.",
+    )
+
+
+def test_level_3_source_match_still_rejects_text_difference(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            (
+                "[3]CIN Maal- female Ws "
+                "of the land.[/3]"
+            ),
+        ],
+        subtitle_ids=[
+            "316",
+        ],
+        source_texts=[
+            (
+                "CIN Maal- male Ws\n"
+                "of the land."
+            ),
+        ],
+    )
+
+    assert len(
+        result.errors
+    ) == 1
+
+    assert (
+        "Translation evaluation tag value "
+        "not found in source"
+        in result.errors[0].message
+    )
+
+    assert (
+        "level=3"
+        in result.errors[0].message
+    )
 
 
 def test_validation_rejects_untranslated_level_3_sentence(
@@ -1038,3 +1107,525 @@ def test_plain_dictionary_keeps_case_insensitive_behavior(
     )
 
     assert len(violations) == 1
+
+
+def test_find_repeated_translation_subtitle_ids(
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    translated_texts = [
+        "では、容疑者はいますか？"
+        for _ in subtitle_ids
+    ]
+
+    actual = (
+        find_repeated_translation_subtitle_ids(
+            translated_texts,
+            subtitle_ids,
+            "では、容疑者はいますか？",
+        )
+    )
+
+    assert actual == subtitle_ids
+
+
+def test_find_repeated_sequence_subtitle_ids(
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    actual = (
+        find_repeated_sequence_subtitle_ids(
+            subtitle_ids,
+            first_start=1,
+            second_start=4,
+            length=3,
+        )
+    )
+
+    assert actual == [
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+    ]
+
+
+@pytest.mark.parametrize(
+    (
+            "first_start",
+            "second_start",
+            "length",
+    ),
+    [
+        (
+                0,
+                4,
+                3,
+        ),
+        (
+                1,
+                0,
+                3,
+        ),
+        (
+                1,
+                4,
+                0,
+        ),
+        (
+                9,
+                10,
+                3,
+        ),
+    ],
+)
+def test_find_repeated_sequence_subtitle_ids_rejects_invalid_range(
+    first_start: int,
+    second_start: int,
+    length: int,
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    actual = (
+        find_repeated_sequence_subtitle_ids(
+            subtitle_ids,
+            first_start=first_start,
+            second_start=second_start,
+            length=length,
+        )
+    )
+
+    assert actual == []
+
+
+def test_validation_reports_repeated_translation_subtitle_ids(
+) -> None:
+    subtitle_ids = [
+        str(number)
+        for number in range(
+            81,
+            91,
+        )
+    ]
+
+    source_texts = [
+        f"Source subtitle {subtitle_id}."
+        for subtitle_id in subtitle_ids
+    ]
+
+    repeated_translation = (
+        "では、容疑者はいますか？"
+    )
+
+    response = json.dumps(
+        {
+            "targets": {
+                subtitle_id: {
+                    "source": {
+                        "speaker": None,
+                        "text": source_text,
+                    },
+                    "translation": (
+                        repeated_translation
+                    ),
+                }
+                for (
+                    subtitle_id,
+                    source_text,
+                ) in zip(
+                    subtitle_ids,
+                    source_texts,
+                    strict=True,
+                )
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    result = validate_translation_response(
+        response,
+        expected_ids=subtitle_ids,
+        source_speakers=[
+            None
+            for _ in subtitle_ids
+        ],
+        source_texts=source_texts,
+        noise_dictionary=(
+            build_test_noise_dictionary(
+                []
+            )
+        ),
+    )
+
+    assert not result.valid
+
+    assert (
+        "Repeated translation detected: "
+        "count=10, "
+        "text='では、容疑者はいますか？', "
+        "subtitle_ids="
+        "['81', '82', '83', '84', '85', "
+        "'86', '87', '88', '89', '90']"
+        in result.reasons
+    )
+
+    assert (
+        "Repeated translation sequence detected: "
+        "first_start=1, "
+        "second_start=4, "
+        "length=3, "
+        "subtitle_ids="
+        "['81', '82', '83', '84', '85', "
+        "'86']"
+        in result.reasons
+    )
+
+
+def test_chinese_validation_accepts_ambiguous_japanese_character(
+) -> None:
+    translated_text = (
+        "この円は、デスティニーの範囲内にある"
+        "ゲートを表しています。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "136",
+            ],
+        )
+    )
+
+    assert violations == []
+
+
+# E19-2-3：翻訳Validationの回帰テストを追加する
+def test_chinese_validation_accepts_japanese_occupation_character(
+) -> None:
+    translated_text = (
+        "敵が施設を占領している。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "316",
+            ],
+        )
+    )
+
+    assert violations == []
+
+
+def test_chinese_validation_accepts_e15_japanese_phrases(
+) -> None:
+    translated_texts = [
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートについて考えましょう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表しています。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っています。"
+        ),
+    ]
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=translated_texts,
+            subtitle_ids=[
+                "134",
+                "136",
+                "140",
+            ],
+        )
+    )
+
+    assert violations == []
+
+
+def test_chinese_validation_rejects_high_confidence_chinese(
+) -> None:
+    translated_text = (
+        "これらは这些人です。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "140",
+            ],
+        )
+    )
+
+    assert len(
+        violations
+    ) == 1
+
+    assert violations[0].startswith(
+        "Chinese-specific characters detected: "
+        "subtitle_id='140'"
+    )
+
+    assert (
+        "这"
+        in violations[0]
+    )
+
+
+def test_chinese_validation_reports_only_high_confidence_characters(
+) -> None:
+    translated_text = (
+        "範囲内に这些人がいる。"
+    )
+
+    violations = (
+        find_chinese_specific_characters(
+            translated_texts=[
+                translated_text,
+            ],
+            subtitle_ids=[
+                "140",
+            ],
+        )
+    )
+
+    assert len(
+        violations
+    ) == 1
+
+    assert (
+        "这"
+        in violations[0]
+    )
+
+    assert (
+        "characters='内"
+        not in violations[0]
+    )
+
+
+def test_e15_standard_validation_accepts_ambiguous_japanese_text(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    ocr_line = (
+        "oX=¥AN(o1) 0 MUA L= S310] KO (otoe"
+    )
+
+    source_texts = [
+        (
+            "Let's consider the gates\n"
+            "within range of the planet\n"
+            "we are on."
+        ),
+        (
+            "This circle represents\n"
+            "the gates within range\n"
+            "of Destiny."
+        ),
+        (
+            "Now, hopefully, there is a gate\n"
+            "within range of each one\n"
+            f"{ocr_line}"
+        ),
+    ]
+
+    translated_texts = [
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートを考えてみよう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表している。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている。"
+            f"[1]{ocr_line}[/1]"
+        ),
+    ]
+
+    response = json.dumps(
+        {
+            "targets": {
+                subtitle_id: {
+                    "source": {
+                        "speaker": None,
+                        "text": source_text,
+                    },
+                    "translation": translation,
+                }
+                for (
+                    subtitle_id,
+                    source_text,
+                    translation,
+                ) in zip(
+                    [
+                        "134",
+                        "136",
+                        "140",
+                    ],
+                    source_texts,
+                    translated_texts,
+                    strict=True,
+                )
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "134",
+            "136",
+            "140",
+        ],
+        source_speakers=[
+            None,
+            None,
+            None,
+        ],
+        source_texts=source_texts,
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result.valid is True
+
+    assert result.reasons == []
+
+    assert not any(
+        reason.startswith(
+            "Chinese-specific characters detected:"
+        )
+        for reason in result.reasons
+    )
+
+    assert result.failed_ids == set()
+
+    assert result.translated_texts == [
+        (
+            "仮に、我々がいる惑星の範囲内にある"
+            "ゲートを考えてみよう。"
+        ),
+        (
+            "この円は、デスティニーの範囲内にある"
+            "ゲートを表している。"
+        ),
+        (
+            "現在、幸いにも、それぞれの範囲内にある"
+            "ゲートが存在することを願っている。"
+            "（判読不能）"
+        ),
+    ]
+
+    assert result.noise_candidates == [
+        ocr_line,
+    ]
+
+
+def test_e15_standard_validation_still_rejects_real_chinese_text(
+) -> None:
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    source_text = (
+        "The gates are within range."
+    )
+
+    translated_text = (
+        "ゲートは範囲内にありますが、"
+        "这些人が近くにいます。"
+    )
+
+    response = json.dumps(
+        {
+            "targets": {
+                "136": {
+                    "source": {
+                        "speaker": None,
+                        "text": source_text,
+                    },
+                    "translation": translated_text,
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    result = validate_translation_response(
+        response,
+        expected_ids=[
+            "136",
+        ],
+        source_speakers=[
+            None,
+        ],
+        source_texts=[
+            source_text,
+        ],
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+    )
+
+    assert result.valid is False
+
+    assert any(
+        (
+            reason.startswith(
+                "Chinese-specific characters detected: "
+                "subtitle_id='136'"
+            )
+            and "这" in reason
+        )
+        for reason in result.reasons
+    )
+
+    assert not any(
+        "characters='内"
+        in reason
+        for reason in result.reasons
+    )
