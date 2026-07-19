@@ -52,7 +52,13 @@ HYBRID_TRANSLATED_SOUND_EFFECT_PATTERN = (
         r"（(?P<content>[^（）]+)）"
     )
 )
-
+HYBRID_HALF_WIDTH_PARENTHESIZED_PATTERN = (
+    re.compile(
+        r"\("
+        r"(?P<content>[^()\n]+)"
+        r"\)"
+    )
+)
 HYBRID_SOUND_EFFECT_ONLY_SEGMENT_PATTERN = (
     re.compile(
         r"^"
@@ -814,6 +820,48 @@ full_translationへコピーすること。
     )
 
 
+def normalize_hybrid_sound_effect_parentheses(
+    text: str,
+    *,
+    source_sound_effect_lines: list[str],
+) -> str:
+    """
+    効果音を含む字幕で、
+    日本語を含む半角括弧表現だけを
+    全角括弧へ正規化する。
+
+    原文に効果音行がない場合と、
+    日本語を含まない半角括弧表現は変更しない。
+    """
+    if not source_sound_effect_lines:
+        return text
+
+    def replace_parentheses(
+        match: re.Match[str],
+    ) -> str:
+        content = match.group(
+            "content"
+        )
+
+        if not JAPANESE_CHARACTER_PATTERN.search(
+            content
+        ):
+            return match.group(
+                0
+            )
+
+        return (
+            f"（{content}）"
+        )
+
+    return (
+        HYBRID_HALF_WIDTH_PARENTHESIZED_PATTERN.sub(
+            replace_parentheses,
+            text,
+        )
+    )
+
+
 def normalize_hybrid_join_text(
     text: str,
 ) -> str:
@@ -1136,6 +1184,22 @@ def validate_hybrid_response(
             )
             continue
 
+        block_sound_effect_lines = (
+            sound_effect_lines.get(
+                subtitle_id,
+                [],
+            )
+        )
+
+        normalized_segment = (
+            normalize_hybrid_sound_effect_parentheses(
+                normalized_segment,
+                source_sound_effect_lines=(
+                    block_sound_effect_lines
+                ),
+            )
+        )
+
         if not JAPANESE_CHARACTER_PATTERN.search(
             normalized_segment
         ):
@@ -1184,13 +1248,6 @@ def validate_hybrid_response(
         block_text_lines = text_lines.get(
             subtitle_id,
             [],
-        )
-
-        block_sound_effect_lines = (
-            sound_effect_lines.get(
-                subtitle_id,
-                [],
-            )
         )
 
         sound_effect_violations = (

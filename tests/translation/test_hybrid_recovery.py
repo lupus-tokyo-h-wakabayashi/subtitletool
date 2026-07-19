@@ -23,6 +23,7 @@ from lib.translation.hybrid_recovery import (
     build_hybrid_translation_prompt,
     find_group_ocr_lines,
     find_group_sound_effect_lines,
+    normalize_hybrid_sound_effect_parentheses,
     validate_hybrid_response,
     recover_translation_with_hybrid,
 )
@@ -4219,4 +4220,115 @@ def build_chunk_metrics(
                 ocr_line,
             ],
         }
+    )
+
+
+def test_normalize_hybrid_sound_effect_parentheses(
+) -> None:
+    actual = (
+        normalize_hybrid_sound_effect_parentheses(
+            "(スコットがうめく音)",
+            source_sound_effect_lines=[
+                "(SCOTT GRUNTING)",
+            ],
+        )
+    )
+
+    assert actual == (
+        "（スコットがうめく音）"
+    )
+
+
+def test_normalize_hybrid_sound_effect_parentheses_in_mixed_text(
+) -> None:
+    actual = (
+        normalize_hybrid_sound_effect_parentheses(
+            (
+                "(スコットがうめく音)"
+                "大丈夫か？"
+            ),
+            source_sound_effect_lines=[
+                "(SCOTT GRUNTING)",
+            ],
+        )
+    )
+
+    assert actual == (
+        "（スコットがうめく音）"
+        "大丈夫か？"
+    )
+
+
+def test_normalize_hybrid_sound_effect_parentheses_preserves_english(
+) -> None:
+    actual = (
+        normalize_hybrid_sound_effect_parentheses(
+            "(SG-1)",
+            source_sound_effect_lines=[
+                "(CONSOLE BEEPS)",
+            ],
+        )
+    )
+
+    assert actual == "(SG-1)"
+
+
+def test_validate_hybrid_response_normalizes_sound_effect_parentheses(
+) -> None:
+    block = SrtBlock(
+        number="43",
+        timestamp=(
+            "00:02:17,429 --> "
+            "00:02:17,804"
+        ),
+        text="(SCOTT GRUNTING)",
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "43",
+            }
+        ),
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "(スコットがうめく音)"
+                ),
+                "segments": {
+                    "43": (
+                        "(スコットがうめく音)"
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {},
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+    assert validation.segments == {
+        "43": (
+            "（スコットがうめく音）"
+        ),
+    }
+
+    assert validation.full_translation == (
+        "（スコットがうめく音）"
     )
