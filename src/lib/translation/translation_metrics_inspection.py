@@ -40,7 +40,11 @@ TRANSLATION_METRICS_DIRECTORY = (
     / "translation-metrics"
 )
 
-TRANSLATION_METRICS_VERSION = 4
+TRANSLATION_METRICS_VERSION = 5
+
+TRANSLATION_SESSION_RESULT_IN_PROGRESS = (
+    "in_progress"
+)
 
 TRANSLATION_SESSION_RESULT_COMPLETED = (
     "completed"
@@ -476,20 +480,50 @@ def build_adaptive_trigger_counts(
     }
 
 
+def build_translated_block_count(
+    session: TranslationSessionMetric,
+) -> int:
+    """
+    再開時点の翻訳済み字幕と、
+    現在のセッションで成功した字幕を集計する。
+
+    失敗または処理中のチャンクは、
+    翻訳済み字幕数へ含めない。
+    """
+    translated_in_session = sum(
+        len(
+            chunk.target_ids
+        )
+        for chunk in session.chunks
+        if chunk.final_result not in (
+            TRANSLATION_RESULT_PENDING,
+            TRANSLATION_RESULT_FAILED,
+        )
+    )
+
+    return (
+        session.resume_start
+        + translated_in_session
+    )
+
+
 def build_translation_session_result(
     session: TranslationSessionMetric,
 ) -> str:
     """
-    チャンク履歴から翻訳セッション全体の
-    最終結果を判定する。
+    チャンク履歴と翻訳済み字幕数から、
+    翻訳セッション全体の結果を判定する。
 
     最後のチャンクが失敗:
         セッションは失敗終了。
 
-    途中に失敗チャンクがある:
+    未処理字幕が残っている:
+        セッションは処理途中。
+
+    全件処理済みで失敗履歴がある:
         適応回復を経て完了。
 
-    失敗チャンクがない:
+    全件処理済みで失敗履歴がない:
         通常完了。
     """
     if (
@@ -499,6 +533,20 @@ def build_translation_session_result(
     ):
         return (
             TRANSLATION_SESSION_RESULT_FAILED
+        )
+
+    translated_block_count = (
+        build_translated_block_count(
+            session
+        )
+    )
+
+    if (
+        translated_block_count
+        < session.total_blocks
+    ):
+        return (
+            TRANSLATION_SESSION_RESULT_IN_PROGRESS
         )
 
     if any(
@@ -595,6 +643,11 @@ def build_session_metrics_report(
         "summary": {
             "session_result": (
                 build_translation_session_result(
+                    session
+                )
+            ),
+            "translated_block_count": (
+                build_translated_block_count(
                     session
                 )
             ),

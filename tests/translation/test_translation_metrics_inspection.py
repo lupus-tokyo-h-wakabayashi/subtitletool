@@ -39,7 +39,9 @@ from lib.translation.translation_metrics_inspection import (
     TRANSLATION_SESSION_RESULT_COMPLETED,
     TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY,
     TRANSLATION_SESSION_RESULT_FAILED,
+    TRANSLATION_SESSION_RESULT_IN_PROGRESS,
     build_session_metrics_report,
+    build_translated_block_count,
     build_translation_session_result,
 )
 
@@ -430,7 +432,7 @@ def test_build_chunk_metrics_report(
         chunk
     )
 
-    assert report["version"] == 4
+    assert report["version"] == 5
 
     assert report["chunk"] == {
         "number": 1,
@@ -791,8 +793,8 @@ def test_build_adaptive_trigger_counts(
     }
 
 
-# 失敗チャンクなしのセッション結果
-def test_translation_session_result_is_completed(
+# 未処理字幕が残るセッション結果
+def test_translation_session_result_is_in_progress(
 ) -> None:
     session = make_session()
 
@@ -814,7 +816,41 @@ def test_translation_session_result_is_completed(
     )
 
     assert actual == (
-        TRANSLATION_SESSION_RESULT_COMPLETED
+        TRANSLATION_SESSION_RESULT_IN_PROGRESS
+    )
+
+
+# 失敗チャンクなしのセッション結果
+def test_translation_session_result_is_completed(
+) -> None:
+    session = make_session()
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=1,
+            chunk_start=1,
+            chunk_end=10,
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+        )
+    )
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=2,
+            chunk_start=11,
+            chunk_end=20,
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+        )
+    )
+
+    actual = (
+        build_translation_session_result(
+            session
+        )
     )
 
 
@@ -834,26 +870,42 @@ def test_translation_session_result_is_completed_with_recovery(
         )
     )
 
-    session.add_chunk(
-        make_chunk(
-            chunk_number=2,
-            chunk_start=1,
-            chunk_end=1,
-            final_result=(
-                TRANSLATION_RESULT_STANDARD_SUCCESS
-            ),
+    recovered_first = make_chunk(
+        chunk_number=2,
+        chunk_start=1,
+        chunk_end=1,
+        final_result=(
+            TRANSLATION_RESULT_STANDARD_SUCCESS
+        ),
+    )
+
+    recovered_first.target_ids = (
+        "1",
+    )
+
+    recovered_remaining = make_chunk(
+        chunk_number=3,
+        chunk_start=2,
+        chunk_end=20,
+        final_result=(
+            TRANSLATION_RESULT_STANDARD_SUCCESS
+        ),
+    )
+
+    recovered_remaining.target_ids = tuple(
+        str(number)
+        for number in range(
+            2,
+            21,
         )
     )
 
     session.add_chunk(
-        make_chunk(
-            chunk_number=3,
-            chunk_start=2,
-            chunk_end=10,
-            final_result=(
-                TRANSLATION_RESULT_STANDARD_SUCCESS
-            ),
-        )
+        recovered_first
+    )
+
+    session.add_chunk(
+        recovered_remaining
     )
 
     actual = (
@@ -865,6 +917,56 @@ def test_translation_session_result_is_completed_with_recovery(
     assert actual == (
         TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
     )
+
+
+# 再開位置と成功チャンクから翻訳済み数を集計する
+def test_build_translated_block_count_includes_resume_position(
+) -> None:
+    session = make_session()
+
+    session.resume_start = 5
+
+    successful_chunk = make_chunk(
+        chunk_number=1,
+        chunk_start=6,
+        chunk_end=10,
+        final_result=(
+            TRANSLATION_RESULT_STANDARD_SUCCESS
+        ),
+    )
+
+    successful_chunk.target_ids = (
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+    )
+
+    failed_chunk = make_chunk(
+        chunk_number=2,
+        chunk_start=11,
+        chunk_end=20,
+        final_result=(
+            TRANSLATION_RESULT_FAILED
+        ),
+    )
+
+    session.add_chunk(
+        successful_chunk
+    )
+
+    session.add_chunk(
+        failed_chunk
+    )
+
+    actual = (
+        build_translated_block_count(
+            session
+        )
+    )
+
+    assert actual == 10
 
 
 # 最後のチャンクが失敗したセッション結果
@@ -950,6 +1052,22 @@ def test_build_session_metrics_report(
         ),
     )
 
+    standard_chunk.target_ids = tuple(
+        str(number)
+        for number in range(
+            1,
+            11,
+        )
+    )
+
+    hybrid_chunk.target_ids = tuple(
+        str(number)
+        for number in range(
+            11,
+            21,
+        )
+    )
+
     hybrid_chunk.record_adaptive_chunk(
         AdaptiveChunkMetric(
             strategy="reduced_chunk",
@@ -1011,7 +1129,7 @@ def test_build_session_metrics_report(
         session
     )
 
-    assert report["version"] == 4
+    assert report["version"] == 5
 
     session_report = report[
         "session"
@@ -1095,6 +1213,10 @@ def test_build_session_metrics_report(
                "hybrid": 0,
                "failed": 0,
            }
+
+    assert summary[
+               "translated_block_count"
+           ] == 20
 
     assert len(
         report["chunks"]
