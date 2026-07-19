@@ -1780,6 +1780,14 @@ def test_run_translation_session_applies_reduced_chunk_after_hybrid(
         TranslationChunkMetric
     ] = []
 
+    displayed_completions: list[
+        tuple[
+            str,
+            int,
+            Path,
+        ]
+    ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -1886,6 +1894,25 @@ def test_run_translation_session_applies_reduced_chunk_after_hybrid(
             ),
         )
 
+    def fake_print_translation_complete(
+        *,
+        session_result: str,
+        translated_count: int,
+        progress: object,
+        total_elapsed: float,
+        output_path: Path,
+    ) -> None:
+        del progress
+        del total_elapsed
+
+        displayed_completions.append(
+            (
+                session_result,
+                translated_count,
+                output_path,
+            )
+        )
+
     monkeypatch.setattr(
         translation_session,
         "translate_chunk",
@@ -1896,6 +1923,12 @@ def test_run_translation_session_applies_reduced_chunk_after_hybrid(
         translation_session,
         "try_save_translation_metrics_reports",
         fake_save_metrics,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_translation_complete",
+        fake_print_translation_complete,
     )
 
     translated_blocks: list[
@@ -2067,6 +2100,17 @@ def test_run_translation_session_applies_reduced_chunk_after_hybrid(
         resumed_adaptive.applied_chunk_size
         == 2
     )
+
+    assert displayed_completions == [
+        (
+            "completed_with_recovery",
+            8,
+            (
+                tmp_path
+                / "output.srt"
+            ),
+        ),
+    ]
 
 
 # 通常再試行後に次チャンクを縮小する
