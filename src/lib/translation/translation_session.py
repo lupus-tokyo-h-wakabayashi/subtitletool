@@ -29,6 +29,7 @@ from .translation_metrics import (
     TranslationSessionMetric,
 )
 from .translation_metrics_inspection import (
+    build_translation_session_result,
     try_save_translation_metrics_reports,
 )
 from .translation_output import (
@@ -625,7 +626,14 @@ def run_translation_session(
             f"translated={translated_count}"
         )
 
+    session_result = (
+        build_translation_session_result(
+            session_metrics
+        )
+    )
+
     print_translation_complete(
+        session_result=session_result,
         translated_count=translated_count,
         progress=progress,
         total_elapsed=total_elapsed,

@@ -303,6 +303,7 @@ def print_adaptive_translation_decision(
 
 def print_translation_complete(
     *,
+    session_result: str,
     translated_count: int,
     progress: ProgressTracker,
     total_elapsed: float,
@@ -315,6 +316,7 @@ def print_translation_complete(
     print("========================================")
     print("Translation Complete")
     print("========================================")
+    print(f"Result      : {session_result}")
     print(f"Subtitles   : {translated_count}")
     print(
         "Chunks      : "
