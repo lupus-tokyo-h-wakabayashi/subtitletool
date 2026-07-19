@@ -40,7 +40,19 @@ TRANSLATION_METRICS_DIRECTORY = (
     / "translation-metrics"
 )
 
-TRANSLATION_METRICS_VERSION = 3
+TRANSLATION_METRICS_VERSION = 4
+
+TRANSLATION_SESSION_RESULT_COMPLETED = (
+    "completed"
+)
+
+TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY = (
+    "completed_with_recovery"
+)
+
+TRANSLATION_SESSION_RESULT_FAILED = (
+    "failed"
+)
 
 
 # 出力SRT名を計測ディレクトリ名へ使用できる形にする
@@ -464,6 +476,45 @@ def build_adaptive_trigger_counts(
     }
 
 
+def build_translation_session_result(
+    session: TranslationSessionMetric,
+) -> str:
+    """
+    チャンク履歴から翻訳セッション全体の
+    最終結果を判定する。
+
+    最後のチャンクが失敗:
+        セッションは失敗終了。
+
+    途中に失敗チャンクがある:
+        適応回復を経て完了。
+
+    失敗チャンクがない:
+        通常完了。
+    """
+    if (
+        session.chunks
+        and session.chunks[-1].final_result
+        == TRANSLATION_RESULT_FAILED
+    ):
+        return (
+            TRANSLATION_SESSION_RESULT_FAILED
+        )
+
+    if any(
+        chunk.final_result
+        == TRANSLATION_RESULT_FAILED
+        for chunk in session.chunks
+    ):
+        return (
+            TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
+        )
+
+    return (
+        TRANSLATION_SESSION_RESULT_COMPLETED
+    )
+
+
 def build_session_metrics_report(
     session: TranslationSessionMetric,
 ) -> dict[str, object]:
@@ -542,6 +593,11 @@ def build_session_metrics_report(
             ),
         },
         "summary": {
+            "session_result": (
+                build_translation_session_result(
+                    session
+                )
+            ),
             "total_chunk_count": len(
                 session.chunks
             ),

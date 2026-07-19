@@ -30,13 +30,17 @@ from lib.translation.translation_metrics_inspection import (
     build_chunk_metrics_report,
     build_hybrid_group_metrics_report,
     build_result_counts,
-    build_session_metrics_report,
     build_translation_metrics_directory_name,
     build_translation_metrics_output_directory,
     build_validation_reason_counts,
     normalize_metrics_output_name,
     save_translation_metrics_reports,
     try_save_translation_metrics_reports,
+    TRANSLATION_SESSION_RESULT_COMPLETED,
+    TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY,
+    TRANSLATION_SESSION_RESULT_FAILED,
+    build_session_metrics_report,
+    build_translation_session_result,
 )
 
 STARTED_AT = datetime(
@@ -426,7 +430,7 @@ def test_build_chunk_metrics_report(
         chunk
     )
 
-    assert report["version"] == 3
+    assert report["version"] == 4
 
     assert report["chunk"] == {
         "number": 1,
@@ -787,6 +791,131 @@ def test_build_adaptive_trigger_counts(
     }
 
 
+# 失敗チャンクなしのセッション結果
+def test_translation_session_result_is_completed(
+) -> None:
+    session = make_session()
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=1,
+            chunk_start=1,
+            chunk_end=10,
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+        )
+    )
+
+    actual = (
+        build_translation_session_result(
+            session
+        )
+    )
+
+    assert actual == (
+        TRANSLATION_SESSION_RESULT_COMPLETED
+    )
+
+
+# 失敗後に回復したセッション結果
+def test_translation_session_result_is_completed_with_recovery(
+) -> None:
+    session = make_session()
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=1,
+            chunk_start=1,
+            chunk_end=10,
+            final_result=(
+                TRANSLATION_RESULT_FAILED
+            ),
+        )
+    )
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=2,
+            chunk_start=1,
+            chunk_end=1,
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+        )
+    )
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=3,
+            chunk_start=2,
+            chunk_end=10,
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+        )
+    )
+
+    actual = (
+        build_translation_session_result(
+            session
+        )
+    )
+
+    assert actual == (
+        TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
+    )
+
+
+# 最後のチャンクが失敗したセッション結果
+def test_translation_session_result_is_failed(
+) -> None:
+    session = make_session()
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=1,
+            chunk_start=1,
+            chunk_end=10,
+            final_result=(
+                TRANSLATION_RESULT_FAILED
+            ),
+        )
+    )
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=2,
+            chunk_start=1,
+            chunk_end=1,
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+        )
+    )
+
+    session.add_chunk(
+        make_chunk(
+            chunk_number=3,
+            chunk_start=2,
+            chunk_end=2,
+            final_result=(
+                TRANSLATION_RESULT_FAILED
+            ),
+        )
+    )
+
+    actual = (
+        build_translation_session_result(
+            session
+        )
+    )
+
+    assert actual == (
+        TRANSLATION_SESSION_RESULT_FAILED
+    )
+
+
 # セッションレポート
 def test_build_session_metrics_report(
 ) -> None:
@@ -882,7 +1011,7 @@ def test_build_session_metrics_report(
         session
     )
 
-    assert report["version"] == 3
+    assert report["version"] == 4
 
     session_report = report[
         "session"
@@ -915,6 +1044,12 @@ def test_build_session_metrics_report(
         summary,
         dict,
     )
+
+    assert summary[
+               "session_result"
+           ] == (
+               TRANSLATION_SESSION_RESULT_COMPLETED
+           )
 
     assert summary[
                "total_chunk_count"
