@@ -163,3 +163,50 @@ def build_adaptive_translation_decision(
             chunk.chunk_number
         ),
     )
+
+
+def resolve_adaptive_chunk_size(
+    decision: AdaptiveTranslationDecision,
+    *,
+    configured_chunk_size: int,
+) -> int:
+    """
+    適応制御の判定結果から、
+    次チャンクで使用する字幕数を決定する。
+
+    standard:
+        設定されたチャンクサイズを維持する。
+
+    reduced_chunk:
+        設定値の半分へ縮小する。
+        奇数の場合は端数を切り上げる。
+
+    single_subtitle:
+        字幕1件だけを対象にする。
+    """
+    if configured_chunk_size <= 0:
+        raise ValueError(
+            "Configured chunk size must be "
+            "greater than zero: "
+            f"configured_chunk_size="
+            f"{configured_chunk_size}"
+        )
+
+    if decision.strategy == (
+        ADAPTIVE_STRATEGY_SINGLE_SUBTITLE
+    ):
+        return 1
+
+    if decision.strategy == (
+        ADAPTIVE_STRATEGY_REDUCED_CHUNK
+    ):
+        return max(
+            1,
+            (
+                configured_chunk_size
+                + 1
+            )
+            // 2,
+        )
+
+    return configured_chunk_size

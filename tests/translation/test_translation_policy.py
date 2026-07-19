@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
 from lib.translation.translation_metrics import (
     TRANSLATION_RESULT_FAILED,
     TRANSLATION_RESULT_HYBRID_SUCCESS,
@@ -13,11 +14,14 @@ from lib.translation.translation_policy import (
     ADAPTIVE_STRATEGY_REDUCED_CHUNK,
     ADAPTIVE_STRATEGY_SINGLE_SUBTITLE,
     ADAPTIVE_STRATEGY_STANDARD,
+    AdaptiveTranslationDecision,
+    AdaptiveTranslationStrategy,
     ADAPTIVE_TRIGGER_FAILED,
     ADAPTIVE_TRIGGER_HYBRID,
     ADAPTIVE_TRIGGER_NONE,
     ADAPTIVE_TRIGGER_STANDARD_RETRY,
     build_adaptive_translation_decision,
+    resolve_adaptive_chunk_size,
 )
 
 
@@ -408,3 +412,118 @@ def test_failed_chunk_has_priority_over_hybrid_trigger(
         decision.trigger
         == ADAPTIVE_TRIGGER_FAILED
     )
+
+
+def build_test_decision(
+    strategy: AdaptiveTranslationStrategy,
+) -> AdaptiveTranslationDecision:
+    return AdaptiveTranslationDecision(
+        strategy=strategy,
+        trigger=ADAPTIVE_TRIGGER_NONE,
+        source_chunk_number=1,
+    )
+
+
+# 通常戦略のチャンクサイズ
+def test_standard_strategy_keeps_configured_chunk_size(
+) -> None:
+    decision = build_test_decision(
+        ADAPTIVE_STRATEGY_STANDARD
+    )
+
+    actual = resolve_adaptive_chunk_size(
+        decision,
+        configured_chunk_size=10,
+    )
+
+    assert actual == 10
+
+
+# 縮小戦略の偶数チャンクサイズ
+def test_reduced_strategy_halves_even_chunk_size(
+) -> None:
+    decision = build_test_decision(
+        ADAPTIVE_STRATEGY_REDUCED_CHUNK
+    )
+
+    actual = resolve_adaptive_chunk_size(
+        decision,
+        configured_chunk_size=10,
+    )
+
+    assert actual == 5
+
+
+# 縮小戦略の奇数チャンクサイズ
+def test_reduced_strategy_rounds_odd_chunk_size_up(
+) -> None:
+    decision = build_test_decision(
+        ADAPTIVE_STRATEGY_REDUCED_CHUNK
+    )
+
+    actual = resolve_adaptive_chunk_size(
+        decision,
+        configured_chunk_size=9,
+    )
+
+    assert actual == 5
+
+
+# 縮小後の最小チャンクサイズ
+def test_reduced_strategy_does_not_return_zero(
+) -> None:
+    decision = build_test_decision(
+        ADAPTIVE_STRATEGY_REDUCED_CHUNK
+    )
+
+    actual = resolve_adaptive_chunk_size(
+        decision,
+        configured_chunk_size=1,
+    )
+
+    assert actual == 1
+
+
+# 単一字幕戦略のチャンクサイズ
+def test_single_subtitle_strategy_returns_one(
+) -> None:
+    decision = build_test_decision(
+        ADAPTIVE_STRATEGY_SINGLE_SUBTITLE
+    )
+
+    actual = resolve_adaptive_chunk_size(
+        decision,
+        configured_chunk_size=10,
+    )
+
+    assert actual == 1
+
+
+# 不正な設定チャンクサイズ
+@pytest.mark.parametrize(
+    "configured_chunk_size",
+    [
+        0,
+        -1,
+    ],
+)
+def test_adaptive_chunk_size_rejects_non_positive_value(
+    configured_chunk_size: int,
+) -> None:
+    decision = build_test_decision(
+        ADAPTIVE_STRATEGY_STANDARD
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Configured chunk size must be "
+            "greater than zero"
+        ),
+    ):
+        resolve_adaptive_chunk_size(
+            decision,
+            configured_chunk_size=(
+                configured_chunk_size
+            ),
+        )
