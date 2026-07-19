@@ -996,6 +996,12 @@ def translate_chunk(
                 glossary_entries=(
                     glossary_entries
                 ),
+                before_context=(
+                    before_context
+                ),
+                after_context=(
+                    after_context
+                ),
                 metrics=metrics,
             )
         )
