@@ -43,6 +43,7 @@ from lib.translation.translation_metrics_inspection import (
     build_session_metrics_report,
     build_translated_block_count,
     build_translation_session_result,
+    translation_session_used_recovery,
 )
 
 STARTED_AT = datetime(
@@ -884,6 +885,13 @@ def test_translation_session_result_is_completed(
         == 20
     )
 
+    assert (
+        translation_session_used_recovery(
+            session
+        )
+        is False
+    )
+
 
 # 失敗後に回復したセッション結果
 def test_translation_session_result_is_completed_with_recovery(
@@ -947,6 +955,118 @@ def test_translation_session_result_is_completed_with_recovery(
 
     assert actual == (
         TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
+    )
+
+
+# Fallback・Hybrid成功を回復完了として判定する
+@pytest.mark.parametrize(
+    "final_result",
+    [
+        TRANSLATION_RESULT_LEVEL_1_FALLBACK_SUCCESS,
+        TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
+        TRANSLATION_RESULT_HYBRID_SUCCESS,
+    ],
+)
+def test_translation_session_result_treats_recovery_result_as_recovered(
+    final_result: str,
+) -> None:
+    session = make_session()
+
+    recovered_chunk = make_chunk(
+        chunk_number=1,
+        chunk_start=1,
+        chunk_end=20,
+        final_result=final_result,
+    )
+
+    recovered_chunk.target_ids = tuple(
+        str(number)
+        for number in range(
+            1,
+            21,
+        )
+    )
+
+    session.add_chunk(
+        recovered_chunk
+    )
+
+    actual = (
+        build_translation_session_result(
+            session
+        )
+    )
+
+    assert actual == (
+        TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
+    )
+
+    assert (
+        translation_session_used_recovery(
+            session
+        )
+        is True
+    )
+
+
+# 通常翻訳の複数回試行を回復完了として判定する
+def test_translation_session_result_treats_standard_retry_as_recovered(
+) -> None:
+    session = make_session()
+
+    retried_chunk = make_chunk(
+        chunk_number=1,
+        chunk_start=1,
+        chunk_end=20,
+        final_result=(
+            TRANSLATION_RESULT_STANDARD_SUCCESS
+        ),
+    )
+
+    retried_chunk.target_ids = tuple(
+        str(number)
+        for number in range(
+            1,
+            21,
+        )
+    )
+
+    retried_chunk.add_standard_attempt(
+        make_standard_attempt(
+            attempt=1,
+            validation_valid=False,
+            reason_codes=(
+                "glossary_violation",
+            ),
+        )
+    )
+
+    retried_chunk.add_standard_attempt(
+        make_standard_attempt(
+            attempt=2,
+            validation_valid=True,
+        )
+    )
+
+    session.add_chunk(
+        retried_chunk
+    )
+
+    actual = (
+        build_translation_session_result(
+            session
+        )
+    )
+
+    assert actual == (
+        TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
+    )
+
+    assert (
+        translation_session_used_recovery(
+            session
+        )
+        is True
     )
 
 
@@ -1197,7 +1317,7 @@ def test_build_session_metrics_report(
     assert summary[
                "session_result"
            ] == (
-               TRANSLATION_SESSION_RESULT_COMPLETED
+               TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
            )
 
     assert summary[

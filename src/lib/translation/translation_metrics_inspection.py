@@ -507,6 +507,32 @@ def build_translated_block_count(
     )
 
 
+def translation_session_used_recovery(
+    session: TranslationSessionMetric,
+) -> bool:
+    """
+    セッション内で通常1回成功以外の
+    回復経路が使用されたかを判定する。
+    """
+    recovery_results = (
+        TRANSLATION_RESULT_LEVEL_1_FALLBACK_SUCCESS,
+        TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
+        TRANSLATION_RESULT_HYBRID_SUCCESS,
+        TRANSLATION_RESULT_FAILED,
+    )
+
+    return any(
+        (
+            chunk.final_result
+            in recovery_results
+        )
+        or len(
+            chunk.standard_attempts
+        ) >= 2
+        for chunk in session.chunks
+    )
+
+
 def build_translation_session_result(
     session: TranslationSessionMetric,
 ) -> str:
@@ -549,10 +575,8 @@ def build_translation_session_result(
             TRANSLATION_SESSION_RESULT_IN_PROGRESS
         )
 
-    if any(
-        chunk.final_result
-        == TRANSLATION_RESULT_FAILED
-        for chunk in session.chunks
+    if translation_session_used_recovery(
+        session
     ):
         return (
             TRANSLATION_SESSION_RESULT_COMPLETED_WITH_RECOVERY
