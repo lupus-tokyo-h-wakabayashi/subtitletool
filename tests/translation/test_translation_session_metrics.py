@@ -928,6 +928,339 @@ def test_run_translation_session_retries_failed_group_individually(
     )
 
 
+# 単一字幕回復中の再失敗は
+# 成功済み字幕を保存したまま再送出する
+def test_run_translation_session_preserves_partial_recovery_before_reraising(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    source_blocks = [
+        SrtBlock(
+            number=str(number),
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                f"Subtitle {number}."
+            ),
+        )
+        for number in range(
+            1,
+            5,
+        )
+    ]
+
+    received_target_ids: list[
+        tuple[str, ...]
+    ] = []
+
+    saved_chunks: list[
+        TranslationChunkMetric
+    ] = []
+
+    written_target_ids: list[
+        tuple[str, ...]
+    ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        assert metrics is not None
+
+        received_target_ids.append(
+            metrics.target_ids
+        )
+
+        if metrics.chunk_number == 1:
+            error = RuntimeError(
+                "group translation failed"
+            )
+
+            metrics.fail_with_exception(
+                error,
+                elapsed_seconds=1.0,
+                failed_ids=(
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                ),
+            )
+
+            raise error
+
+        if metrics.target_ids == (
+                "2",
+        ):
+            error = RuntimeError(
+                "single subtitle failed"
+            )
+
+            metrics.fail_with_exception(
+                error,
+                elapsed_seconds=1.0,
+                failed_ids=(
+                    "2",
+                ),
+            )
+
+            raise error
+
+        metrics.add_standard_attempt(
+            TranslationAttemptMetric(
+                pipeline="standard",
+                attempt=1,
+                target_ids=(
+                    metrics.target_ids
+                ),
+                elapsed_seconds=1.0,
+                response_received=True,
+                validation_stage=(
+                    "standard_validation"
+                ),
+                validation_valid=True,
+            )
+        )
+
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+            elapsed_seconds=1.0,
+        )
+
+        return [
+            f"翻訳結果 {subtitle_id}"
+            for subtitle_id
+            in metrics.target_ids
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+    ) -> tuple[Path, Path]:
+        del session
+        del output_directory
+
+        saved_chunks.append(
+            chunk
+        )
+
+        return (
+            Path(
+                f"chunk-{chunk.chunk_number}.json"
+            ),
+            Path(
+                "summary.json"
+            ),
+        )
+
+    def fake_write_structured_srt(
+        output_path: Path,
+        blocks: list[SrtBlock],
+    ) -> None:
+        del output_path
+
+        written_target_ids.append(
+            tuple(
+                block.number
+                for block in blocks
+            )
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "write_structured_srt",
+        fake_write_structured_srt,
+    )
+
+    translated_blocks: list[
+        SrtBlock
+    ] = []
+
+    with pytest.raises(
+        RuntimeError,
+        match="single subtitle failed",
+    ):
+        translation_session.run_translation_session(
+            source_blocks=source_blocks,
+            translated_blocks_all=(
+                translated_blocks
+            ),
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=4,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+        )
+
+    # 元チャンク失敗後、字幕1は成功し、
+    # 字幕2の単一処理で停止する
+    assert received_target_ids == [
+        (
+            "1",
+            "2",
+            "3",
+            "4",
+        ),
+        (
+            "1",
+        ),
+        (
+            "2",
+        ),
+    ]
+
+    # 成功済みの字幕1は
+    # セッション内の結果へ残る
+    assert [
+               block.number
+               for block in translated_blocks
+           ] == [
+               "1",
+           ]
+
+    # 字幕1の成功直後に
+    # 途中保存が実行されている
+    assert written_target_ids == [
+        (
+            "1",
+        ),
+    ]
+
+    # 元チャンク失敗、字幕1成功、
+    # 字幕2失敗の3件が保存される
+    assert len(
+        saved_chunks
+    ) == 3
+
+    group_failure = saved_chunks[0]
+    first_recovery = saved_chunks[1]
+    single_failure = saved_chunks[2]
+
+    assert (
+        group_failure.final_result
+        == TRANSLATION_RESULT_FAILED
+    )
+
+    assert group_failure.target_ids == (
+        "1",
+        "2",
+        "3",
+        "4",
+    )
+
+    assert (
+        first_recovery.final_result
+        == TRANSLATION_RESULT_STANDARD_SUCCESS
+    )
+
+    assert first_recovery.target_ids == (
+        "1",
+    )
+
+    assert (
+        single_failure.final_result
+        == TRANSLATION_RESULT_FAILED
+    )
+
+    assert single_failure.target_ids == (
+        "2",
+    )
+
+    assert single_failure.failed_ids == (
+        "2",
+    )
+
+    assert (
+        single_failure.exception_type
+        == "RuntimeError"
+    )
+
+    assert (
+        single_failure.exception_message
+        == "single subtitle failed"
+    )
+
+    single_failure_adaptive = (
+        single_failure.adaptive
+    )
+
+    assert single_failure_adaptive is not None
+
+    assert (
+        single_failure_adaptive.strategy
+        == "single_subtitle"
+    )
+
+    assert (
+        single_failure_adaptive.trigger
+        == "failed"
+    )
+
+    assert (
+        single_failure_adaptive
+        .source_chunk_number
+        == 1
+    )
+
+    assert (
+        single_failure_adaptive
+        .configured_chunk_size
+        == 4
+    )
+
+    assert (
+        single_failure_adaptive
+        .applied_chunk_size
+        == 1
+    )
+
+    assert (
+        single_failure_adaptive.trigger_codes
+        == (
+            "translation_failed",
+        )
+    )
+
+
 # 複数チャンクの計測保存
 def test_run_translation_session_saves_each_chunk_metrics(
     monkeypatch: pytest.MonkeyPatch,
