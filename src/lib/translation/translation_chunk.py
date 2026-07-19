@@ -711,6 +711,28 @@ def translate_chunk(
         print(display_response)
         print("=" * 80)
 
+        validation = validate_translation_response(
+            response,
+            expected_ids=[
+                block.number
+                for block in target_blocks
+            ],
+            source_speakers=(
+                original_source_speakers
+            ),
+            source_texts=(
+                original_source_texts
+            ),
+            response_source_speakers=(
+                response_source_speakers
+            ),
+            response_source_texts=(
+                response_source_texts
+            ),
+            noise_dictionary=noise_dictionary,
+            glossary_entries=glossary_entries,
+        )
+
         # Phase 1-5：通常翻訳試行の検証結果
         if metrics is not None:
             validation_reasons = tuple(
