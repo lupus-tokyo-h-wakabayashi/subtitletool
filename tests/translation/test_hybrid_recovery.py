@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,12 @@ from lib.translation.hybrid_recovery import (
     find_group_sound_effect_lines,
     validate_hybrid_response,
     recover_translation_with_hybrid,
+)
+from lib.translation.translation_metrics import (
+    TranslationChunkMetric,
+)
+from lib.translation.translation_validation import (
+    ValidationResult,
 )
 
 OCR_LINE = (
@@ -1238,6 +1245,8 @@ def test_hybrid_recovery_replaces_group_only(
         lambda **kwargs: None,
     )
 
+    metrics = build_chunk_metrics()
+
     previous_texts = [
         "制御されていますが、",
         (
@@ -1265,6 +1274,7 @@ def test_hybrid_recovery_replaces_group_only(
         "test-model",
         noise_dictionary=noise_dictionary,
         glossary_entries={},
+        metrics=metrics,
     )
 
     assert result is not None
@@ -1284,6 +1294,296 @@ def test_hybrid_recovery_replaces_group_only(
             "以上です。"
         ),
     ]
+
+    assert metrics.hybrid_triggered is True
+
+    assert len(
+        metrics.hybrid_groups
+    ) == 1
+
+    group_metric = metrics.hybrid_groups[0]
+
+    assert group_metric.group_number == 1
+
+    assert group_metric.target_ids == (
+        "281",
+        "282",
+        "283",
+    )
+
+    assert group_metric.failed_ids == (
+        "282",
+    )
+
+    assert group_metric.result == "success"
+
+    assert len(
+        group_metric.attempts
+    ) == 1
+
+    attempt_metric = group_metric.attempts[0]
+
+    assert attempt_metric.pipeline == "hybrid"
+    assert attempt_metric.attempt == 1
+
+    assert attempt_metric.target_ids == (
+        "281",
+        "282",
+        "283",
+    )
+
+    assert attempt_metric.response_received is True
+
+    assert (
+        attempt_metric.validation_stage
+        == "complete"
+    )
+
+    assert attempt_metric.validation_valid is True
+    assert attempt_metric.validation_reasons == ()
+    assert attempt_metric.reason_codes == ()
+    assert attempt_metric.elapsed_seconds >= 0
+
+
+# Hybrid Validation失敗後の再試行
+def test_hybrid_validation_failure_records_each_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    invalid_payload = valid_hybrid_payload()
+
+    invalid_payload[
+        "group"
+    ][
+        "segments"
+    ][
+        "282"
+    ] = "各自の居住区へ戻り、"
+
+    responses = iter(
+        [
+            json.dumps(
+                invalid_payload,
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                valid_hybrid_payload(),
+                ensure_ascii=False,
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        lambda *args, **kwargs: next(
+            responses
+        ),
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
+    metrics = build_chunk_metrics()
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        [
+            "制御されていますが、",
+            "to their quarters",
+            "追って通知があるまで。",
+        ],
+        [
+            (
+                "Untranslated English sentence "
+                "detected: subtitle_id='282', "
+                "text='to their quarters'"
+            ),
+        ],
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+        metrics=metrics,
+    )
+
+    assert result is not None
+
+    assert len(
+        metrics.hybrid_groups
+    ) == 1
+
+    group_metric = metrics.hybrid_groups[0]
+
+    assert group_metric.result == "success"
+
+    assert len(
+        group_metric.attempts
+    ) == 2
+
+    first_attempt = group_metric.attempts[0]
+    second_attempt = group_metric.attempts[1]
+
+    assert first_attempt.attempt == 1
+
+    assert (
+        first_attempt.validation_stage
+        == "hybrid_validation"
+    )
+
+    assert first_attempt.validation_valid is False
+
+    assert (
+        "hybrid_ocr_placeholder_missing"
+        in first_attempt.reason_codes
+    )
+
+    assert second_attempt.attempt == 2
+
+    assert (
+        second_attempt.validation_stage
+        == "complete"
+    )
+
+    assert second_attempt.validation_valid is True
+
+
+# Hybrid結果の既存Validator失敗
+def test_standard_validation_failure_is_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+    target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    response = json.dumps(
+        valid_hybrid_payload(),
+        ensure_ascii=False,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        lambda *args, **kwargs: response,
+    )
+
+    validations = iter(
+        [
+            # Hybrid試行1回目のグループ検証
+            ValidationResult(
+                valid=False,
+                reasons=[
+                    (
+                        "Glossary violation: "
+                        "subtitle_id='282'"
+                    ),
+                ],
+                translated_texts=[],
+            ),
+            # Hybrid試行2回目のグループ検証
+            ValidationResult(
+                valid=True,
+                translated_texts=[
+                    (
+                        "事態は制御下です。"
+                        "しかし念のため、"
+                    ),
+                    (
+                        "（判読不能）"
+                        "各自の居住区へ戻り、"
+                    ),
+                    (
+                        "追って通知があるまで"
+                        "そこに留まってください。"
+                        "以上です。"
+                    ),
+                ],
+            ),
+            # Hybrid反映後のチャンク全体検証
+            ValidationResult(
+                valid=True,
+                translated_texts=[
+                    (
+                        "事態は制御下です。"
+                        "しかし念のため、"
+                    ),
+                    (
+                        "（判読不能）"
+                        "各自の居住区へ戻り、"
+                    ),
+                    (
+                        "追って通知があるまで"
+                        "そこに留まってください。"
+                        "以上です。"
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "validate_translation_response",
+        lambda *args, **kwargs: next(
+            validations
+        ),
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
+    metrics = build_chunk_metrics()
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        [
+            "制御されていますが、",
+            "to their quarters",
+            "追って通知があるまで。",
+        ],
+        [
+            (
+                "Untranslated English sentence "
+                "detected: subtitle_id='282', "
+                "text='to their quarters'"
+            ),
+        ],
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+        metrics=metrics,
+    )
+
+    assert result is not None
+
+    group_metric = metrics.hybrid_groups[0]
+
+    assert group_metric.result == "success"
+
+    assert len(
+        group_metric.attempts
+    ) == 2
+
+    first_attempt = group_metric.attempts[0]
+    second_attempt = group_metric.attempts[1]
+
+    assert (
+        first_attempt.validation_stage
+        == "standard_validation"
+    )
+
+    assert first_attempt.validation_valid is False
+
+    assert first_attempt.reason_codes == (
+        "glossary_violation",
+    )
+
+    assert second_attempt.validation_stage == "complete"
+    assert second_attempt.validation_valid is True
 
 
 def test_validate_hybrid_response_requires_ocr_placeholder(
@@ -1407,6 +1707,90 @@ def test_e07_mixed_ocr_subtitle_accepts_placeholder_and_translation(
            )
 
 
+# Hybrid LLM生成例外
+def test_hybrid_generation_exception_is_recorded_and_raised(
+    monkeypatch: pytest.MonkeyPatch,
+    target_blocks: list[SrtBlock],
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    def raise_generation_error(
+        *args,
+        **kwargs,
+    ) -> str:
+        raise RuntimeError(
+            "Hybrid generation failed"
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        raise_generation_error,
+    )
+
+    metrics = build_chunk_metrics()
+
+    with pytest.raises(
+        RuntimeError,
+        match="Hybrid generation failed",
+    ):
+        recover_translation_with_hybrid(
+            target_blocks,
+            [
+                "状況は制御下です。",
+                "to their quarters",
+                "そこに留まってください。",
+            ],
+            [
+                (
+                    "Untranslated English sentence "
+                    "detected: subtitle_id='282', "
+                    "text='to their quarters'"
+                ),
+            ],
+            "test-model",
+            noise_dictionary=noise_dictionary,
+            glossary_entries={},
+            metrics=metrics,
+        )
+
+    assert len(
+        metrics.hybrid_groups
+    ) == 1
+
+    group_metric = metrics.hybrid_groups[0]
+
+    assert group_metric.result == "failed"
+
+    assert len(
+        group_metric.attempts
+    ) == 1
+
+    attempt_metric = group_metric.attempts[0]
+
+    assert attempt_metric.pipeline == "hybrid"
+    assert attempt_metric.attempt == 1
+    assert attempt_metric.response_received is False
+
+    assert (
+        attempt_metric.validation_stage
+        == "generation_exception"
+    )
+
+    assert attempt_metric.validation_valid is None
+
+    assert (
+        attempt_metric.exception_type
+        == "RuntimeError"
+    )
+
+    assert (
+        attempt_metric.exception_message
+        == "Hybrid generation failed"
+    )
+
+    assert attempt_metric.elapsed_seconds >= 0
+
+
 def test_hybrid_recovery_raises_final_hybrid_error(
     monkeypatch: pytest.MonkeyPatch,
     target_blocks: list[SrtBlock],
@@ -1440,6 +1824,8 @@ def test_hybrid_recovery_raises_final_hybrid_error(
         lambda **kwargs: None,
     )
 
+    metrics = build_chunk_metrics()
+
     with pytest.raises(
         HybridRecoveryError,
         match=(
@@ -1464,11 +1850,61 @@ def test_hybrid_recovery_raises_final_hybrid_error(
             "test-model",
             noise_dictionary=noise_dictionary,
             glossary_entries={},
+            metrics=metrics,
         )
 
     assert (
         "Hybrid OCR placeholder missing:"
         in str(captured.value)
+    )
+
+    assert len(
+        metrics.hybrid_groups
+    ) == 1
+
+    group_metric = metrics.hybrid_groups[0]
+
+    assert group_metric.result == "failed"
+
+    assert len(
+        group_metric.attempts
+    ) == 3
+
+    assert [
+               attempt.attempt
+               for attempt in group_metric.attempts
+           ] == [
+               1,
+               2,
+               3,
+           ]
+
+    assert all(
+        attempt.pipeline == "hybrid"
+        for attempt in group_metric.attempts
+    )
+
+    assert all(
+        attempt.response_received is True
+        for attempt in group_metric.attempts
+    )
+
+    assert all(
+        (
+            attempt.validation_stage
+            == "hybrid_validation"
+        )
+        for attempt in group_metric.attempts
+    )
+
+    assert all(
+        attempt.validation_valid is False
+        for attempt in group_metric.attempts
+    )
+
+    assert all(
+        attempt.elapsed_seconds >= 0
+        for attempt in group_metric.attempts
     )
 
 
@@ -1629,6 +2065,16 @@ def test_hybrid_recovery_handles_multiple_independent_groups(
         lambda **kwargs: None,
     )
 
+    metrics = build_chunk_metrics(
+        target_ids=(
+            "601",
+            "602",
+            "603",
+            "604",
+            "605",
+        ),
+    )
+
     result = recover_translation_with_hybrid(
         target_blocks,
         [
@@ -1660,6 +2106,7 @@ def test_hybrid_recovery_handles_multiple_independent_groups(
         "test-model",
         noise_dictionary=noise_dictionary,
         glossary_entries={},
+        metrics=metrics,
     )
 
     assert result == [
@@ -1675,6 +2122,49 @@ def test_hybrid_recovery_handles_multiple_independent_groups(
         ),
         "耐えられませんでした。",
     ]
+
+    assert metrics.hybrid_triggered is True
+
+    assert len(
+        metrics.hybrid_groups
+    ) == 2
+
+    first_group = metrics.hybrid_groups[0]
+    second_group = metrics.hybrid_groups[1]
+
+    assert first_group.group_number == 1
+    assert first_group.target_ids == (
+        "602",
+    )
+    assert first_group.failed_ids == (
+        "602",
+    )
+    assert first_group.result == "success"
+
+    assert second_group.group_number == 2
+    assert second_group.target_ids == (
+        "604",
+        "605",
+    )
+    assert second_group.failed_ids == (
+        "604",
+    )
+    assert second_group.result == "success"
+
+    assert len(first_group.attempts) == 1
+    assert len(second_group.attempts) == 1
+
+    assert (
+        first_group.attempts[0]
+        .validation_stage
+        == "complete"
+    )
+
+    assert (
+        second_group.attempts[0]
+        .validation_stage
+        == "complete"
+    )
 
 
 def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
@@ -1695,7 +2185,12 @@ def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
         model: str,
         noise_dictionary: NoiseDictionary,
         glossary_entries: object,
+        group_number: int = 1,
+        metrics: TranslationChunkMetric | None = None,
     ) -> list[str]:
+        del group_number
+        del metrics
+
         captured_failed_ids.update(
             group.failed_ids
         )
@@ -3261,6 +3756,32 @@ def test_e15_hybrid_recovery_handles_ocr_and_ambiguous_text(
         "Now, hopefully, there is a gate\n"
         "within range of each one\n"
         f"{ocr_line}"
+    )
+
+
+def build_chunk_metrics(
+    *,
+    target_ids: tuple[str, ...] = (
+            "281",
+            "282",
+            "283",
+    ),
+) -> TranslationChunkMetric:
+    return TranslationChunkMetric(
+        chunk_number=1,
+        chunk_start=1,
+        chunk_end=len(
+            target_ids
+        ),
+        target_ids=target_ids,
+        started_at=datetime(
+            2026,
+            7,
+            19,
+            12,
+            0,
+            0,
+        ),
     )
 
     target_blocks = [

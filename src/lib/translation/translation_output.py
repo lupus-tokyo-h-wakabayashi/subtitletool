@@ -13,6 +13,10 @@ from lib.profile.noise import (
     NoiseDictionary,
     NoiseEntry,
 )
+from .translation_policy import (
+    ADAPTIVE_TRIGGER_NONE,
+    AdaptiveTranslationDecision,
+)
 
 
 def print_profile_resolution(
@@ -168,7 +172,7 @@ def print_translation_start(
 def print_chunk_start(
     *,
     chunk_number: int,
-    remaining_chunks: int,
+    total_chunks: int,
     start: int,
     end: int,
     total_blocks: int,
@@ -177,10 +181,13 @@ def print_chunk_start(
 ) -> None:
     """
     各翻訳チャンク開始時の対象範囲を表示する。
+
+    チャンク番号と総チャンク数は、
+    成功済みチャンク数と現在の処理計画から表示する。
     """
     print()
     print(
-        f"[{chunk_number}/{remaining_chunks}] "
+        f"[{chunk_number}/{total_chunks}] "
         f"Translating "
         f"{start + 1}-{end} / {total_blocks} "
         f"(context: "
@@ -234,8 +241,120 @@ def print_translation_progress(
     )
 
 
+def print_adaptive_translation_decision(
+    *,
+    decision: AdaptiveTranslationDecision,
+    next_chunk_size: int,
+) -> None:
+    """
+    次チャンクへ適用する適応制御を表示する。
+
+    通常戦略を維持する場合は表示しない。
+    """
+    if decision.trigger == (
+        ADAPTIVE_TRIGGER_NONE
+    ):
+        return
+
+    trigger_codes = (
+        ", ".join(
+            decision.trigger_codes
+        )
+        if decision.trigger_codes
+        else "-"
+    )
+
+    source_chunk_number = (
+        str(
+            decision.source_chunk_number
+        )
+        if (
+            decision.source_chunk_number
+            is not None
+        )
+        else "-"
+    )
+
+    print()
+    print(
+        "Adaptive Translation:"
+    )
+    print(
+        "  Source Chunk   : "
+        f"{source_chunk_number}"
+    )
+    print(
+        "  Strategy       : "
+        f"{decision.strategy}"
+    )
+    print(
+        "  Trigger        : "
+        f"{decision.trigger}"
+    )
+    print(
+        "  Next Chunk Size: "
+        f"{next_chunk_size}"
+    )
+    print(
+        "  Trigger Codes  : "
+        f"{trigger_codes}"
+    )
+
+
+def print_translation_failed(
+    *,
+    session_result: str,
+    translated_count: int,
+    total_blocks: int,
+    failed_ids: tuple[str, ...],
+    error: Exception,
+    partial_output_path: Path | None,
+) -> None:
+    """
+    適応回復できずに翻訳セッションを
+    終了する場合の結果を表示する。
+    """
+    failed_ids_text = (
+        ", ".join(
+            failed_ids
+        )
+        if failed_ids
+        else "-"
+    )
+
+    partial_output_text = (
+        str(
+            partial_output_path
+        )
+        if partial_output_path is not None
+        else "-"
+    )
+
+    print()
+    print("========================================")
+    print("Translation Failed")
+    print("========================================")
+    print(f"Result      : {session_result}")
+    print(
+        "Completed   : "
+        f"{translated_count} / {total_blocks}"
+    )
+    print(f"Failed IDs  : {failed_ids_text}")
+    print(
+        "Error       : "
+        f"{type(error).__name__}: "
+        f"{error}"
+    )
+    print(
+        "Partial     : "
+        f"{partial_output_text}"
+    )
+    print("========================================")
+
+
 def print_translation_complete(
     *,
+    session_result: str,
     translated_count: int,
     progress: ProgressTracker,
     total_elapsed: float,
@@ -248,6 +367,7 @@ def print_translation_complete(
     print("========================================")
     print("Translation Complete")
     print("========================================")
+    print(f"Result      : {session_result}")
     print(f"Subtitles   : {translated_count}")
     print(
         "Chunks      : "

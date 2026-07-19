@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -38,7 +39,18 @@ from .retry import (
     build_retry_instruction,
     build_structural_retry_instruction,
     build_untranslated_english_retry_instruction,
+    extract_error_subtitle_ids,
     has_structural_validation_error,
+)
+from .translation_metrics import (
+    TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
+    TRANSLATION_RESULT_FAILED,
+    TRANSLATION_RESULT_HYBRID_SUCCESS,
+    TRANSLATION_RESULT_LEVEL_1_FALLBACK_SUCCESS,
+    TRANSLATION_RESULT_STANDARD_SUCCESS,
+    TranslationAttemptMetric,
+    TranslationChunkMetric,
+    build_validation_reason_codes,
 )
 from .translation_output import (
     print_saved_noise_candidates,
@@ -511,14 +523,17 @@ def translate_chunk(
     glossary_entries: dict[str, str],
     noise_dictionary: NoiseDictionary,
     profile_name: str,
+    metrics: TranslationChunkMetric | None = None,
 ) -> list[str]:
-    last_errors: list[str] = []
-    last_translated_texts: list[str] = []
+    # Phase 1-5：チャンク計測開始
+    metrics_started_at = (
+        time.monotonic()
+    )
 
-    last_probable_ocr_lines: dict[
-        str,
-        list[str],
-    ] = {}
+    metrics_target_ids = tuple(
+        block.number
+        for block in target_blocks
+    )
 
     (
         original_source_speakers,
@@ -645,11 +660,47 @@ def translate_chunk(
                     )
                 )
 
-        response = generate_translation_response(
-            prompt,
-            model,
-            retry_target_blocks,
+        # Phase 1-5：通常翻訳試行の計測開始
+        attempt_started_at = (
+            time.monotonic()
         )
+
+        try:
+            response = (
+                generate_translation_response(
+                    prompt,
+                    model,
+                    retry_target_blocks,
+                )
+            )
+        except Exception as error:
+            if metrics is not None:
+                metrics.add_standard_attempt(
+                    TranslationAttemptMetric(
+                        pipeline="standard",
+                        attempt=attempt,
+                        target_ids=(
+                            metrics_target_ids
+                        ),
+                        elapsed_seconds=(
+                            time.monotonic()
+                            - attempt_started_at
+                        ),
+                        response_received=False,
+                        validation_stage=(
+                            "generation_exception"
+                        ),
+                        validation_valid=None,
+                        exception_type=(
+                            type(error).__name__
+                        ),
+                        exception_message=str(
+                            error
+                        ),
+                    )
+                )
+
+            raise
 
         display_response = "\n".join(
             normalize_translation_text(line)
@@ -682,6 +733,41 @@ def translate_chunk(
             glossary_entries=glossary_entries,
         )
 
+        # Phase 1-5：通常翻訳試行の検証結果
+        if metrics is not None:
+            validation_reasons = tuple(
+                validation.reasons
+            )
+
+            metrics.add_standard_attempt(
+                TranslationAttemptMetric(
+                    pipeline="standard",
+                    attempt=attempt,
+                    target_ids=(
+                        metrics_target_ids
+                    ),
+                    elapsed_seconds=(
+                        time.monotonic()
+                        - attempt_started_at
+                    ),
+                    response_received=True,
+                    validation_stage=(
+                        "standard_validation"
+                    ),
+                    validation_valid=(
+                        validation.valid
+                    ),
+                    validation_reasons=(
+                        validation_reasons
+                    ),
+                    reason_codes=(
+                        build_validation_reason_codes(
+                            validation_reasons
+                        )
+                    ),
+                )
+            )
+
         if (
             validation.valid
             and validation.noise_candidates
@@ -705,6 +791,17 @@ def translate_chunk(
                 print(f"  - {warning}")
 
         if validation.valid:
+            if metrics is not None:
+                metrics.complete(
+                    final_result=(
+                        TRANSLATION_RESULT_STANDARD_SUCCESS
+                    ),
+                    elapsed_seconds=(
+                        time.monotonic()
+                        - metrics_started_at
+                    ),
+                )
+
             return normalize_translation_texts(
                 validation.translated_texts
             )
@@ -792,6 +889,17 @@ def translate_chunk(
     )
 
     if level_1_fallback_texts is not None:
+        if metrics is not None:
+            metrics.complete(
+                final_result=(
+                    TRANSLATION_RESULT_LEVEL_1_FALLBACK_SUCCESS
+                ),
+                elapsed_seconds=(
+                    time.monotonic()
+                    - metrics_started_at
+                ),
+            )
+
         return level_1_fallback_texts
 
     if (
@@ -860,24 +968,84 @@ def translate_chunk(
             for error in last_errors:
                 print(f"  - {error}")
 
+            if metrics is not None:
+                metrics.complete(
+                    final_result=(
+                        TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS
+                    ),
+                    elapsed_seconds=(
+                        time.monotonic()
+                        - metrics_started_at
+                    ),
+                )
+
             return normalize_translation_texts(
                 corrected_validation.translated_texts
             )
 
-    hybrid_texts = (
-        recover_translation_with_hybrid(
-            target_blocks,
-            last_translated_texts,
-            last_errors,
-            model,
-            noise_dictionary=noise_dictionary,
-            glossary_entries=glossary_entries,
+    try:
+        hybrid_texts = (
+            recover_translation_with_hybrid(
+                target_blocks,
+                last_translated_texts,
+                last_errors,
+                model,
+                noise_dictionary=(
+                    noise_dictionary
+                ),
+                glossary_entries=(
+                    glossary_entries
+                ),
+                metrics=metrics,
+            )
         )
-    )
+    except Exception as error:
+        if metrics is not None:
+            metrics.fail_with_exception(
+                error,
+                elapsed_seconds=(
+                    time.monotonic()
+                    - metrics_started_at
+                ),
+                failed_ids=sorted(
+                    extract_error_subtitle_ids(
+                        last_errors
+                    )
+                ),
+            )
+
+        raise
 
     if hybrid_texts is not None:
+        if metrics is not None:
+            metrics.complete(
+                final_result=(
+                    TRANSLATION_RESULT_HYBRID_SUCCESS
+                ),
+                elapsed_seconds=(
+                    time.monotonic()
+                    - metrics_started_at
+                ),
+            )
+
         return normalize_translation_texts(
             hybrid_texts
+        )
+
+    if metrics is not None:
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_FAILED
+            ),
+            elapsed_seconds=(
+                time.monotonic()
+                - metrics_started_at
+            ),
+            failed_ids=sorted(
+                extract_error_subtitle_ids(
+                    last_errors
+                )
+            ),
         )
 
     raise RuntimeError(
