@@ -269,6 +269,17 @@ def run_translation_session(
             + remaining_chunks
         )
 
+        # Phase 3-4：表示上のチャンク番号は
+        # 成功済みチャンク数から計算する
+        display_chunk_number = (
+            progress.completed_chunks
+            + 1
+        )
+
+        display_total_chunks = (
+            progress.total_chunks
+        )
+
         end = min(
             start + current_chunk_size,
             total_blocks,
@@ -315,8 +326,12 @@ def run_translation_session(
         )
 
         print_chunk_start(
-            chunk_number=chunk_number,
-            remaining_chunks=remaining_chunks,
+            chunk_number=(
+                display_chunk_number
+            ),
+            total_chunks=(
+                display_total_chunks
+            ),
             start=start,
             end=end,
             total_blocks=total_blocks,

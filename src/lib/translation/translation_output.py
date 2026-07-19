@@ -172,7 +172,7 @@ def print_translation_start(
 def print_chunk_start(
     *,
     chunk_number: int,
-    remaining_chunks: int,
+    total_chunks: int,
     start: int,
     end: int,
     total_blocks: int,
@@ -181,10 +181,13 @@ def print_chunk_start(
 ) -> None:
     """
     各翻訳チャンク開始時の対象範囲を表示する。
+
+    チャンク番号と総チャンク数は、
+    成功済みチャンク数と現在の処理計画から表示する。
     """
     print()
     print(
-        f"[{chunk_number}/{remaining_chunks}] "
+        f"[{chunk_number}/{total_chunks}] "
         f"Translating "
         f"{start + 1}-{end} / {total_blocks} "
         f"(context: "

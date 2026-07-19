@@ -547,6 +547,15 @@ def test_run_translation_session_retries_failed_group_individually(
         TranslationChunkMetric
     ] = []
 
+    displayed_chunks: list[
+        tuple[
+            int,
+            int,
+            int,
+            int,
+        ]
+    ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -630,6 +639,29 @@ def test_run_translation_session_retries_failed_group_individually(
             ),
         )
 
+    def fake_print_chunk_start(
+        *,
+        chunk_number: int,
+        total_chunks: int,
+        start: int,
+        end: int,
+        total_blocks: int,
+        before_context_count: int,
+        after_context_count: int,
+    ) -> None:
+        del total_blocks
+        del before_context_count
+        del after_context_count
+
+        displayed_chunks.append(
+            (
+                chunk_number,
+                total_chunks,
+                start + 1,
+                end,
+            )
+        )
+
     monkeypatch.setattr(
         translation_session,
         "translate_chunk",
@@ -640,6 +672,12 @@ def test_run_translation_session_retries_failed_group_individually(
         translation_session,
         "try_save_translation_metrics_reports",
         fake_save_metrics,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_chunk_start",
+        fake_print_chunk_start,
     )
 
     translated_blocks: list[
@@ -829,6 +867,64 @@ def test_run_translation_session_retries_failed_group_individually(
     assert (
         resumed_adaptive.applied_chunk_size
         == 2
+    )
+
+    # 最初は設定チャンクサイズ4により
+    # 全6字幕を2チャンクで処理する予定
+    assert displayed_chunks[0] == (
+        1,
+        2,
+        1,
+        4,
+    )
+
+    # 1〜4の失敗後は同じ開始位置から
+    # 単一字幕6チャンクの計画へ変更する
+    assert displayed_chunks[1] == (
+        1,
+        6,
+        1,
+        1,
+    )
+
+    assert displayed_chunks[2] == (
+        2,
+        6,
+        2,
+        2,
+    )
+
+    assert displayed_chunks[3] == (
+        3,
+        6,
+        3,
+        3,
+    )
+
+    assert displayed_chunks[4] == (
+        4,
+        6,
+        4,
+        4,
+    )
+
+    # 元の失敗範囲を処理した後は
+    # 設定チャンクサイズへ戻る
+    assert displayed_chunks[5] == (
+        5,
+        5,
+        5,
+        6,
+    )
+
+    assert all(
+        chunk_number <= total_chunks
+        for (
+            chunk_number,
+            total_chunks,
+            _,
+            _,
+        ) in displayed_chunks
     )
 
 
