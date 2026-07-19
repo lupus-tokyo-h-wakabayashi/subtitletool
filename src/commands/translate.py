@@ -3,7 +3,10 @@
 import argparse
 from pathlib import Path
 
-from lib.translation.translate import translate_srt
+from lib.translation.translate import (
+    MODEL,
+    translate_srt,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +28,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Output Japanese SRT file. "
             "If omitted, .eng.srt is replaced with .ja.srt."
+        ),
+    )
+
+    parser.add_argument(
+        "--model",
+        default=MODEL,
+        help=(
+            "Ollama model name. "
+            f"Uses {MODEL} when omitted."
         ),
     )
 
@@ -112,6 +124,7 @@ def main() -> None:
     print("========================================")
     print(f"Input   : {input_srt}")
     print(f"Output  : {output_srt}")
+    print(f"Model   : {args.model}")
     if args.profile is not None:
         print(f"Profile : {args.profile}")
     if args.style is not None:
@@ -123,6 +136,7 @@ def main() -> None:
     result = translate_srt(
         input_srt,
         output_srt,
+        model=args.model,
         profile_name=args.profile,
         style_name=args.style,
         glossary_name=args.glossary,
