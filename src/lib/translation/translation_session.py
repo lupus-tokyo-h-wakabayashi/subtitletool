@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from pathlib import Path
 
 from lib.infrastructure.progress import ProgressTracker
@@ -21,6 +22,13 @@ from .translation_chunk import (
     build_initial_translation_request_payload,
     save_translation_request_payload,
     translate_chunk,
+)
+from .translation_metrics import (
+    TranslationChunkMetric,
+    TranslationSessionMetric,
+)
+from .translation_metrics_inspection import (
+    try_save_translation_metrics_reports,
 )
 from .translation_output import (
     print_chunk_start,
@@ -168,6 +176,18 @@ def run_translation_session(
         time.monotonic()
     )
 
+    # Phase 1-8：翻訳セッション計測を開始する
+    session_metrics = TranslationSessionMetric(
+        model=model,
+        profile_name=resolved_profile,
+        output_name=output_path.name,
+        chunk_size=chunk_size,
+        context_size=context_size,
+        total_blocks=total_blocks,
+        resume_start=resume_start,
+        started_at=datetime.now(),
+    )
+
     progress = ProgressTracker(
         total_chunks=remaining_chunks
     )
@@ -291,17 +311,49 @@ def run_translation_session(
 
             return inspection_path
 
-        translated_texts = translate_chunk(
-            before_context,
-            target_blocks,
-            after_context,
-            model,
+        # Phase 1-8：現在のチャンク計測を開始する
+        chunk_metrics = TranslationChunkMetric(
+            chunk_number=chunk_number,
             chunk_start=start + 1,
             chunk_end=end,
-            glossary_entries=glossary_entries,
-            noise_dictionary=noise_dictionary,
-            profile_name=resolved_profile,
+            target_ids=tuple(
+                block.number
+                for block in target_blocks
+            ),
+            started_at=datetime.now(),
         )
+
+        session_metrics.add_chunk(
+            chunk_metrics
+        )
+
+        try:
+            translated_texts = translate_chunk(
+                before_context,
+                target_blocks,
+                after_context,
+                model,
+                chunk_start=start + 1,
+                chunk_end=end,
+                glossary_entries=glossary_entries,
+                noise_dictionary=noise_dictionary,
+                profile_name=resolved_profile,
+                metrics=chunk_metrics,
+            )
+        except Exception:
+            session_metrics.complete(
+                elapsed_seconds=(
+                    time.monotonic()
+                    - translation_started_at
+                ),
+            )
+
+            try_save_translation_metrics_reports(
+                session=session_metrics,
+                chunk=chunk_metrics,
+            )
+
+            raise
 
         translated_chunk_blocks = (
             apply_translations(
@@ -346,6 +398,16 @@ def run_translation_session(
             elapsed=elapsed,
         )
 
+        # Phase 1-8：チャンクとセッション計測を保存する
+        session_metrics.complete(
+            elapsed_seconds=elapsed,
+        )
+
+        try_save_translation_metrics_reports(
+            session=session_metrics,
+            chunk=chunk_metrics,
+        )
+
     total_elapsed = (
         time.monotonic()
         - translation_started_at
@@ -353,6 +415,10 @@ def run_translation_session(
 
     translated_count = len(
         translated_blocks_all
+    )
+
+    session_metrics.complete(
+        elapsed_seconds=total_elapsed,
     )
 
     if translated_count != total_blocks:
