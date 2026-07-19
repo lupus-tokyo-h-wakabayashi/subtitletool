@@ -961,11 +961,6 @@ def translate_chunk(
                 corrected_validation.translated_texts
             )
 
-    if metrics is not None:
-        metrics.trigger_hybrid(
-            last_errors
-        )
-
     try:
         hybrid_texts = (
             recover_translation_with_hybrid(
