@@ -308,7 +308,7 @@ def print_translation_failed(
     total_blocks: int,
     failed_ids: tuple[str, ...],
     error: Exception,
-    output_path: Path,
+    partial_output_path: Path | None,
 ) -> None:
     """
     適応回復できずに翻訳セッションを
@@ -319,6 +319,14 @@ def print_translation_failed(
             failed_ids
         )
         if failed_ids
+        else "-"
+    )
+
+    partial_output_text = (
+        str(
+            partial_output_path
+        )
+        if partial_output_path is not None
         else "-"
     )
 
@@ -337,7 +345,10 @@ def print_translation_failed(
         f"{type(error).__name__}: "
         f"{error}"
     )
-    print(f"Partial     : {output_path}")
+    print(
+        "Partial     : "
+        f"{partial_output_text}"
+    )
     print("========================================")
 
 

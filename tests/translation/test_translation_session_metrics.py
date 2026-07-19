@@ -179,7 +179,7 @@ def test_run_translation_session_saves_success_metrics(
             tuple[str, ...],
             str,
             str,
-            Path,
+            Path | None,
         ]
     ] = []
 
@@ -240,7 +240,7 @@ def test_run_translation_session_saves_success_metrics(
         total_blocks: int,
         failed_ids: tuple[str, ...],
         error: Exception,
-        output_path: Path,
+        partial_output_path: Path | None,
     ) -> None:
         displayed_failures.append(
             (
@@ -252,7 +252,7 @@ def test_run_translation_session_saves_success_metrics(
                 str(
                     error
                 ),
-                output_path,
+                partial_output_path,
             )
         )
 
@@ -401,7 +401,7 @@ def test_run_translation_session_reraises_single_subtitle_failure(
             tuple[str, ...],
             str,
             str,
-            Path,
+            Path | None,
         ]
     ] = []
 
@@ -460,7 +460,7 @@ def test_run_translation_session_reraises_single_subtitle_failure(
         total_blocks: int,
         failed_ids: tuple[str, ...],
         error: Exception,
-        output_path: Path,
+        partial_output_path: Path | None,
     ) -> None:
         displayed_failures.append(
             (
@@ -472,7 +472,7 @@ def test_run_translation_session_reraises_single_subtitle_failure(
                 str(
                     error
                 ),
-                output_path,
+                partial_output_path,
             )
         )
 
@@ -604,10 +604,7 @@ def test_run_translation_session_reraises_single_subtitle_failure(
             ),
             "RuntimeError",
             "translation failed",
-            (
-                tmp_path
-                / "output.srt"
-            ),
+            None,
         ),
     ]
 
@@ -1066,6 +1063,10 @@ def test_run_translation_session_preserves_partial_recovery_before_reraising(
         tuple[str, ...]
     ] = []
 
+    displayed_partial_outputs: list[
+        Path | None
+        ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -1170,13 +1171,35 @@ def test_run_translation_session_preserves_partial_recovery_before_reraising(
         output_path: Path,
         blocks: list[SrtBlock],
     ) -> None:
-        del output_path
-
         written_target_ids.append(
             tuple(
                 block.number
                 for block in blocks
             )
+        )
+
+        output_path.write_text(
+            "partial translation\n",
+            encoding="utf-8",
+        )
+
+    def fake_print_translation_failed(
+        *,
+        session_result: str,
+        translated_count: int,
+        total_blocks: int,
+        failed_ids: tuple[str, ...],
+        error: Exception,
+        partial_output_path: Path | None,
+    ) -> None:
+        del session_result
+        del translated_count
+        del total_blocks
+        del failed_ids
+        del error
+
+        displayed_partial_outputs.append(
+            partial_output_path
         )
 
     monkeypatch.setattr(
@@ -1195,6 +1218,12 @@ def test_run_translation_session_preserves_partial_recovery_before_reraising(
         translation_session,
         "write_structured_srt",
         fake_write_structured_srt,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_translation_failed",
+        fake_print_translation_failed,
     )
 
     translated_blocks: list[
@@ -1263,6 +1292,18 @@ def test_run_translation_session_preserves_partial_recovery_before_reraising(
             "1",
         ),
     ]
+
+    assert displayed_partial_outputs == [
+        (
+            tmp_path
+            / "output.srt"
+        ),
+    ]
+
+    assert (
+        tmp_path
+        / "output.srt"
+    ).exists()
 
     # 元チャンク失敗、字幕1成功、
     # 字幕2失敗の3件が保存される

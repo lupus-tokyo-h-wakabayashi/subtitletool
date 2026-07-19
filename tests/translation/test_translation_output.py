@@ -205,7 +205,7 @@ def test_print_translation_failed_displays_terminal_failure(
         error=RuntimeError(
             "single subtitle failed"
         ),
-        output_path=Path(
+        partial_output_path=Path(
             "output.srt"
         ),
     )
@@ -240,5 +240,47 @@ def test_print_translation_failed_displays_terminal_failure(
 
     assert (
         "Partial     : output.srt"
+        in captured.out
+    )
+
+
+# 部分出力が存在しない翻訳失敗表示
+def test_print_translation_failed_displays_no_partial_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    print_translation_failed(
+        session_result=(
+            TRANSLATION_SESSION_RESULT_FAILED
+        ),
+        translated_count=0,
+        total_blocks=1,
+        failed_ids=(
+            "1",
+        ),
+        error=RuntimeError(
+            "translation failed"
+        ),
+        partial_output_path=None,
+    )
+
+    captured = capsys.readouterr()
+
+    assert (
+        "Translation Failed"
+        in captured.out
+    )
+
+    assert (
+        "Completed   : 0 / 1"
+        in captured.out
+    )
+
+    assert (
+        "Failed IDs  : 1"
+        in captured.out
+    )
+
+    assert (
+        "Partial     : -"
         in captured.out
     )

@@ -464,6 +464,12 @@ def run_translation_session(
                     )
                 )
 
+                partial_output_path = (
+                    output_path
+                    if output_path.exists()
+                    else None
+                )
+
                 print_translation_failed(
                     session_result=session_result,
                     translated_count=len(
@@ -474,7 +480,9 @@ def run_translation_session(
                         chunk_metrics.failed_ids
                     ),
                     error=error,
-                    output_path=output_path,
+                    partial_output_path=(
+                        partial_output_path
+                    ),
                 )
 
                 raise
