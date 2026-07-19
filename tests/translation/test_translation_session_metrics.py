@@ -653,6 +653,14 @@ def test_run_translation_session_retries_failed_group_individually(
         ]
     ] = []
 
+    displayed_completions: list[
+        tuple[
+            str,
+            int,
+            Path,
+        ]
+    ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -759,6 +767,25 @@ def test_run_translation_session_retries_failed_group_individually(
             )
         )
 
+    def fake_print_translation_complete(
+        *,
+        session_result: str,
+        translated_count: int,
+        progress: object,
+        total_elapsed: float,
+        output_path: Path,
+    ) -> None:
+        del progress
+        del total_elapsed
+
+        displayed_completions.append(
+            (
+                session_result,
+                translated_count,
+                output_path,
+            )
+        )
+
     monkeypatch.setattr(
         translation_session,
         "translate_chunk",
@@ -775,6 +802,12 @@ def test_run_translation_session_retries_failed_group_individually(
         translation_session,
         "print_chunk_start",
         fake_print_chunk_start,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_translation_complete",
+        fake_print_translation_complete,
     )
 
     translated_blocks: list[
@@ -1023,6 +1056,17 @@ def test_run_translation_session_retries_failed_group_individually(
             _,
         ) in displayed_chunks
     )
+
+    assert displayed_completions == [
+        (
+            "completed_with_recovery",
+            6,
+            (
+                tmp_path
+                / "output.srt"
+            ),
+        ),
+    ]
 
 
 # 単一字幕回復中の再失敗は
