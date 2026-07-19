@@ -487,3 +487,346 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
         chunk_metrics.exception_message
         == "translation failed"
     )
+
+
+# 複数チャンクの計測保存
+def test_run_translation_session_saves_each_chunk_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    source_blocks = [
+        SrtBlock(
+            number=str(number),
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                f"Subtitle {number}."
+            ),
+        )
+        for number in range(
+            1,
+            5,
+        )
+    ]
+
+    received_metrics: list[
+        TranslationChunkMetric
+    ] = []
+
+    saved_chunks: list[
+        TranslationChunkMetric
+    ] = []
+
+    saved_sessions: list[
+        TranslationSessionMetric
+    ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        assert metrics is not None
+
+        received_metrics.append(
+            metrics
+        )
+
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+            elapsed_seconds=1.0,
+        )
+
+        return [
+            f"翻訳結果 {subtitle_id}"
+            for subtitle_id
+            in metrics.target_ids
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+    ) -> tuple[Path, Path]:
+        del output_directory
+
+        saved_sessions.append(
+            session
+        )
+
+        saved_chunks.append(
+            chunk
+        )
+
+        return (
+            Path(
+                f"chunk-{chunk.chunk_number}.json"
+            ),
+            Path(
+                "summary.json"
+            ),
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    result = (
+        translation_session.run_translation_session(
+            source_blocks=source_blocks,
+            translated_blocks_all=[],
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=2,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+        )
+    )
+
+    assert result is None
+
+    assert len(
+        received_metrics
+    ) == 2
+
+    assert len(
+        saved_chunks
+    ) == 2
+
+    assert len(
+        saved_sessions
+    ) == 2
+
+    first_chunk = saved_chunks[0]
+    second_chunk = saved_chunks[1]
+
+    assert first_chunk.chunk_number == 1
+    assert first_chunk.chunk_start == 1
+    assert first_chunk.chunk_end == 2
+
+    assert first_chunk.target_ids == (
+        "1",
+        "2",
+    )
+
+    assert second_chunk.chunk_number == 2
+    assert second_chunk.chunk_start == 3
+    assert second_chunk.chunk_end == 4
+
+    assert second_chunk.target_ids == (
+        "3",
+        "4",
+    )
+
+    assert (
+        saved_sessions[0]
+        is saved_sessions[1]
+    )
+
+    session_metrics = saved_sessions[0]
+
+    assert len(
+        session_metrics.chunks
+    ) == 2
+
+    assert (
+        session_metrics.chunks[0]
+        is first_chunk
+    )
+
+    assert (
+        session_metrics.chunks[1]
+        is second_chunk
+    )
+
+
+# 再開位置からのチャンク計測
+def test_run_translation_session_records_resume_position(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    source_blocks = [
+        SrtBlock(
+            number=str(number),
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text=(
+                f"Subtitle {number}."
+            ),
+        )
+        for number in range(
+            1,
+            5,
+        )
+    ]
+
+    translated_blocks_all = [
+        SrtBlock(
+            number="1",
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text="翻訳済み1",
+        ),
+        SrtBlock(
+            number="2",
+            timestamp=(
+                "00:00:01,000 --> "
+                "00:00:02,000"
+            ),
+            text="翻訳済み2",
+        ),
+    ]
+
+    saved_metrics: list[
+        tuple[
+            TranslationSessionMetric,
+            TranslationChunkMetric,
+        ]
+    ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        assert metrics is not None
+
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+            elapsed_seconds=1.0,
+        )
+
+        return [
+            "翻訳結果3",
+            "翻訳結果4",
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+    ) -> tuple[Path, Path]:
+        del output_directory
+
+        saved_metrics.append(
+            (
+                session,
+                chunk,
+            )
+        )
+
+        return (
+            Path(
+                "chunk-000003-000004.json"
+            ),
+            Path(
+                "summary.json"
+            ),
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    result = (
+        translation_session.run_translation_session(
+            source_blocks=source_blocks,
+            translated_blocks_all=(
+                translated_blocks_all
+            ),
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=2,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+        )
+    )
+
+    assert result is None
+
+    assert len(
+        saved_metrics
+    ) == 1
+
+    session_metrics, chunk_metrics = (
+        saved_metrics[0]
+    )
+
+    assert session_metrics.resume_start == 2
+
+    assert chunk_metrics.chunk_number == 1
+    assert chunk_metrics.chunk_start == 3
+    assert chunk_metrics.chunk_end == 4
+
+    assert chunk_metrics.target_ids == (
+        "3",
+        "4",
+    )
