@@ -18,6 +18,15 @@ from .translation_metrics import (
     TranslationChunkMetric,
     TranslationSessionMetric,
 )
+from .translation_policy import (
+    ADAPTIVE_STRATEGY_REDUCED_CHUNK,
+    ADAPTIVE_STRATEGY_SINGLE_SUBTITLE,
+    ADAPTIVE_STRATEGY_STANDARD,
+    ADAPTIVE_TRIGGER_FAILED,
+    ADAPTIVE_TRIGGER_HYBRID,
+    ADAPTIVE_TRIGGER_NONE,
+    ADAPTIVE_TRIGGER_STANDARD_RETRY,
+)
 
 PROJECT_ROOT = (
     Path(__file__)
@@ -31,7 +40,7 @@ TRANSLATION_METRICS_DIRECTORY = (
     / "translation-metrics"
 )
 
-TRANSLATION_METRICS_VERSION = 2
+TRANSLATION_METRICS_VERSION = 3
 
 
 # 出力SRT名を計測ディレクトリ名へ使用できる形にする
@@ -382,6 +391,79 @@ def build_validation_reason_counts(
     )
 
 
+def build_adaptive_strategy_counts(
+    session: TranslationSessionMetric,
+) -> dict[str, int]:
+    """
+    適応情報が記録されたチャンクを
+    適用戦略ごとに集計する。
+
+    0件の戦略もキーとして出力する。
+    """
+    strategy_counts = Counter(
+        chunk.adaptive.strategy
+        for chunk in session.chunks
+        if chunk.adaptive is not None
+    )
+
+    return {
+        ADAPTIVE_STRATEGY_STANDARD: (
+            strategy_counts[
+                ADAPTIVE_STRATEGY_STANDARD
+            ]
+        ),
+        ADAPTIVE_STRATEGY_REDUCED_CHUNK: (
+            strategy_counts[
+                ADAPTIVE_STRATEGY_REDUCED_CHUNK
+            ]
+        ),
+        ADAPTIVE_STRATEGY_SINGLE_SUBTITLE: (
+            strategy_counts[
+                ADAPTIVE_STRATEGY_SINGLE_SUBTITLE
+            ]
+        ),
+    }
+
+
+def build_adaptive_trigger_counts(
+    session: TranslationSessionMetric,
+) -> dict[str, int]:
+    """
+    適応情報が記録されたチャンクを
+    適応制御の発火理由ごとに集計する。
+
+    0件の発火理由もキーとして出力する。
+    """
+    trigger_counts = Counter(
+        chunk.adaptive.trigger
+        for chunk in session.chunks
+        if chunk.adaptive is not None
+    )
+
+    return {
+        ADAPTIVE_TRIGGER_NONE: (
+            trigger_counts[
+                ADAPTIVE_TRIGGER_NONE
+            ]
+        ),
+        ADAPTIVE_TRIGGER_STANDARD_RETRY: (
+            trigger_counts[
+                ADAPTIVE_TRIGGER_STANDARD_RETRY
+            ]
+        ),
+        ADAPTIVE_TRIGGER_HYBRID: (
+            trigger_counts[
+                ADAPTIVE_TRIGGER_HYBRID
+            ]
+        ),
+        ADAPTIVE_TRIGGER_FAILED: (
+            trigger_counts[
+                ADAPTIVE_TRIGGER_FAILED
+            ]
+        ),
+    }
+
+
 def build_session_metrics_report(
     session: TranslationSessionMetric,
 ) -> dict[str, object]:
@@ -418,6 +500,12 @@ def build_session_metrics_report(
             chunk.final_result
             != TRANSLATION_RESULT_PENDING
         )
+    )
+
+    adaptive_recorded_chunk_count = sum(
+        1
+        for chunk in session.chunks
+        if chunk.adaptive is not None
     )
 
     return {
@@ -471,6 +559,19 @@ def build_session_metrics_report(
             ),
             "hybrid_attempt_count": (
                 hybrid_attempt_count
+            ),
+            "adaptive_recorded_chunk_count": (
+                adaptive_recorded_chunk_count
+            ),
+            "adaptive_strategy_counts": (
+                build_adaptive_strategy_counts(
+                    session
+                )
+            ),
+            "adaptive_trigger_counts": (
+                build_adaptive_trigger_counts(
+                    session
+                )
             ),
             "result_counts": (
                 build_result_counts(

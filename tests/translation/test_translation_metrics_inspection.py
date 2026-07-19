@@ -23,6 +23,8 @@ from lib.translation.translation_metrics import (
 )
 from lib.translation.translation_metrics_inspection import (
     build_adaptive_chunk_metrics_report,
+    build_adaptive_strategy_counts,
+    build_adaptive_trigger_counts,
     build_attempt_metrics_report,
     build_chunk_metrics_filename,
     build_chunk_metrics_report,
@@ -424,7 +426,7 @@ def test_build_chunk_metrics_report(
         chunk
     )
 
-    assert report["version"] == 2
+    assert report["version"] == 3
 
     assert report["chunk"] == {
         "number": 1,
@@ -639,7 +641,153 @@ def test_build_validation_reason_counts_does_not_duplicate_hybrid_trigger(
     }
 
 
-# セッションサマリー
+# 適応戦略別件数
+def test_build_adaptive_strategy_counts(
+) -> None:
+    session = make_session()
+
+    standard_chunk = make_chunk(
+        chunk_number=1,
+        chunk_start=1,
+        chunk_end=10,
+    )
+
+    standard_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="standard",
+            trigger="none",
+            source_chunk_number=None,
+            configured_chunk_size=10,
+            applied_chunk_size=10,
+        )
+    )
+
+    reduced_chunk = make_chunk(
+        chunk_number=2,
+        chunk_start=11,
+        chunk_end=15,
+    )
+
+    reduced_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="reduced_chunk",
+            trigger="standard_retry",
+            source_chunk_number=1,
+            configured_chunk_size=10,
+            applied_chunk_size=5,
+            trigger_codes=(
+                "glossary_violation",
+            ),
+        )
+    )
+
+    unrecorded_chunk = make_chunk(
+        chunk_number=3,
+        chunk_start=16,
+        chunk_end=20,
+    )
+
+    session.add_chunk(
+        standard_chunk
+    )
+
+    session.add_chunk(
+        reduced_chunk
+    )
+
+    session.add_chunk(
+        unrecorded_chunk
+    )
+
+    actual = build_adaptive_strategy_counts(
+        session
+    )
+
+    assert actual == {
+        "standard": 1,
+        "reduced_chunk": 1,
+        "single_subtitle": 0,
+    }
+
+
+# 適応発火理由別件数
+def test_build_adaptive_trigger_counts(
+) -> None:
+    session = make_session()
+
+    standard_chunk = make_chunk(
+        chunk_number=1,
+        chunk_start=1,
+        chunk_end=10,
+    )
+
+    standard_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="standard",
+            trigger="none",
+            source_chunk_number=None,
+            configured_chunk_size=10,
+            applied_chunk_size=10,
+        )
+    )
+
+    retry_chunk = make_chunk(
+        chunk_number=2,
+        chunk_start=11,
+        chunk_end=15,
+    )
+
+    retry_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="reduced_chunk",
+            trigger="standard_retry",
+            source_chunk_number=1,
+            configured_chunk_size=10,
+            applied_chunk_size=5,
+        )
+    )
+
+    hybrid_chunk = make_chunk(
+        chunk_number=3,
+        chunk_start=16,
+        chunk_end=20,
+    )
+
+    hybrid_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="reduced_chunk",
+            trigger="hybrid",
+            source_chunk_number=2,
+            configured_chunk_size=10,
+            applied_chunk_size=5,
+        )
+    )
+
+    session.add_chunk(
+        standard_chunk
+    )
+
+    session.add_chunk(
+        retry_chunk
+    )
+
+    session.add_chunk(
+        hybrid_chunk
+    )
+
+    actual = build_adaptive_trigger_counts(
+        session
+    )
+
+    assert actual == {
+        "none": 1,
+        "standard_retry": 1,
+        "hybrid": 1,
+        "failed": 0,
+    }
+
+
+# セッションレポート
 def test_build_session_metrics_report(
 ) -> None:
     session = make_session()
@@ -647,6 +795,16 @@ def test_build_session_metrics_report(
     standard_chunk = make_chunk(
         final_result=(
             TRANSLATION_RESULT_STANDARD_SUCCESS
+        )
+    )
+
+    standard_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="standard",
+            trigger="none",
+            source_chunk_number=None,
+            configured_chunk_size=10,
+            applied_chunk_size=10,
         )
     )
 
@@ -661,6 +819,19 @@ def test_build_session_metrics_report(
         final_result=(
             TRANSLATION_RESULT_HYBRID_SUCCESS
         ),
+    )
+
+    hybrid_chunk.record_adaptive_chunk(
+        AdaptiveChunkMetric(
+            strategy="reduced_chunk",
+            trigger="standard_retry",
+            source_chunk_number=1,
+            configured_chunk_size=10,
+            applied_chunk_size=5,
+            trigger_codes=(
+                "glossary_violation",
+            ),
+        )
     )
 
     hybrid_chunk.add_standard_attempt(
@@ -711,7 +882,7 @@ def test_build_session_metrics_report(
         session
     )
 
-    assert report["version"] == 2
+    assert report["version"] == 3
 
     session_report = report[
         "session"
@@ -768,6 +939,27 @@ def test_build_session_metrics_report(
     assert summary[
                "hybrid_attempt_count"
            ] == 1
+
+    assert summary[
+               "adaptive_recorded_chunk_count"
+           ] == 2
+
+    assert summary[
+               "adaptive_strategy_counts"
+           ] == {
+               "standard": 1,
+               "reduced_chunk": 1,
+               "single_subtitle": 0,
+           }
+
+    assert summary[
+               "adaptive_trigger_counts"
+           ] == {
+               "none": 1,
+               "standard_retry": 1,
+               "hybrid": 0,
+               "failed": 0,
+           }
 
     assert len(
         report["chunks"]
