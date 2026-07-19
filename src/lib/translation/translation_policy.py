@@ -59,7 +59,7 @@ class AdaptiveTranslationDecision:
 
     strategy: AdaptiveTranslationStrategy
     trigger: AdaptiveTranslationTrigger
-    source_chunk_number: int
+    source_chunk_number: int | None
 
     trigger_codes: tuple[
         str,

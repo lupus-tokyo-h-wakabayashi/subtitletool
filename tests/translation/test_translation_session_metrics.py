@@ -489,6 +489,21 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
         == "translation failed"
     )
 
+    adaptive = chunk_metrics.adaptive
+
+    assert adaptive is not None
+    assert adaptive.strategy == "standard"
+    assert adaptive.trigger == "none"
+
+    assert (
+        adaptive.source_chunk_number
+        is None
+    )
+
+    assert adaptive.configured_chunk_size == 2
+    assert adaptive.applied_chunk_size == 2
+    assert adaptive.trigger_codes == ()
+
 
 # 複数チャンクの計測保存
 def test_run_translation_session_saves_each_chunk_metrics(
@@ -1063,3 +1078,102 @@ def test_run_translation_session_applies_adaptive_chunk_size(
                    8,
                ),
            ]
+
+    first_adaptive = (
+        saved_chunks[0].adaptive
+    )
+
+    second_adaptive = (
+        saved_chunks[1].adaptive
+    )
+
+    third_adaptive = (
+        saved_chunks[2].adaptive
+    )
+
+    assert first_adaptive is not None
+    assert second_adaptive is not None
+    assert third_adaptive is not None
+
+    # 初回チャンクは設定値を使用する
+    assert first_adaptive.strategy == (
+        "standard"
+    )
+
+    assert first_adaptive.trigger == (
+        "none"
+    )
+
+    assert (
+        first_adaptive.source_chunk_number
+        is None
+    )
+
+    assert (
+        first_adaptive.configured_chunk_size
+        == 4
+    )
+
+    assert (
+        first_adaptive.applied_chunk_size
+        == 4
+    )
+
+    assert first_adaptive.trigger_codes == ()
+
+    # 1チャンク目の再試行により縮小する
+    assert second_adaptive.strategy == (
+        "reduced_chunk"
+    )
+
+    assert second_adaptive.trigger == (
+        "standard_retry"
+    )
+
+    assert (
+        second_adaptive.source_chunk_number
+        == 1
+    )
+
+    assert (
+        second_adaptive.configured_chunk_size
+        == 4
+    )
+
+    assert (
+        second_adaptive.applied_chunk_size
+        == 2
+    )
+
+    assert second_adaptive.trigger_codes == (
+        "glossary_violation",
+    )
+
+    # 2チャンク目の通常成功により
+    # 設定サイズへ戻る
+    assert third_adaptive.strategy == (
+        "standard"
+    )
+
+    assert third_adaptive.trigger == (
+        "none"
+    )
+
+    assert (
+        third_adaptive.source_chunk_number
+        == 2
+    )
+
+    assert (
+        third_adaptive.configured_chunk_size
+        == 4
+    )
+
+    # 設定サイズは4だが、
+    # 残り字幕数は2件
+    assert (
+        third_adaptive.applied_chunk_size
+        == 2
+    )
+
+    assert third_adaptive.trigger_codes == ()

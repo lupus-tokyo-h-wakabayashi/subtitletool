@@ -24,6 +24,7 @@ from .translation_chunk import (
     translate_chunk,
 )
 from .translation_metrics import (
+    AdaptiveChunkMetric,
     TranslationChunkMetric,
     TranslationSessionMetric,
 )
@@ -37,6 +38,9 @@ from .translation_output import (
     print_translation_start,
 )
 from .translation_policy import (
+    ADAPTIVE_STRATEGY_STANDARD,
+    ADAPTIVE_TRIGGER_NONE,
+    AdaptiveTranslationDecision,
     build_adaptive_translation_decision,
     resolve_adaptive_chunk_size,
 )
@@ -220,6 +224,18 @@ def run_translation_session(
     chunk_number = 1
     current_chunk_size = chunk_size
 
+    current_adaptive_decision = (
+        AdaptiveTranslationDecision(
+            strategy=(
+                ADAPTIVE_STRATEGY_STANDARD
+            ),
+            trigger=(
+                ADAPTIVE_TRIGGER_NONE
+            ),
+            source_chunk_number=None,
+        )
+    )
+
     while start < total_blocks:
         current_remaining_blocks = (
             total_blocks - start
@@ -342,6 +358,35 @@ def run_translation_session(
             started_at=datetime.now(),
         )
 
+        # Phase 2-6：現在のチャンクへ
+        # 実際に適用した適応制御を記録する
+        chunk_metrics.record_adaptive_chunk(
+            AdaptiveChunkMetric(
+                strategy=(
+                    current_adaptive_decision
+                    .strategy
+                ),
+                trigger=(
+                    current_adaptive_decision
+                    .trigger
+                ),
+                source_chunk_number=(
+                    current_adaptive_decision
+                    .source_chunk_number
+                ),
+                configured_chunk_size=(
+                    chunk_size
+                ),
+                applied_chunk_size=len(
+                    target_blocks
+                ),
+                trigger_codes=(
+                    current_adaptive_decision
+                    .trigger_codes
+                ),
+            )
+        )
+
         session_metrics.add_chunk(
             chunk_metrics
         )
@@ -429,7 +474,7 @@ def run_translation_session(
 
         # Phase 2-3：完了チャンクから
         # 次チャンクのサイズを決定する
-        adaptive_decision = (
+        current_adaptive_decision = (
             build_adaptive_translation_decision(
                 chunk_metrics
             )
@@ -437,7 +482,7 @@ def run_translation_session(
 
         current_chunk_size = (
             resolve_adaptive_chunk_size(
-                adaptive_decision,
+                current_adaptive_decision,
                 configured_chunk_size=(
                     chunk_size
                 ),
