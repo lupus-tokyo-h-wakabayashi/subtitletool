@@ -490,14 +490,17 @@ def run_translation_session(
             )
         )
 
-        print_adaptive_translation_decision(
-            decision=(
-                current_adaptive_decision
-            ),
-            next_chunk_size=(
-                current_chunk_size
-            ),
-        )
+        # Phase 2-9：次チャンクが存在する場合だけ
+        # 適応制御の決定内容を表示する
+        if end < total_blocks:
+            print_adaptive_translation_decision(
+                decision=(
+                    current_adaptive_decision
+                ),
+                next_chunk_size=(
+                    current_chunk_size
+                ),
+            )
 
         start = end
         chunk_number += 1

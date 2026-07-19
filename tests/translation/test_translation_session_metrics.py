@@ -13,6 +13,9 @@ from lib.translation.translation_metrics import (
     TranslationChunkMetric,
     TranslationSessionMetric,
 )
+from lib.translation.translation_policy import (
+    AdaptiveTranslationDecision,
+)
 from .helpers import (
     build_test_noise_dictionary,
 )
@@ -888,6 +891,16 @@ def test_run_translation_session_applies_adaptive_chunk_size(
         TranslationChunkMetric
     ] = []
 
+    displayed_decisions: list[
+        tuple[
+            str,
+            str,
+            int | None,
+            int,
+            tuple[str, ...],
+        ]
+    ] = []
+
     def fake_translate_chunk(
         *args: object,
         metrics: (
@@ -995,6 +1008,21 @@ def test_run_translation_session_applies_adaptive_chunk_size(
             ),
         )
 
+    def fake_print_adaptive_translation_decision(
+        *,
+        decision: AdaptiveTranslationDecision,
+        next_chunk_size: int,
+    ) -> None:
+        displayed_decisions.append(
+            (
+                decision.strategy,
+                decision.trigger,
+                decision.source_chunk_number,
+                next_chunk_size,
+                decision.trigger_codes,
+            )
+        )
+
     monkeypatch.setattr(
         translation_session,
         "translate_chunk",
@@ -1005,6 +1033,12 @@ def test_run_translation_session_applies_adaptive_chunk_size(
         translation_session,
         "try_save_translation_metrics_reports",
         fake_save_metrics,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "print_adaptive_translation_decision",
+        fake_print_adaptive_translation_decision,
     )
 
     result = (
@@ -1183,3 +1217,31 @@ def test_run_translation_session_applies_adaptive_chunk_size(
     )
 
     assert third_adaptive.trigger_codes == ()
+
+    # 1チャンク目の再試行後は
+    # 次チャンクの縮小を表示する
+    assert displayed_decisions[0] == (
+        "reduced_chunk",
+        "standard_retry",
+        1,
+        2,
+        (
+            "glossary_violation",
+        ),
+    )
+
+    # 2チャンク目の通常成功後は
+    # 設定サイズへ戻る判断を渡す
+    assert displayed_decisions[1] == (
+        "standard",
+        "none",
+        2,
+        4,
+        (),
+    )
+
+    # 最終チャンク終了後は
+    # 次チャンクの表示を呼び出さない
+    assert len(
+        displayed_decisions
+    ) == 2
