@@ -825,32 +825,63 @@ def test_translation_session_result_is_completed(
 ) -> None:
     session = make_session()
 
-    session.add_chunk(
-        make_chunk(
-            chunk_number=1,
-            chunk_start=1,
-            chunk_end=10,
-            final_result=(
-                TRANSLATION_RESULT_STANDARD_SUCCESS
-            ),
+    first_chunk = make_chunk(
+        chunk_number=1,
+        chunk_start=1,
+        chunk_end=10,
+        final_result=(
+            TRANSLATION_RESULT_STANDARD_SUCCESS
+        ),
+    )
+
+    first_chunk.target_ids = tuple(
+        str(number)
+        for number in range(
+            1,
+            11,
+        )
+    )
+
+    second_chunk = make_chunk(
+        chunk_number=2,
+        chunk_start=11,
+        chunk_end=20,
+        final_result=(
+            TRANSLATION_RESULT_STANDARD_SUCCESS
+        ),
+    )
+
+    second_chunk.target_ids = tuple(
+        str(number)
+        for number in range(
+            11,
+            21,
         )
     )
 
     session.add_chunk(
-        make_chunk(
-            chunk_number=2,
-            chunk_start=11,
-            chunk_end=20,
-            final_result=(
-                TRANSLATION_RESULT_STANDARD_SUCCESS
-            ),
-        )
+        first_chunk
+    )
+
+    session.add_chunk(
+        second_chunk
     )
 
     actual = (
         build_translation_session_result(
             session
         )
+    )
+
+    assert actual == (
+        TRANSLATION_SESSION_RESULT_COMPLETED
+    )
+
+    assert (
+        build_translated_block_count(
+            session
+        )
+        == 20
     )
 
 
@@ -1168,6 +1199,10 @@ def test_build_session_metrics_report(
            ] == (
                TRANSLATION_SESSION_RESULT_COMPLETED
            )
+
+    assert summary[
+               "translated_block_count"
+           ] == 20
 
     assert summary[
                "total_chunk_count"
