@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from .translation_metrics import (
+    AdaptiveChunkMetric,
     HybridGroupMetric,
     TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
     TRANSLATION_RESULT_FAILED,
@@ -30,7 +31,7 @@ TRANSLATION_METRICS_DIRECTORY = (
     / "translation-metrics"
 )
 
-TRANSLATION_METRICS_VERSION = 1
+TRANSLATION_METRICS_VERSION = 2
 
 
 # 出力SRT名を計測ディレクトリ名へ使用できる形にする
@@ -178,6 +179,32 @@ def build_hybrid_group_metrics_report(
     }
 
 
+# 適応チャンクをJSON形式へ変換する
+def build_adaptive_chunk_metrics_report(
+    adaptive: AdaptiveChunkMetric,
+) -> dict[str, object]:
+    """
+    現在のチャンクへ適用した
+    適応制御をJSON保存可能な辞書へ変換する。
+    """
+    return {
+        "strategy": adaptive.strategy,
+        "trigger": adaptive.trigger,
+        "source_chunk_number": (
+            adaptive.source_chunk_number
+        ),
+        "configured_chunk_size": (
+            adaptive.configured_chunk_size
+        ),
+        "applied_chunk_size": (
+            adaptive.applied_chunk_size
+        ),
+        "trigger_codes": list(
+            adaptive.trigger_codes
+        ),
+    }
+
+
 # 1チャンクをJSON形式へ変換する
 def build_chunk_metrics_report(
     chunk: TranslationChunkMetric,
@@ -213,6 +240,13 @@ def build_chunk_metrics_report(
                 chunk.elapsed_seconds
             ),
         },
+        "adaptive": (
+            build_adaptive_chunk_metrics_report(
+                chunk.adaptive
+            )
+            if chunk.adaptive is not None
+            else None
+        ),
         "standard": {
             "attempt_count": len(
                 chunk.standard_attempts

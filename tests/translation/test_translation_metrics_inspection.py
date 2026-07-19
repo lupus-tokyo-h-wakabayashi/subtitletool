@@ -9,6 +9,7 @@ from lib.translation import (
     translation_metrics_inspection,
 )
 from lib.translation.translation_metrics import (
+    AdaptiveChunkMetric,
     HybridGroupMetric,
     TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
     TRANSLATION_RESULT_FAILED,
@@ -21,6 +22,7 @@ from lib.translation.translation_metrics import (
     TranslationSessionMetric,
 )
 from lib.translation.translation_metrics_inspection import (
+    build_adaptive_chunk_metrics_report,
     build_attempt_metrics_report,
     build_chunk_metrics_filename,
     build_chunk_metrics_report,
@@ -317,6 +319,38 @@ def test_build_hybrid_group_metrics_report(
     ]
 
 
+# 適応チャンクレポート
+def test_build_adaptive_chunk_metrics_report(
+) -> None:
+    adaptive = AdaptiveChunkMetric(
+        strategy="reduced_chunk",
+        trigger="hybrid",
+        source_chunk_number=2,
+        configured_chunk_size=10,
+        applied_chunk_size=5,
+        trigger_codes=(
+            "untranslated_english_sentence_detected",
+        ),
+    )
+
+    report = (
+        build_adaptive_chunk_metrics_report(
+            adaptive
+        )
+    )
+
+    assert report == {
+        "strategy": "reduced_chunk",
+        "trigger": "hybrid",
+        "source_chunk_number": 2,
+        "configured_chunk_size": 10,
+        "applied_chunk_size": 5,
+        "trigger_codes": [
+            "untranslated_english_sentence_detected",
+        ],
+    }
+
+
 # チャンクレポート
 def test_build_chunk_metrics_report(
 ) -> None:
@@ -324,6 +358,21 @@ def test_build_chunk_metrics_report(
         final_result=(
             TRANSLATION_RESULT_HYBRID_SUCCESS
         )
+    )
+
+    adaptive = AdaptiveChunkMetric(
+        strategy="reduced_chunk",
+        trigger="standard_retry",
+        source_chunk_number=1,
+        configured_chunk_size=10,
+        applied_chunk_size=5,
+        trigger_codes=(
+            "glossary_violation",
+        ),
+    )
+
+    chunk.record_adaptive_chunk(
+        adaptive
     )
 
     standard_attempt = (
@@ -375,7 +424,7 @@ def test_build_chunk_metrics_report(
         chunk
     )
 
-    assert report["version"] == 1
+    assert report["version"] == 2
 
     assert report["chunk"] == {
         "number": 1,
@@ -389,6 +438,17 @@ def test_build_chunk_metrics_report(
             "2026-07-19T12:34:56.123456"
         ),
         "elapsed_seconds": 20.5,
+    }
+
+    assert report["adaptive"] == {
+        "strategy": "reduced_chunk",
+        "trigger": "standard_retry",
+        "source_chunk_number": 1,
+        "configured_chunk_size": 10,
+        "applied_chunk_size": 5,
+        "trigger_codes": [
+            "glossary_violation",
+        ],
     }
 
     standard_report = report[
@@ -431,6 +491,18 @@ def test_build_chunk_metrics_report(
         result_report["final_result"]
         == TRANSLATION_RESULT_HYBRID_SUCCESS
     )
+
+
+# 適応制御未記録のチャンクレポート
+def test_build_chunk_metrics_report_uses_none_without_adaptive_metrics(
+) -> None:
+    chunk = make_chunk()
+
+    report = build_chunk_metrics_report(
+        chunk
+    )
+
+    assert report["adaptive"] is None
 
 
 # 最終結果別件数
@@ -639,7 +711,7 @@ def test_build_session_metrics_report(
         session
     )
 
-    assert report["version"] == 1
+    assert report["version"] == 2
 
     session_report = report[
         "session"
