@@ -17,6 +17,7 @@ from lib.translation.hybrid_group import (
 from lib.translation.hybrid_recovery import (
     HYBRID_OCR_PLACEHOLDER,
     HybridRecoveryError,
+    build_hybrid_context_payload,
     build_hybrid_response_schema,
     build_hybrid_source_payload,
     build_hybrid_translation_prompt,
@@ -379,6 +380,180 @@ def test_e08_hybrid_source_payload_classifies_lines(
             },
         ],
     }
+
+
+def test_build_hybrid_context_payload_preserves_id_and_text(
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="103",
+            timestamp=(
+                "00:04:43,575 --> "
+                "00:04:44,284"
+            ),
+            text="Don't let her.",
+        ),
+        SrtBlock(
+            number="105",
+            timestamp=(
+                "00:04:45,911 --> "
+                "00:04:47,120"
+            ),
+            text=(
+                "Don't release her.\n"
+                "Keep her here."
+            ),
+        ),
+    ]
+
+    actual = build_hybrid_context_payload(
+        blocks
+    )
+
+    assert actual == [
+        {
+            "id": "103",
+            "text": "Don't let her.",
+        },
+        {
+            "id": "105",
+            "text": (
+                "Don't release her.\n"
+                "Keep her here."
+            ),
+        },
+    ]
+
+
+def test_build_hybrid_context_payload_returns_empty_for_none(
+) -> None:
+    actual = build_hybrid_context_payload(
+        None
+    )
+
+    assert actual == []
+
+
+def test_build_hybrid_translation_prompt_includes_surrounding_context(
+) -> None:
+    target_block = SrtBlock(
+        number="104",
+        timestamp=(
+            "00:04:44,576 --> "
+            "00:04:45,619"
+        ),
+        text=(
+            "Okay, when\n"
+            "she returns home..."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            target_block,
+        ),
+        failed_ids=frozenset(
+            {
+                "104",
+            }
+        ),
+    )
+
+    before_context = [
+        SrtBlock(
+            number="103",
+            timestamp=(
+                "00:04:43,575 --> "
+                "00:04:44,284"
+            ),
+            text="Don't let her.",
+        ),
+    ]
+
+    after_context = [
+        SrtBlock(
+            number="105",
+            timestamp=(
+                "00:04:45,911 --> "
+                "00:04:47,120"
+            ),
+            text=(
+                "Don't release her.\n"
+                "Keep her here."
+            ),
+        ),
+    ]
+
+    prompt = build_hybrid_translation_prompt(
+        group,
+        {},
+        {},
+        before_context=before_context,
+        after_context=after_context,
+    )
+
+    assert (
+        "【参考文脈（前）】"
+        in prompt
+    )
+
+    assert (
+        '"id": "103"'
+        in prompt
+    )
+
+    assert (
+        '"text": "Don\'t let her."'
+        in prompt
+    )
+
+    assert (
+        "【翻訳対象】"
+        in prompt
+    )
+
+    assert (
+        '"id": "104"'
+        in prompt
+    )
+
+    assert (
+        '"text": "Okay, when"'
+        in prompt
+    )
+
+    assert (
+        '"text": "she returns home..."'
+        in prompt
+    )
+
+    assert (
+        "【参考文脈（後）】"
+        in prompt
+    )
+
+    assert (
+        '"id": "105"'
+        in prompt
+    )
+
+    assert (
+        "Don\'t release her.\\nKeep her here."
+        in prompt
+    )
+
+    assert (
+        "context_beforeとcontext_afterの字幕は、"
+        in prompt
+    )
+
+    assert (
+        "full_translationとsegmentsへ出力しないこと。"
+        in prompt
+    )
 
 
 def test_low_symbol_word_salad_is_limited_to_failed_ids(
@@ -2185,9 +2360,13 @@ def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
         model: str,
         noise_dictionary: NoiseDictionary,
         glossary_entries: object,
+        before_context: list[SrtBlock] | None = None,
+        after_context: list[SrtBlock] | None = None,
         group_number: int = 1,
         metrics: TranslationChunkMetric | None = None,
     ) -> list[str]:
+        del before_context
+        del after_context
         del group_number
         del metrics
 

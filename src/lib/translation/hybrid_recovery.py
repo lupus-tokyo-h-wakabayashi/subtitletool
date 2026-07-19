@@ -375,6 +375,28 @@ def build_hybrid_source_payload(
     }
 
 
+def build_hybrid_context_payload(
+    blocks: list[SrtBlock] | None,
+) -> list[dict[str, str]]:
+    """
+    Hybrid Recoveryの参考文脈を
+    Prompt入力用のPayloadへ変換する。
+
+    Contextは翻訳結果の出力対象ではないため、
+    字幕IDと原文だけを保持する。
+    """
+    if blocks is None:
+        return []
+
+    return [
+        {
+            "id": block.number,
+            "text": block.text,
+        }
+        for block in blocks
+    ]
+
+
 def build_hybrid_segment_requirements(
     group: HybridTranslationGroup,
     ocr_lines: dict[str, list[str]],
@@ -570,6 +592,8 @@ def build_hybrid_translation_prompt(
     ocr_lines: dict[str, list[str]],
     glossary_entries: Mapping[str, str],
     *,
+    before_context: list[SrtBlock] | None = None,
+    after_context: list[SrtBlock] | None = None,
     retry_reasons: list[str] | None = None,
 ) -> str:
     """
@@ -587,6 +611,30 @@ def build_hybrid_translation_prompt(
 
     source_json = json.dumps(
         source_payload,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    before_context_payload = (
+        build_hybrid_context_payload(
+            before_context
+        )
+    )
+
+    after_context_payload = (
+        build_hybrid_context_payload(
+            after_context
+        )
+    )
+
+    before_context_json = json.dumps(
+        before_context_payload,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    after_context_json = json.dumps(
+        after_context_payload,
         ensure_ascii=False,
         indent=2,
     )
@@ -683,6 +731,22 @@ segmentsへ出力する字幕IDは、
 
 字幕IDを追加、削除、変更、重複、並べ替えしないこと。
 
+【参考文脈】
+
+context_beforeとcontext_afterは、
+翻訳対象の前後関係を理解するための参考情報である。
+
+context_beforeとcontext_afterの字幕は、
+full_translationとsegmentsへ出力しないこと。
+
+segmentsへ出力するのは、
+指定された字幕IDだけとする。
+
+翻訳対象が文の途中で終わっている場合や、
+前後の字幕へ文章が続いている場合は、
+参考文脈を使って意味を判断し、
+翻訳対象部分だけを自然な日本語へ翻訳すること。
+
 【full_translation】
 
 * グループ全体の字幕内容を自然な日本語へ翻訳する
@@ -726,9 +790,17 @@ segmentsを作った後、
 その値をID順に連結して
 full_translationへコピーすること。
 
-【入力】
+【参考文脈（前）】
+
+{before_context_json}
+
+【翻訳対象】
 
 {source_json}
+
+【参考文脈（後）】
+
+{after_context_json}
 """.strip()
     )
 
@@ -1243,6 +1315,8 @@ def recover_single_hybrid_group(
     model: str,
     noise_dictionary: NoiseDictionary,
     glossary_entries: Mapping[str, str],
+    before_context: list[SrtBlock] | None = None,
+    after_context: list[SrtBlock] | None = None,
     group_number: int = 1,
     metrics: TranslationChunkMetric | None = None,
 ) -> list[str]:
@@ -1301,6 +1375,8 @@ def recover_single_hybrid_group(
                 group,
                 ocr_lines,
                 glossary_entries,
+                before_context=before_context,
+                after_context=after_context,
                 retry_reasons=retry_reasons,
             )
         )
@@ -1639,6 +1715,8 @@ def recover_translation_with_hybrid(
     *,
     noise_dictionary: NoiseDictionary,
     glossary_entries: Mapping[str, str],
+    before_context: list[SrtBlock] | None = None,
+    after_context: list[SrtBlock] | None = None,
     metrics: TranslationChunkMetric | None = None,
 ) -> list[str] | None:
     """
@@ -1760,6 +1838,12 @@ def recover_translation_with_hybrid(
                 ),
                 glossary_entries=(
                     glossary_entries
+                ),
+                before_context=(
+                    before_context
+                ),
+                after_context=(
+                    after_context
                 ),
                 group_number=group_number,
                 metrics=metrics,
