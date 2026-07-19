@@ -10,6 +10,9 @@ from lib.profile.glossary import (
 from lib.profile.noise import (
     NoiseEntry,
 )
+from lib.translation.translation_tags import (
+    process_translation_tags,
+)
 from lib.translation.translation_validation import (
     find_chinese_specific_characters,
     find_glossary_violations,
@@ -290,6 +293,69 @@ def test_validation_processes_level_3_with_normal_validation(
     assert result.translated_texts == [
         "船名はDestinyです。",
     ]
+
+
+def test_level_3_source_match_normalizes_whitespace(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            (
+                "[3]CIN Maal- male Ws "
+                "of the land.[/3]"
+            ),
+        ],
+        subtitle_ids=[
+            "316",
+        ],
+        source_texts=[
+            (
+                "CIN Maal- male Ws\n"
+                "of the land."
+            ),
+        ],
+    )
+
+    assert result.errors == ()
+
+    assert result.translated_texts == (
+        "CIN Maal- male Ws of the land.",
+    )
+
+
+def test_level_3_source_match_still_rejects_text_difference(
+) -> None:
+    result = process_translation_tags(
+        translated_texts=[
+            (
+                "[3]CIN Maal- female Ws "
+                "of the land.[/3]"
+            ),
+        ],
+        subtitle_ids=[
+            "316",
+        ],
+        source_texts=[
+            (
+                "CIN Maal- male Ws\n"
+                "of the land."
+            ),
+        ],
+    )
+
+    assert len(
+        result.errors
+    ) == 1
+
+    assert (
+        "Translation evaluation tag value "
+        "not found in source"
+        in result.errors[0].message
+    )
+
+    assert (
+        "level=3"
+        in result.errors[0].message
+    )
 
 
 def test_validation_rejects_untranslated_level_3_sentence(
