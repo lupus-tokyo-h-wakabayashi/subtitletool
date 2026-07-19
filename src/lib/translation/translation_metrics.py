@@ -192,6 +192,26 @@ class HybridGroupMetric:
         self.result = "failed"
 
 
+# 1チャンクへ適用した適応制御
+@dataclass(frozen=True)
+class AdaptiveChunkMetric:
+    """
+    現在のチャンクへ適用した
+    適応制御の内容を保持する。
+    """
+
+    strategy: str
+    trigger: str
+    source_chunk_number: int | None
+    configured_chunk_size: int
+    applied_chunk_size: int
+
+    trigger_codes: tuple[
+        str,
+        ...
+    ] = ()
+
+
 # 1チャンクの翻訳経路
 @dataclass
 class TranslationChunkMetric:
@@ -207,6 +227,8 @@ class TranslationChunkMetric:
     started_at: datetime
 
     elapsed_seconds: float | None = None
+
+    adaptive: AdaptiveChunkMetric | None = None
 
     standard_attempts: list[
         TranslationAttemptMetric
@@ -243,6 +265,16 @@ class TranslationChunkMetric:
 
     exception_type: str | None = None
     exception_message: str | None = None
+
+    def record_adaptive_chunk(
+        self,
+        adaptive: AdaptiveChunkMetric,
+    ) -> None:
+        """
+        現在のチャンクへ適用した
+        適応制御の内容を記録する。
+        """
+        self.adaptive = adaptive
 
     def add_standard_attempt(
         self,

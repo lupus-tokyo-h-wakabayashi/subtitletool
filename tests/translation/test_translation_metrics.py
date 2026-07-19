@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 from lib.translation.translation_metrics import (
+    AdaptiveChunkMetric,
     HybridGroupMetric,
     TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
     TRANSLATION_RESULT_FAILED,
@@ -751,3 +752,110 @@ def test_translation_session_metric_adds_chunk_and_completes(
     ]
 
     assert session.elapsed_seconds == 120.0
+
+
+# 適応チャンク計測の保持
+def test_adaptive_chunk_metric_holds_applied_strategy(
+) -> None:
+    adaptive = AdaptiveChunkMetric(
+        strategy="reduced_chunk",
+        trigger="standard_retry",
+        source_chunk_number=1,
+        configured_chunk_size=10,
+        applied_chunk_size=5,
+        trigger_codes=(
+            "glossary_violation",
+        ),
+    )
+
+    assert adaptive.strategy == (
+        "reduced_chunk"
+    )
+
+    assert adaptive.trigger == (
+        "standard_retry"
+    )
+
+    assert adaptive.source_chunk_number == 1
+    assert adaptive.configured_chunk_size == 10
+    assert adaptive.applied_chunk_size == 5
+
+    assert adaptive.trigger_codes == (
+        "glossary_violation",
+    )
+
+
+# 初回チャンクの適応制御
+def test_adaptive_chunk_metric_accepts_initial_chunk(
+) -> None:
+    adaptive = AdaptiveChunkMetric(
+        strategy="standard",
+        trigger="none",
+        source_chunk_number=None,
+        configured_chunk_size=10,
+        applied_chunk_size=10,
+    )
+
+    assert adaptive.strategy == "standard"
+    assert adaptive.trigger == "none"
+
+    assert (
+        adaptive.source_chunk_number
+        is None
+    )
+
+    assert adaptive.trigger_codes == ()
+
+
+# チャンク計測への適応制御記録
+def test_translation_chunk_metric_records_adaptive_chunk(
+) -> None:
+    chunk = TranslationChunkMetric(
+        chunk_number=2,
+        chunk_start=11,
+        chunk_end=15,
+        target_ids=(
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+        ),
+        started_at=datetime(
+            2026,
+            7,
+            19,
+            12,
+            1,
+            0,
+        ),
+    )
+
+    adaptive = AdaptiveChunkMetric(
+        strategy="reduced_chunk",
+        trigger="hybrid",
+        source_chunk_number=1,
+        configured_chunk_size=10,
+        applied_chunk_size=5,
+        trigger_codes=(
+            "untranslated_english_sentence_detected",
+        ),
+    )
+
+    assert chunk.adaptive is None
+
+    chunk.record_adaptive_chunk(
+        adaptive
+    )
+
+    assert chunk.adaptive is adaptive
+
+    assert (
+        chunk.adaptive.strategy
+        == "reduced_chunk"
+    )
+
+    assert (
+        chunk.adaptive.applied_chunk_size
+        == 5
+    )
