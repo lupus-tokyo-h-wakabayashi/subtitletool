@@ -336,7 +336,7 @@ def test_run_translation_session_saves_success_metrics(
     )
 
 
-# 翻訳例外時の計測保存
+# 単一字幕の翻訳例外は計測保存後に再送出する
 def test_run_translation_session_saves_failed_metrics_before_reraising(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -371,7 +371,6 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
             elapsed_seconds=1.0,
             failed_ids=(
                 "1",
-                "2",
             ),
         )
 
@@ -413,7 +412,9 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
         fake_save_metrics,
     )
 
-    source_blocks = build_source_blocks()
+    source_blocks = [
+        build_source_blocks()[0],
+    ]
 
     with pytest.raises(
         RuntimeError,
@@ -471,11 +472,10 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
 
     assert chunk_metrics.chunk_number == 1
     assert chunk_metrics.chunk_start == 1
-    assert chunk_metrics.chunk_end == 2
+    assert chunk_metrics.chunk_end == 1
 
     assert chunk_metrics.target_ids == (
         "1",
-        "2",
     )
 
     assert (
@@ -485,7 +485,6 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
 
     assert chunk_metrics.failed_ids == (
         "1",
-        "2",
     )
 
     assert (
@@ -510,8 +509,261 @@ def test_run_translation_session_saves_failed_metrics_before_reraising(
     )
 
     assert adaptive.configured_chunk_size == 2
-    assert adaptive.applied_chunk_size == 2
+    assert adaptive.applied_chunk_size == 1
     assert adaptive.trigger_codes == ()
+
+
+# 複数字幕の失敗後は先頭から単一字幕で再処理する
+def test_run_translation_session_retries_failed_group_individually(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    received_target_ids: list[
+        tuple[str, ...]
+    ] = []
+
+    saved_chunks: list[
+        TranslationChunkMetric
+    ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        assert metrics is not None
+
+        received_target_ids.append(
+            metrics.target_ids
+        )
+
+        if metrics.chunk_number == 1:
+            error = RuntimeError(
+                "group translation failed"
+            )
+
+            metrics.fail_with_exception(
+                error,
+                elapsed_seconds=1.0,
+                failed_ids=(
+                    "1",
+                    "2",
+                ),
+            )
+
+            raise error
+
+        metrics.add_standard_attempt(
+            TranslationAttemptMetric(
+                pipeline="standard",
+                attempt=1,
+                target_ids=(
+                    metrics.target_ids
+                ),
+                elapsed_seconds=1.0,
+                response_received=True,
+                validation_stage=(
+                    "standard_validation"
+                ),
+                validation_valid=True,
+            )
+        )
+
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+            elapsed_seconds=1.0,
+        )
+
+        return [
+            f"翻訳結果 {subtitle_id}"
+            for subtitle_id
+            in metrics.target_ids
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+    ) -> tuple[Path, Path]:
+        del session
+        del output_directory
+
+        saved_chunks.append(
+            chunk
+        )
+
+        return (
+            Path(
+                f"chunk-{chunk.chunk_number}.json"
+            ),
+            Path(
+                "summary.json"
+            ),
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    translated_blocks: list[
+        SrtBlock
+    ] = []
+
+    result = (
+        translation_session.run_translation_session(
+            source_blocks=(
+                build_source_blocks()
+            ),
+            translated_blocks_all=(
+                translated_blocks
+            ),
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=2,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+        )
+    )
+
+    assert result is None
+
+    assert received_target_ids == [
+        (
+            "1",
+            "2",
+        ),
+        (
+            "1",
+        ),
+        (
+            "2",
+        ),
+    ]
+
+    assert [
+               block.number
+               for block in translated_blocks
+           ] == [
+               "1",
+               "2",
+           ]
+
+    assert len(
+        saved_chunks
+    ) == 3
+
+    failed_chunk = saved_chunks[0]
+    first_retry_chunk = saved_chunks[1]
+    second_retry_chunk = saved_chunks[2]
+
+    assert (
+        failed_chunk.final_result
+        == TRANSLATION_RESULT_FAILED
+    )
+
+    assert failed_chunk.target_ids == (
+        "1",
+        "2",
+    )
+
+    assert (
+        failed_chunk.exception_message
+        == "group translation failed"
+    )
+
+    first_retry_adaptive = (
+        first_retry_chunk.adaptive
+    )
+
+    assert first_retry_adaptive is not None
+
+    assert (
+        first_retry_adaptive.strategy
+        == "single_subtitle"
+    )
+
+    assert (
+        first_retry_adaptive.trigger
+        == "failed"
+    )
+
+    assert (
+        first_retry_adaptive
+        .source_chunk_number
+        == 1
+    )
+
+    assert (
+        first_retry_adaptive
+        .applied_chunk_size
+        == 1
+    )
+
+    assert (
+        first_retry_adaptive.trigger_codes
+        == (
+            "translation_failed",
+        )
+    )
+
+    second_retry_adaptive = (
+        second_retry_chunk.adaptive
+    )
+
+    assert second_retry_adaptive is not None
+
+    assert (
+        second_retry_adaptive.strategy
+        == "standard"
+    )
+
+    assert (
+        second_retry_adaptive.trigger
+        == "none"
+    )
+
+    assert (
+        second_retry_adaptive
+        .source_chunk_number
+        == 2
+    )
+
+    assert (
+        second_retry_adaptive
+        .applied_chunk_size
+        == 1
+    )
 
 
 # 複数チャンクの計測保存

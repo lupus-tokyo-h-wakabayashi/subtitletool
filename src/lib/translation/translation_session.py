@@ -42,6 +42,7 @@ from .translation_policy import (
     ADAPTIVE_STRATEGY_STANDARD,
     ADAPTIVE_TRIGGER_NONE,
     AdaptiveTranslationDecision,
+    build_adaptive_failure_recovery_decision,
     build_adaptive_translation_decision,
     resolve_adaptive_chunk_size,
 )
@@ -418,7 +419,41 @@ def run_translation_session(
                 chunk=chunk_metrics,
             )
 
-            raise
+            failure_recovery = (
+                build_adaptive_failure_recovery_decision(
+                    chunk_metrics
+                )
+            )
+
+            if not (
+                failure_recovery
+                    .retry_with_single_subtitle
+            ):
+                raise
+
+            # Phase 3-2：複数字幕チャンクの失敗後は
+            # 同じ開始位置を字幕1件で再処理する
+            current_adaptive_decision = (
+                build_adaptive_translation_decision(
+                    chunk_metrics
+                )
+            )
+
+            current_chunk_size = (
+                failure_recovery.next_chunk_size
+            )
+
+            print_adaptive_translation_decision(
+                decision=(
+                    current_adaptive_decision
+                ),
+                next_chunk_size=(
+                    current_chunk_size
+                ),
+            )
+
+            chunk_number += 1
+            continue
 
         translated_chunk_blocks = (
             apply_translations(
