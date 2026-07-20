@@ -621,6 +621,7 @@ def test_build_hybrid_translation_prompt_includes_surrounding_context(
 def test_low_symbol_word_salad_is_limited_to_failed_ids(
     e08_target_blocks: list[SrtBlock],
     noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = HybridTranslationGroup(
         positions=(
@@ -640,6 +641,12 @@ def test_low_symbol_word_salad_is_limited_to_failed_ids(
     actual = find_group_ocr_lines(
         group,
         noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {}
@@ -3744,6 +3751,7 @@ def test_e13_normal_line_is_not_classified_as_ocr(
 
 def test_short_mixed_case_line_without_normal_sibling_is_not_hybrid_ocr(
     noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     block = SrtBlock(
         number="490",
@@ -3771,6 +3779,12 @@ def test_short_mixed_case_line_without_normal_sibling_is_not_hybrid_ocr(
     actual = find_group_ocr_lines(
         group,
         noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {}
