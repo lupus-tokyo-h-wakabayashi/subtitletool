@@ -1024,6 +1024,8 @@ def test_probable_ocr_source_line_detects_symbol_dense_text(
 
 def test_find_symbol_dense_untranslated_ocr_line(
     noise_dictionary: NoiseDictionary,
+    empty_glossary: GlossaryEntries,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     target_block = SrtBlock(
         number="361",
@@ -1047,6 +1049,12 @@ def test_find_symbol_dense_untranslated_ocr_line(
             ],
             noise_dictionary=(
                 noise_dictionary
+            ),
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                ocr_scoring_config
             ),
         )
     )
