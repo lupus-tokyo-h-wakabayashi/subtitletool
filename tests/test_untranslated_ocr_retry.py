@@ -95,7 +95,6 @@ UNTRANSLATED_ERROR = (
 
 
 def test_find_probable_untranslated_e13_short_ocr_line(
-    noise_dictionary: NoiseDictionary,
     empty_glossary: GlossaryEntries,
     ocr_scoring_config: OcrScoringConfig,
 ) -> None:
@@ -119,9 +118,6 @@ def test_find_probable_untranslated_e13_short_ocr_line(
             errors=[
                 E13_UNTRANSLATED_ERROR,
             ],
-            noise_dictionary=(
-                noise_dictionary
-            ),
             glossary_entries=(
                 empty_glossary
             ),
@@ -139,7 +135,6 @@ def test_find_probable_untranslated_e13_short_ocr_line(
 
 
 def test_e13_short_ocr_line_is_not_selected_without_matching_error(
-    noise_dictionary: NoiseDictionary,
     empty_glossary: GlossaryEntries,
     ocr_scoring_config: OcrScoringConfig,
 ) -> None:
@@ -167,9 +162,6 @@ def test_e13_short_ocr_line_is_not_selected_without_matching_error(
                     "text='other subtitle'"
                 ),
             ],
-            noise_dictionary=(
-                noise_dictionary
-            ),
             glossary_entries=(
                 empty_glossary
             ),
@@ -306,7 +298,6 @@ def test_extract_untranslated_english_error_ids() -> None:
 
 def test_find_probable_untranslated_ocr_lines(
     target_block: SrtBlock,
-    noise_dictionary: NoiseDictionary,
     empty_glossary: GlossaryEntries,
     ocr_scoring_config: OcrScoringConfig,
 ) -> None:
@@ -321,9 +312,6 @@ def test_find_probable_untranslated_ocr_lines(
             errors=[
                 UNTRANSLATED_ERROR,
             ],
-            noise_dictionary=(
-                noise_dictionary
-            ),
             glossary_entries=(
                 empty_glossary
             ),
@@ -342,7 +330,6 @@ def test_find_probable_untranslated_ocr_lines(
 
 def test_does_not_select_normal_source_line(
     target_block: SrtBlock,
-    noise_dictionary: NoiseDictionary,
     empty_glossary: GlossaryEntries,
     ocr_scoring_config: OcrScoringConfig,
 ) -> None:
@@ -365,9 +352,6 @@ def test_does_not_select_normal_source_line(
                     "は間違った人々です！'"
                 ),
             ],
-            noise_dictionary=(
-                noise_dictionary
-            ),
             glossary_entries=(
                 empty_glossary
             ),
@@ -789,7 +773,6 @@ def test_level_1_fallback_does_not_run_with_other_errors(
 
 
 def test_find_symbol_dense_untranslated_ocr_line(
-    noise_dictionary: NoiseDictionary,
     empty_glossary: GlossaryEntries,
     ocr_scoring_config: OcrScoringConfig,
 ) -> None:
@@ -813,9 +796,6 @@ def test_find_symbol_dense_untranslated_ocr_line(
             errors=[
                 SYMBOL_DENSE_UNTRANSLATED_ERROR,
             ],
-            noise_dictionary=(
-                noise_dictionary
-            ),
             glossary_entries=(
                 empty_glossary
             ),

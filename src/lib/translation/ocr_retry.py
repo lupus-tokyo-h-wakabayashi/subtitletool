@@ -4,9 +4,6 @@ import ast
 import re
 from collections.abc import Mapping
 
-from lib.profile.noise import (
-    NoiseDictionary,
-)
 from lib.profile.ocr_scoring import (
     OcrScoringConfig,
 )
@@ -279,7 +276,6 @@ def find_probable_untranslated_ocr_lines(
     target_blocks: list[SrtBlock],
     translated_texts: list[str],
     errors: list[str],
-    noise_dictionary: NoiseDictionary,
     *,
     glossary_entries: Mapping[
         str,
@@ -293,9 +289,6 @@ def find_probable_untranslated_ocr_lines(
 
     OCR候補の判定には、
     Glossary対応の統合OCR評価器を使用する。
-
-    noise_dictionaryは呼出API移行中の
-    互換引数として保持する。
     """
     error_ids = (
         extract_untranslated_english_error_ids(

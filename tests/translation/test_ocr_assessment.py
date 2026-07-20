@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from lib.profile.glossary import (
     GlossaryEntries,
     GlossaryEntry,
-)
-from lib.profile.noise import (
-    NoiseDictionary,
 )
 from lib.profile.ocr_scoring import (
     OcrScoringConfig,
@@ -82,25 +77,6 @@ def test_assess_protects_contractions_and_continuing_sentences(
 
     assert not result.has_contribution(
         "invalid_single_letter"
-    )
-
-
-@pytest.fixture
-def noise_dictionary(
-    tmp_path: Path,
-) -> NoiseDictionary:
-    return NoiseDictionary(
-        profile_name="test",
-        entries={},
-        official_path=(
-            tmp_path
-            / "noise.json"
-        ),
-        local_path=(
-            tmp_path
-            / "noise.local.json"
-        ),
-        local_loaded=False,
     )
 
 
@@ -586,7 +562,6 @@ def test_assessment_contribution_uses_config_description(
 def test_standard_recovery_finds_structural_ocr_line(
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
-    noise_dictionary: NoiseDictionary,
 ) -> None:
     source_text = '"(CLR (=r 108'
 
@@ -613,7 +588,6 @@ def test_standard_recovery_finds_structural_ocr_line(
                     source_text,
                 ),
             ],
-            noise_dictionary,
             glossary_entries=(
                 empty_glossary
             ),
@@ -633,7 +607,6 @@ def test_standard_recovery_finds_structural_ocr_line(
 def test_standard_recovery_finds_only_damaged_mixed_line(
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
-    noise_dictionary: NoiseDictionary,
 ) -> None:
     damaged_line = (
         "Ui maar i mele aah ml iaa"
@@ -671,7 +644,6 @@ def test_standard_recovery_finds_only_damaged_mixed_line(
                     source_text,
                 ),
             ],
-            noise_dictionary,
             glossary_entries=(
                 empty_glossary
             ),
@@ -691,7 +663,6 @@ def test_standard_recovery_finds_only_damaged_mixed_line(
 def test_standard_recovery_ignores_source_not_copied_to_translation(
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
-    noise_dictionary: NoiseDictionary,
 ) -> None:
     source_text = '"(CLR (=r 108'
 
@@ -718,7 +689,6 @@ def test_standard_recovery_ignores_source_not_copied_to_translation(
                     source_text,
                 ),
             ],
-            noise_dictionary,
             glossary_entries=(
                 empty_glossary
             ),
@@ -734,7 +704,6 @@ def test_standard_recovery_ignores_source_not_copied_to_translation(
 def test_standard_recovery_protects_glossary_identifier(
     scoring_config: OcrScoringConfig,
     stargate_glossary: GlossaryEntries,
-    noise_dictionary: NoiseDictionary,
 ) -> None:
     source_text = "SG-1"
 
@@ -761,7 +730,6 @@ def test_standard_recovery_protects_glossary_identifier(
                     source_text,
                 ),
             ],
-            noise_dictionary,
             glossary_entries=(
                 stargate_glossary
             ),
@@ -792,7 +760,6 @@ def test_standard_recovery_protects_natural_english(
     source_text: str,
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
-    noise_dictionary: NoiseDictionary,
 ) -> None:
     blocks = [
         SrtBlock(
@@ -817,7 +784,6 @@ def test_standard_recovery_protects_natural_english(
                     source_text,
                 ),
             ],
-            noise_dictionary,
             glossary_entries=(
                 empty_glossary
             ),
@@ -833,7 +799,6 @@ def test_standard_recovery_protects_natural_english(
 def test_standard_recovery_ignores_unrelated_validation_error(
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
-    noise_dictionary: NoiseDictionary,
 ) -> None:
     source_text = '"(CLR (=r 108'
 
@@ -861,7 +826,6 @@ def test_standard_recovery_ignores_unrelated_validation_error(
                     "subtitle_id='497'"
                 ),
             ],
-            noise_dictionary,
             glossary_entries=(
                 empty_glossary
             ),

@@ -851,7 +851,6 @@ def translate_chunk(
                     target_blocks,
                     last_translated_texts,
                     last_errors,
-                    noise_dictionary,
                     glossary_entries=(
                         glossary_entries
                     ),
