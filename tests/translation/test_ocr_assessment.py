@@ -51,6 +51,7 @@ def stargate_glossary() -> GlossaryEntries:
         "that's not our goal.",
         "I couldn't deal with it,",
         "I'm sorry.",
+        "the thought of you",
     ],
 )
 def test_assess_protects_contractions_and_continuing_sentences(

@@ -5,8 +5,16 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from lib.profile.glossary import (
+    GlossaryEntries,
+    GlossaryEntry,
+)
 from lib.profile.noise import (
     NoiseDictionary,
+)
+from lib.profile.ocr_scoring import (
+    OcrScoringConfig,
+    load_ocr_scoring_config,
 )
 from lib.subtitle.srt import SrtBlock
 from lib.translation import hybrid_recovery
@@ -246,6 +254,12 @@ def noise_dictionary(
         ),
         local_loaded=False,
     )
+
+
+@pytest.fixture
+def ocr_scoring_config(
+) -> OcrScoringConfig:
+    return load_ocr_scoring_config()
 
 
 @pytest.fixture
@@ -612,6 +626,319 @@ def test_low_symbol_word_salad_is_limited_to_failed_ids(
     actual = find_group_ocr_lines(
         group,
         noise_dictionary,
+    )
+
+    assert actual == {}
+
+
+def test_assessed_group_ocr_lines_detects_structural_damage(
+    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    damaged_line = '"(CLR (=r 108'
+
+    block = SrtBlock(
+        number="497",
+        timestamp=(
+            "00:25:22,563 --> "
+            "00:25:24,773"
+        ),
+        text=damaged_line,
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "497",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {
+        "497": [
+            damaged_line,
+        ],
+    }
+
+
+def test_assessed_group_ocr_lines_preserves_normal_mixed_line(
+    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    damaged_line = (
+        "Ui maar i mele aah ml iaa"
+    )
+
+    normal_line = (
+        "seeing the old homestead again."
+    )
+
+    block = SrtBlock(
+        number="98",
+        timestamp=(
+            "00:05:00,000 --> "
+            "00:05:02,000"
+        ),
+        text=(
+            f"{damaged_line}\n"
+            f"{normal_line}"
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "98",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {
+        "98": [
+            damaged_line,
+        ],
+    }
+
+
+def test_assessed_group_ocr_lines_uses_high_threshold_for_context(
+    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    context_line = (
+        "dam IAN el ESie"
+    )
+
+    failed_line = (
+        '"(CLR (=r 108'
+    )
+
+    blocks = (
+        SrtBlock(
+            number="10",
+            timestamp=(
+                "00:00:10,000 --> "
+                "00:00:11,000"
+            ),
+            text=context_line,
+        ),
+        SrtBlock(
+            number="11",
+            timestamp=(
+                "00:00:11,000 --> "
+                "00:00:12,000"
+            ),
+            text=failed_line,
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+            1,
+        ),
+        blocks=blocks,
+        failed_ids=frozenset(
+            {
+                "11",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {
+        "11": [
+            failed_line,
+        ],
+    }
+
+
+def test_assessed_group_ocr_lines_ignores_sound_effect(
+    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    block = SrtBlock(
+        number="43",
+        timestamp=(
+            "00:02:17,429 --> "
+            "00:02:17,804"
+        ),
+        text="(SCOTT GRUNTING)",
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "43",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {}
+
+
+def test_assessed_group_ocr_lines_protects_glossary_identifier(
+    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    block = SrtBlock(
+        number="280",
+        timestamp=(
+            "00:14:41,506 --> "
+            "00:14:42,799"
+        ),
+        text="SG-1",
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "280",
+            }
+        ),
+    )
+
+    glossary_entries = GlossaryEntries(
+        (
+            GlossaryEntry(
+                source="SG-1",
+                target="SG-1",
+                case_sensitive=True,
+            ),
+        )
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+        glossary_entries=(
+            glossary_entries
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {}
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        (
+            "Hopefully, we've proven\n"
+            "that's not our goal."
+        ),
+        (
+            "I couldn't deal with it,\n"
+            "the thought of you\n"
+            "being trapped on that ship."
+        ),
+    ],
+)
+def test_assessed_group_ocr_lines_preserves_contractions(
+    source_text: str,
+    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    block = SrtBlock(
+        number="602",
+        timestamp=(
+            "00:00:01,100 --> "
+            "00:00:03,000"
+        ),
+        text=source_text,
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "602",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {}

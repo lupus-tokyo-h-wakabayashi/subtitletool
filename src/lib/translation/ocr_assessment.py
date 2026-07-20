@@ -493,8 +493,13 @@ def is_natural_sentence(
     scoring_config: OcrScoringConfig,
 ) -> bool:
     """
-    十分なトークン数と自然な文末を持つ英文を
+    一定数の自然な英語トークンを持つ英文を
     正常英文として保護する。
+
+    字幕は文の途中で行分割されるため、
+    文末記号を持つ完成文だけでなく、
+    不自然なトークンや構造記号を含まない
+    文中断片も保護対象にする。
     """
     minimum_tokens = get_integer_value(
         scoring_config,
@@ -512,16 +517,50 @@ def is_natural_sentence(
         "\"')]}〉》」』）】"
     )
 
-    return normalized.endswith(
-        (
-            ".",
-            "?",
-            "!",
-            "…",
-            ",",
-            ";",
-            ":",
+    has_natural_ending = (
+        normalized.endswith(
+            (
+                ".",
+                "?",
+                "!",
+                "…",
+                ",",
+                ";",
+                ":",
+            )
         )
+    )
+
+    if has_natural_ending:
+        return True
+
+    if (
+        count_structural_symbols(
+            normalized
+        )
+        > 0
+    ):
+        return False
+
+    if any(
+        is_suspicious_token(
+            token
+        )
+        for token in tokens
+    ):
+        return False
+
+    return all(
+        (
+            token.islower()
+            or token.istitle()
+            or token.casefold()
+            in {
+                "a",
+                "i",
+            }
+        )
+        for token in tokens
     )
 
 
