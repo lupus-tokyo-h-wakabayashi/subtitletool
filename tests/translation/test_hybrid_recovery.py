@@ -4347,3 +4347,161 @@ def test_validate_hybrid_response_normalizes_sound_effect_parentheses(
     assert validation.full_translation == (
         "（スコットがうめく音）"
     )
+
+
+def test_e05_validation_normalizes_halfwidth_ocr_placeholder(
+) -> None:
+    ocr_line = (
+        "= PV Fel oael "
+        "(ct V a bY ate)’ <16|"
+    )
+
+    block = SrtBlock(
+        number="98",
+        timestamp=(
+            "00:04:50,999 --> "
+            "00:04:54,961"
+        ),
+        text=(
+            f"{ocr_line}\n"
+            "seeing the old homestead\n"
+            "again."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "98",
+            }
+        ),
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "(判読不能)"
+                    "懐かしい我が家を"
+                    "再び見られた。"
+                ),
+                "segments": {
+                    "98": (
+                        "(判読不能)"
+                        "懐かしい我が家を"
+                        "再び見られた。"
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {
+            "98": [
+                ocr_line,
+            ],
+        },
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+    assert validation.segments == {
+        "98": (
+            "（判読不能）"
+            "懐かしい我が家を"
+            "再び見られた。"
+        ),
+    }
+
+    assert validation.full_translation == (
+        "（判読不能）"
+        "懐かしい我が家を"
+        "再び見られた。"
+    )
+
+
+def test_e05_validation_detects_ocr_source_before_parentheses_normalization(
+) -> None:
+    ocr_line = (
+        "= PV Fel oael "
+        "(ct V a bY ate)’ <16|"
+    )
+
+    block = SrtBlock(
+        number="98",
+        timestamp=(
+            "00:04:50,999 --> "
+            "00:04:54,961"
+        ),
+        text=(
+            f"{ocr_line}\n"
+            "seeing the old homestead\n"
+            "again."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "98",
+            }
+        ),
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    f"{ocr_line}\n"
+                    "(判読不能)"
+                    "懐かしい我が家を"
+                    "再び見られた。"
+                ),
+                "segments": {
+                    "98": (
+                        f"{ocr_line}\n"
+                        "(判読不能)"
+                        "懐かしい我が家を"
+                        "再び見られた。"
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {
+            "98": [
+                ocr_line,
+            ],
+        },
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid segment contains OCR source: "
+        "subtitle_id='98', "
+        f"text={ocr_line!r}"
+        in validation.reasons
+    )
