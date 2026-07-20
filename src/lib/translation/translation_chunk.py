@@ -15,6 +15,9 @@ from lib.profile.noise import (
     append_noise_candidates,
     find_suspicious_latin_sequences,
 )
+from lib.profile.ocr_scoring import (
+    load_ocr_scoring_config,
+)
 from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
@@ -535,6 +538,10 @@ def translate_chunk(
         for block in target_blocks
     )
 
+    ocr_scoring_config = (
+        load_ocr_scoring_config()
+    )
+
     (
         original_source_speakers,
         original_source_texts,
@@ -844,7 +851,12 @@ def translate_chunk(
                     target_blocks,
                     last_translated_texts,
                     last_errors,
-                    noise_dictionary,
+                    glossary_entries=(
+                        glossary_entries
+                    ),
+                    scoring_config=(
+                        ocr_scoring_config
+                    ),
                 )
             )
         else:

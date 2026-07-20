@@ -8,6 +8,10 @@ from typing import Mapping
 
 from lib.infrastructure.ollama import generate
 from lib.profile.noise import NoiseDictionary
+from lib.profile.ocr_scoring import (
+    OcrScoringConfig,
+    load_ocr_scoring_config,
+)
 from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
@@ -21,9 +25,7 @@ from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
 )
 from .ocr_retry import (
-    find_short_mixed_case_ocr_lines_in_source,
-    is_low_symbol_word_salad_ocr_source_line,
-    is_probable_ocr_source_line,
+    find_assessed_ocr_lines_in_source,
 )
 from .retry import (
     build_required_glossary_instruction,
@@ -132,25 +134,26 @@ def build_hybrid_response_schema(
     }
 
 
-def find_group_ocr_lines(
+def find_group_ocr_lines_with_assessment(
     group: HybridTranslationGroup,
-    noise_dictionary: NoiseDictionary,
+    glossary_entries: Mapping[
+        str,
+        str,
+    ],
+    scoring_config: OcrScoringConfig,
 ) -> dict[str, list[str]]:
     """
-    Hybridグループ内の高確度OCR行を抽出する。
+    Hybridグループの字幕原文を
+    統合OCR評価器で分類する。
 
-    Noise辞書や既存ヒューリスティックで検出できる
-    OCR行は、グループ内のすべての字幕を対象にする。
+    通常翻訳でValidationに失敗した字幕には
+    失敗字幕用の閾値を適用する。
 
-    記号をほとんど含まない英字ワードサラダ判定は、
-    正常英文の誤検出を避けるため、通常翻訳で実際に
-    Validationへ失敗した字幕IDだけに適用する。
+    グループへ文脈として追加された
+    失敗していない字幕には、
+    高確度OCR用の閾値を適用する。
 
-    短い大小文字混在型のOCR行は、
-    共通の混在字幕判定を使用し、
-    通常翻訳で失敗した字幕IDだけに適用する。
-
-    効果音行はOCR破損として扱わない。
+    効果音行は評価対象から除外する。
     """
     results: dict[
         str,
@@ -158,69 +161,68 @@ def find_group_ocr_lines(
     ] = {}
 
     for block in group.blocks:
-        short_mixed_case_lines = set()
-
-        if block.number in group.failed_ids:
-            short_mixed_case_lines = set(
-                find_short_mixed_case_ocr_lines_in_source(
-                    block.text,
-                    noise_dictionary,
+        source_lines = [
+            raw_line.strip()
+            for raw_line in (
+                block.text.splitlines()
+            )
+            if (
+                raw_line.strip()
+                and not (
+                is_source_sound_effect_line(
+                    raw_line.strip()
                 )
             )
-
-        lines: list[str] = []
-
-        for raw_line in block.text.splitlines():
-            source_line = raw_line.strip()
-
-            if not source_line:
-                continue
-
-            if is_source_sound_effect_line(
-                source_line
-            ):
-                continue
-
-            is_existing_ocr = (
-                is_probable_ocr_source_line(
-                    source_line,
-                    noise_dictionary,
-                )
             )
+        ]
 
-            is_failed_word_salad = (
-                block.number
-                in group.failed_ids
-                and is_low_symbol_word_salad_ocr_source_line(
-                source_line
+        if not source_lines:
+            continue
+
+        lines = (
+            find_assessed_ocr_lines_in_source(
+                "\n".join(
+                    source_lines
+                ),
+                glossary_entries,
+                scoring_config,
+                validation_failed=(
+                    block.number
+                    in group.failed_ids
+                ),
             )
-            )
+        )
 
-            is_failed_short_mixed_case = (
-                source_line
-                in short_mixed_case_lines
-            )
+        if not lines:
+            continue
 
-            if not (
-                is_existing_ocr
-                or is_failed_word_salad
-                or is_failed_short_mixed_case
-            ):
-                continue
-
-            if source_line in lines:
-                continue
-
-            lines.append(
-                source_line
-            )
-
-        if lines:
-            results[
-                block.number
-            ] = lines
+        results[
+            block.number
+        ] = lines
 
     return results
+
+
+def find_group_ocr_lines(
+    group: HybridTranslationGroup,
+    *,
+    glossary_entries: Mapping[
+        str,
+        str,
+    ],
+    scoring_config: OcrScoringConfig,
+) -> dict[str, list[str]]:
+    """
+    Hybridグループ内のOCR行を
+    統合OCR評価器で分類して返す。
+    """
+    return (
+        find_group_ocr_lines_with_assessment(
+            group,
+            glossary_entries,
+            scoring_config,
+        )
+    )
 
 
 def find_group_sound_effect_lines(
@@ -1353,9 +1355,18 @@ def recover_single_hybrid_group(
     他グループの未修正エラーに影響されないよう
     現在のグループだけを対象に実行する。
     """
+    ocr_scoring_config = (
+        load_ocr_scoring_config()
+    )
+
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            glossary_entries
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     # Phase 1-7：対象Hybridグループを取得する

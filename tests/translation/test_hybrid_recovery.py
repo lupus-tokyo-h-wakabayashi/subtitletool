@@ -5,8 +5,16 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from lib.profile.glossary import (
+    GlossaryEntries,
+    GlossaryEntry,
+)
 from lib.profile.noise import (
     NoiseDictionary,
+)
+from lib.profile.ocr_scoring import (
+    OcrScoringConfig,
+    load_ocr_scoring_config,
 )
 from lib.subtitle.srt import SrtBlock
 from lib.translation import hybrid_recovery
@@ -26,9 +34,6 @@ from lib.translation.hybrid_recovery import (
     normalize_hybrid_parentheses,
     validate_hybrid_response,
     recover_translation_with_hybrid,
-)
-from lib.translation.ocr_retry import (
-    is_symbol_dense_ocr_source_line,
 )
 from lib.translation.translation_metrics import (
     TranslationChunkMetric,
@@ -131,36 +136,6 @@ E09_RECOVERED_TRANSLATIONS = (
 )
 
 
-def test_symbol_dense_ocr_accepts_backslash_structure(
-) -> None:
-    source_line = (
-        r"ham) I e\ emo)"
-    )
-
-    actual = (
-        is_symbol_dense_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is True
-
-
-def test_symbol_dense_ocr_rejects_single_backslash(
-) -> None:
-    source_line = (
-        r"Use C:\Temp to save files"
-    )
-
-    actual = (
-        is_symbol_dense_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is False
-
-
 @pytest.fixture
 def e09_target_blocks(
 ) -> list[SrtBlock]:
@@ -249,6 +224,12 @@ def noise_dictionary(
 
 
 @pytest.fixture
+def ocr_scoring_config(
+) -> OcrScoringConfig:
+    return load_ocr_scoring_config()
+
+
+@pytest.fixture
 def target_blocks(
 ) -> list[SrtBlock]:
     return [
@@ -317,7 +298,7 @@ def e08_target_blocks(
 
 def test_e08_failed_subtitle_detects_only_word_salad_as_ocr(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -341,7 +322,12 @@ def test_e08_failed_subtitle_detects_only_word_salad_as_ocr(
 
     actual = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {
@@ -353,7 +339,7 @@ def test_e08_failed_subtitle_detects_only_word_salad_as_ocr(
 
 def test_e08_hybrid_source_payload_classifies_lines(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -366,7 +352,12 @@ def test_e08_hybrid_source_payload_classifies_lines(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     actual = build_hybrid_source_payload(
@@ -592,7 +583,7 @@ def test_build_hybrid_translation_prompt_includes_surrounding_context(
 
 def test_low_symbol_word_salad_is_limited_to_failed_ids(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = HybridTranslationGroup(
         positions=(
@@ -611,7 +602,313 @@ def test_low_symbol_word_salad_is_limited_to_failed_ids(
 
     actual = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {}
+
+
+def test_assessed_group_ocr_lines_detects_structural_damage(
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    damaged_line = '"(CLR (=r 108'
+
+    block = SrtBlock(
+        number="497",
+        timestamp=(
+            "00:25:22,563 --> "
+            "00:25:24,773"
+        ),
+        text=damaged_line,
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "497",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {
+        "497": [
+            damaged_line,
+        ],
+    }
+
+
+def test_assessed_group_ocr_lines_preserves_normal_mixed_line(
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    damaged_line = (
+        "Ui maar i mele aah ml iaa"
+    )
+
+    normal_line = (
+        "seeing the old homestead again."
+    )
+
+    block = SrtBlock(
+        number="98",
+        timestamp=(
+            "00:05:00,000 --> "
+            "00:05:02,000"
+        ),
+        text=(
+            f"{damaged_line}\n"
+            f"{normal_line}"
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "98",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {
+        "98": [
+            damaged_line,
+        ],
+    }
+
+
+def test_assessed_group_ocr_lines_uses_high_threshold_for_context(
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    context_line = (
+        "dam IAN el ESie"
+    )
+
+    failed_line = (
+        '"(CLR (=r 108'
+    )
+
+    blocks = (
+        SrtBlock(
+            number="10",
+            timestamp=(
+                "00:00:10,000 --> "
+                "00:00:11,000"
+            ),
+            text=context_line,
+        ),
+        SrtBlock(
+            number="11",
+            timestamp=(
+                "00:00:11,000 --> "
+                "00:00:12,000"
+            ),
+            text=failed_line,
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+            1,
+        ),
+        blocks=blocks,
+        failed_ids=frozenset(
+            {
+                "11",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {
+        "11": [
+            failed_line,
+        ],
+    }
+
+
+def test_assessed_group_ocr_lines_ignores_sound_effect(
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    block = SrtBlock(
+        number="43",
+        timestamp=(
+            "00:02:17,429 --> "
+            "00:02:17,804"
+        ),
+        text="(SCOTT GRUNTING)",
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "43",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {}
+
+
+def test_assessed_group_ocr_lines_protects_glossary_identifier(
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    block = SrtBlock(
+        number="280",
+        timestamp=(
+            "00:14:41,506 --> "
+            "00:14:42,799"
+        ),
+        text="SG-1",
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "280",
+            }
+        ),
+    )
+
+    glossary_entries = GlossaryEntries(
+        (
+            GlossaryEntry(
+                source="SG-1",
+                target="SG-1",
+                case_sensitive=True,
+            ),
+        )
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    assert actual == {}
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        (
+            "Hopefully, we've proven\n"
+            "that's not our goal."
+        ),
+        (
+            "I couldn't deal with it,\n"
+            "the thought of you\n"
+            "being trapped on that ship."
+        ),
+    ],
+)
+def test_assessed_group_ocr_lines_preserves_contractions(
+    source_text: str,
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    block = SrtBlock(
+        number="602",
+        timestamp=(
+            "00:00:01,100 --> "
+            "00:00:03,000"
+        ),
+        text=source_text,
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "602",
+            }
+        ),
+    )
+
+    actual = find_group_ocr_lines(
+        group,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {}
@@ -644,7 +941,7 @@ def valid_e08_hybrid_payload(
 
 def test_e08_prompt_contains_segment_requirements(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -657,7 +954,12 @@ def test_e08_prompt_contains_segment_requirements(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     prompt = build_hybrid_translation_prompt(
@@ -710,7 +1012,7 @@ def test_e08_prompt_contains_segment_requirements(
 
 def test_e08_validation_accepts_mixed_ocr_result(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -723,7 +1025,12 @@ def test_e08_validation_accepts_mixed_ocr_result(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     validation = validate_hybrid_response(
@@ -753,7 +1060,7 @@ def test_e08_validation_accepts_mixed_ocr_result(
 
 def test_e08_validation_rejects_placeholder_only_for_496(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -766,7 +1073,12 @@ def test_e08_validation_rejects_placeholder_only_for_496(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     payload = valid_e08_hybrid_payload()
@@ -801,7 +1113,7 @@ def test_e08_validation_rejects_placeholder_only_for_496(
 
 def test_e08_validation_rejects_missing_placeholder_for_496(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -814,7 +1126,12 @@ def test_e08_validation_rejects_missing_placeholder_for_496(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     payload = valid_e08_hybrid_payload()
@@ -848,7 +1165,7 @@ def test_e08_validation_rejects_missing_placeholder_for_496(
 
 def test_e08_validation_rejects_english_for_497(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -861,7 +1178,12 @@ def test_e08_validation_rejects_english_for_497(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     payload = valid_e08_hybrid_payload()
@@ -895,7 +1217,7 @@ def test_e08_validation_rejects_english_for_497(
 
 def test_e08_validation_rejects_placeholder_for_497(
     e08_target_blocks: list[SrtBlock],
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_hybrid_translation_group(
         e08_target_blocks,
@@ -908,7 +1230,12 @@ def test_e08_validation_rejects_placeholder_for_497(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     payload = valid_e08_hybrid_payload()
@@ -2475,7 +2802,7 @@ def test_e09_repeated_translation_errors_trigger_hybrid_recovery(
 
 
 def test_e11_sound_effect_is_not_classified_as_ocr(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     blocks = [
         SrtBlock(
@@ -2499,14 +2826,19 @@ def test_e11_sound_effect_is_not_classified_as_ocr(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert ocr_lines == {}
 
 
 def test_e11_sound_effect_source_payload(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     blocks = [
         SrtBlock(
@@ -2530,7 +2862,12 @@ def test_e11_sound_effect_source_payload(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     payload = build_hybrid_source_payload(
@@ -2554,7 +2891,7 @@ def test_e11_sound_effect_source_payload(
 
 
 def test_e11_sound_effect_prompt_excludes_ocr_example(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     blocks = [
         SrtBlock(
@@ -2578,7 +2915,12 @@ def test_e11_sound_effect_prompt_excludes_ocr_example(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert ocr_lines == {}
@@ -2617,7 +2959,7 @@ def test_e11_sound_effect_prompt_excludes_ocr_example(
 
 
 def test_mixed_sound_effect_and_text_prompt_requirements(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     blocks = [
         SrtBlock(
@@ -2644,7 +2986,12 @@ def test_mixed_sound_effect_and_text_prompt_requirements(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     prompt = build_hybrid_translation_prompt(
@@ -3282,13 +3629,18 @@ def build_e13_mixed_ocr_group(
 
 
 def test_e13_short_mixed_case_line_is_classified_as_ocr(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_e13_mixed_ocr_group()
 
     actual = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {
@@ -3299,13 +3651,18 @@ def test_e13_short_mixed_case_line_is_classified_as_ocr(
 
 
 def test_e13_normal_line_is_not_classified_as_ocr(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_e13_mixed_ocr_group()
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert (
@@ -3318,7 +3675,7 @@ def test_e13_normal_line_is_not_classified_as_ocr(
 
 
 def test_short_mixed_case_line_without_normal_sibling_is_not_hybrid_ocr(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     block = SrtBlock(
         number="490",
@@ -3345,14 +3702,19 @@ def test_short_mixed_case_line_without_normal_sibling_is_not_hybrid_ocr(
 
     actual = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {}
 
 
 def test_short_mixed_case_line_in_non_failed_subtitle_is_not_hybrid_ocr(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     block = SrtBlock(
         number="490",
@@ -3375,20 +3737,30 @@ def test_short_mixed_case_line_in_non_failed_subtitle_is_not_hybrid_ocr(
 
     actual = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     assert actual == {}
 
 
 def test_e13_hybrid_source_payload_separates_text_and_ocr(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_e13_mixed_ocr_group()
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     payload = build_hybrid_source_payload(
@@ -3416,13 +3788,18 @@ def test_e13_hybrid_source_payload_separates_text_and_ocr(
 
 
 def test_e13_hybrid_prompt_requires_translation_and_ocr_placeholder(
-    noise_dictionary: NoiseDictionary,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     group = build_e13_mixed_ocr_group()
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
+        glossary_entries=(
+            GlossaryEntries(())
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     prompt = build_hybrid_translation_prompt(
