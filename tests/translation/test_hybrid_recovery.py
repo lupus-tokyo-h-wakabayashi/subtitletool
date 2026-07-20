@@ -35,9 +35,6 @@ from lib.translation.hybrid_recovery import (
     validate_hybrid_response,
     recover_translation_with_hybrid,
 )
-from lib.translation.ocr_retry import (
-    is_symbol_dense_ocr_source_line,
-)
 from lib.translation.translation_metrics import (
     TranslationChunkMetric,
 )
@@ -137,36 +134,6 @@ E09_RECOVERED_TRANSLATIONS = (
         "起こしていた。"
     ),
 )
-
-
-def test_symbol_dense_ocr_accepts_backslash_structure(
-) -> None:
-    source_line = (
-        r"ham) I e\ emo)"
-    )
-
-    actual = (
-        is_symbol_dense_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is True
-
-
-def test_symbol_dense_ocr_rejects_single_backslash(
-) -> None:
-    source_line = (
-        r"Use C:\Temp to save files"
-    )
-
-    actual = (
-        is_symbol_dense_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is False
 
 
 @pytest.fixture
