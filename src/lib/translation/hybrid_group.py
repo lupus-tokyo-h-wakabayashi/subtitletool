@@ -4,14 +4,14 @@ import re
 from dataclasses import dataclass
 
 from lib.subtitle.srt import SrtBlock
+from lib.subtitle.text import (
+    is_sound_effect_only_text,
+)
 
 DEFAULT_MAX_HYBRID_GROUP_BLOCKS = 6
 DEFAULT_MAX_HYBRID_GAP_MILLISECONDS = 1_500
 SENTENCE_END_PATTERN = re.compile(
     r"""[.!?]["'”’)]*\s*$"""
-)
-SOURCE_SOUND_EFFECT_PATTERN = re.compile(
-    r"^\s*\([A-Z0-9 ,.'’!?-]+\)\s*$"
 )
 SRT_TIMESTAMP_PATTERN = re.compile(
     r"""
@@ -60,51 +60,6 @@ class HybridTranslationGroup:
         )
 
 
-def is_source_sound_effect_line(
-    text: str,
-) -> bool:
-    """
-    原文の1行が効果音・動作説明だけか判定する。
-
-    例:
-        (CHIRPING)
-        (SIGHS)
-        (CONSOLE BEEPS)
-        (LOW MECHANICAL HUM)
-    """
-    return bool(
-        SOURCE_SOUND_EFFECT_PATTERN.fullmatch(
-            text.strip()
-        )
-    )
-
-
-def is_sound_effect_only_source(
-    text: str,
-) -> bool:
-    """
-    字幕内の空でない行が、
-    すべて効果音行か判定する。
-
-    効果音と会話が混在する字幕はFalseを返す。
-    """
-    source_lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
-
-    if not source_lines:
-        return False
-
-    return all(
-        is_source_sound_effect_line(
-            source_line
-        )
-        for source_line in source_lines
-    )
-
-
 def crosses_hybrid_content_boundary(
     previous_block: SrtBlock,
     next_block: SrtBlock,
@@ -116,10 +71,10 @@ def crosses_hybrid_content_boundary(
     1つの連続文章として結合しない。
     """
     return (
-        is_sound_effect_only_source(
+        is_sound_effect_only_text(
             previous_block.text
         )
-        or is_sound_effect_only_source(
+        or is_sound_effect_only_text(
         next_block.text
     )
     )

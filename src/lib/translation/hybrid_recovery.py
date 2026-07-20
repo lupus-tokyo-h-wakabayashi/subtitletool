@@ -16,10 +16,12 @@ from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
 )
+from lib.subtitle.text import (
+    is_sound_effect_line,
+)
 from .hybrid_group import (
     HybridTranslationGroup,
     build_hybrid_translation_groups,
-    is_source_sound_effect_line,
 )
 from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
@@ -169,7 +171,7 @@ def find_group_ocr_lines_with_assessment(
             if (
                 raw_line.strip()
                 and not (
-                is_source_sound_effect_line(
+                is_sound_effect_line(
                     raw_line.strip()
                 )
             )
@@ -246,7 +248,7 @@ def find_group_sound_effect_lines(
             if not source_line:
                 continue
 
-            if not is_source_sound_effect_line(
+            if not is_sound_effect_line(
                 source_line
             ):
                 continue
@@ -302,7 +304,7 @@ def find_group_text_lines(
             if source_line in block_ocr_lines:
                 continue
 
-            if is_source_sound_effect_line(
+            if is_sound_effect_line(
                 source_line
             ):
                 continue
@@ -348,7 +350,7 @@ def build_hybrid_source_payload(
             if not source_line:
                 continue
 
-            if is_source_sound_effect_line(
+            if is_sound_effect_line(
                 source_line
             ):
                 line_kind = "sound_effect"
