@@ -17,7 +17,10 @@ from lib.subtitle.srt import (
     parse_speaker_from_text,
     write_structured_srt,
 )
-from lib.subtitle.text import cleanup_ocr_text
+from lib.subtitle.text import (
+    cleanup_ocr_text,
+    is_sound_effect_only_text,
+)
 from .translation_chunk import (
     build_initial_translation_request_payload,
     save_translation_request_payload,
@@ -121,6 +124,77 @@ def cleanup_blocks(
         cleanup_block(block)
         for block in blocks
     ]
+
+
+def inherit_missing_speakers(
+    blocks: list[SrtBlock],
+) -> list[SrtBlock]:
+    """
+    明示Speakerを字幕順に保持し、
+    Speakerのない後続台詞へ継承する。
+
+    効果音だけの字幕にはSpeakerを設定しないが、
+    現在Speakerの記憶は維持する。
+
+    最初の明示Speakerより前にある字幕と、
+    本文が空の字幕は変更しない。
+    """
+    inherited_blocks: list[SrtBlock] = []
+    current_speaker: str | None = None
+
+    for block in blocks:
+        parsed = parse_speaker_from_text(
+            block.text
+        )
+
+        if parsed.speaker is not None:
+            current_speaker = parsed.speaker
+
+            inherited_blocks.append(
+                SrtBlock(
+                    number=block.number,
+                    timestamp=block.timestamp,
+                    text=rebuild_speaker_text(
+                        parsed.speaker,
+                        parsed.text,
+                    ),
+                )
+            )
+
+            continue
+
+        if not parsed.text.strip():
+            inherited_blocks.append(
+                block
+            )
+            continue
+
+        if is_sound_effect_only_text(
+            parsed.text
+        ):
+            inherited_blocks.append(
+                block
+            )
+            continue
+
+        if current_speaker is None:
+            inherited_blocks.append(
+                block
+            )
+            continue
+
+        inherited_blocks.append(
+            SrtBlock(
+                number=block.number,
+                timestamp=block.timestamp,
+                text=rebuild_speaker_text(
+                    current_speaker,
+                    parsed.text,
+                ),
+            )
+        )
+
+    return inherited_blocks
 
 
 def apply_noise_to_blocks(
