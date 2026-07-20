@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "description": "Glossary-aware OCR source line scoring configuration.",
+  "thresholds": {
+    "high_confidence": {
+      "value": 12,
+      "description": "通常時でも高確度OCRとして採用する最小スコア。"
+    },
+    "failed_subtitle": {
+      "value": 8,
+      "description": "通常翻訳でValidationに失敗した字幕をOCRとして採用する最小スコア。"
+    },
+    "failed_with_normal_sibling": {
+      "value": 6,
+      "description": "Validation失敗済みで、同じ字幕内に正常行があるOCR候補行を採用する最小スコア。"
+    }
+  },
+  "limits": {
+    "maximum_short_line_length": {
+      "value": 24,
+      "description": "短いOCR破損候補として評価する最大文字数。"
+    },
+    "minimum_ascii_letters": {
+      "value": 8,
+      "description": "英字量の加点を適用する最小ASCII英字数。"
+    },
+    "minimum_tokens": {
+      "value": 4,
+      "description": "複数トークン構造の加点を適用する最小英字トークン数。"
+    },
+    "minimum_many_tokens": {
+      "value": 6,
+      "description": "多数の短いトークンが連続する特徴を加点する最小トークン数。"
+    },
+    "maximum_short_token_length": {
+      "value": 4,
+      "description": "短い英字トークンとして数える最大文字数。"
+    },
+    "minimum_short_token_ratio": {
+      "value": 0.6,
+      "description": "短いトークンが多いと判断する最小比率。"
+    },
+    "minimum_high_short_token_ratio": {
+      "value": 0.75,
+      "description": "短いトークンが非常に多いと判断して追加加点する最小比率。"
+    },
+    "minimum_suspicious_tokens": {
+      "value": 3,
+      "description": "ワードサラダ特徴を加点する最小不自然トークン数。"
+    },
+    "minimum_structural_symbols": {
+      "value": 2,
+      "description": "構造記号が複数あると判断する最小個数。"
+    },
+    "minimum_dense_structural_symbols": {
+      "value": 3,
+      "description": "構造記号が密集していると判断して追加加点する最小個数。"
+    },
+    "minimum_glossary_similarity": {
+      "value": 0.75,
+      "description": "原文トークンをGlossary sourceのOCR崩れ候補とする最小類似度。"
+    },
+    "minimum_glossary_source_length": {
+      "value": 4,
+      "description": "Glossary近似一致の対象とするsourceと原文トークンの最小文字数。"
+    },
+    "maximum_glossary_length_difference": {
+      "value": 2,
+      "description": "Glossary近似一致で許容するsourceと原文トークンの最大文字数差。"
+    },
+    "maximum_glossary_exact_protection": {
+      "value": 8,
+      "description": "Glossary完全一致による減点の最大絶対値。"
+    },
+    "minimum_damage_score_for_glossary_miss": {
+      "value": 6,
+      "description": "Glossary非一致を追加加点するために事前に必要な構造破損スコア。"
+    },
+    "minimum_natural_sentence_tokens": {
+      "value": 3,
+      "description": "自然英文として保護するために必要な最小英字トークン数。"
+    }
+  },
+  "weights": {
+    "short_line": {
+      "value": 1,
+      "description": "短い行へ加算するスコア。"
+    },
+    "letters_and_digits": {
+      "value": 1,
+      "description": "英字と数字が同じ行に混在する場合のスコア。"
+    },
+    "minimum_ascii_letters": {
+      "value": 1,
+      "description": "一定数以上のASCII英字を含む場合のスコア。"
+    },
+    "minimum_tokens": {
+      "value": 1,
+      "description": "一定数以上の英字トークンを含む場合のスコア。"
+    },
+    "many_tokens": {
+      "value": 1,
+      "description": "多数の英字トークンを含む場合の追加スコア。"
+    },
+    "multiple_structural_symbols": {
+      "value": 2,
+      "description": "構造記号が複数存在する場合のスコア。"
+    },
+    "dense_structural_symbols": {
+      "value": 1,
+      "description": "構造記号が密集している場合の追加スコア。"
+    },
+    "strong_corruption_symbol": {
+      "value": 2,
+      "description": "OCR破損で現れやすい強い構造記号を含む場合のスコア。"
+    },
+    "unbalanced_parentheses": {
+      "value": 3,
+      "description": "丸括弧の開始数と終了数が一致しない場合のスコア。"
+    },
+    "unbalanced_square_brackets": {
+      "value": 3,
+      "description": "角括弧の開始数と終了数が一致しない場合のスコア。"
+    },
+    "unbalanced_braces": {
+      "value": 3,
+      "description": "波括弧の開始数と終了数が一致しない場合のスコア。"
+    },
+    "unbalanced_angle_brackets": {
+      "value": 2,
+      "description": "山括弧の開始数と終了数が一致しない場合のスコア。"
+    },
+    "unbalanced_double_quotes": {
+      "value": 1,
+      "description": "半角ダブルクオートの個数が奇数の場合のスコア。"
+    },
+    "multiple_unbalanced_delimiters": {
+      "value": 2,
+      "description": "2種類以上の区切り記号が同時に不均衡な場合の追加スコア。"
+    },
+    "short_token_ratio": {
+      "value": 2,
+      "description": "短い英字トークンの比率が高い場合のスコア。"
+    },
+    "high_short_token_ratio": {
+      "value": 1,
+      "description": "短い英字トークンの比率が非常に高い場合の追加スコア。"
+    },
+    "suspicious_tokens": {
+      "value": 3,
+      "description": "母音や文字構造が不自然なトークンを複数含む場合のスコア。"
+    },
+    "invalid_single_letter": {
+      "value": 2,
+      "description": "英語として不自然な1文字英字トークンを含む場合のスコア。"
+    },
+    "vowelless_uppercase_token": {
+      "value": 1,
+      "description": "2文字以上で母音を含まない全大文字トークンがある場合のスコア。"
+    },
+    "irregular_mixed_case": {
+      "value": 2,
+      "description": "lower、upper、titleのいずれでもない不規則な大小文字を含む場合のスコア。"
+    },
+    "symbol_dense_structure": {
+      "value": 3,
+      "description": "短い英字トークンと構造記号が密集する複合条件の追加スコア。"
+    },
+    "low_symbol_word_salad": {
+      "value": 2,
+      "description": "記号が少なく短い不自然な英字列が連続する複合条件の追加スコア。"
+    },
+    "short_mixed_case": {
+      "value": 2,
+      "description": "短い大小文字混在型OCRの複合条件を満たす場合の追加スコア。"
+    },
+    "damaged_alphanumeric_structure": {
+      "value": 2,
+      "description": "英数字混在と区切り記号不均衡が同時に発生する場合の追加スコア。"
+    },
+    "glossary_exact_match": {
+      "value": -5,
+      "description": "Glossary sourceと完全一致する正常な作品用語を保護する減点。"
+    },
+    "glossary_similar_match": {
+      "value": 2,
+      "description": "Glossary sourceに近いが一致しないOCR崩れ候補へのスコア。"
+    },
+    "damaged_without_glossary_match": {
+      "value": 1,
+      "description": "構造破損が強くGlossaryにも一致しない場合の追加スコア。"
+    },
+    "identifier_like": {
+      "value": -8,
+      "description": "型番や識別子に近い正常文字列を保護する減点。"
+    },
+    "equation_like": {
+      "value": -8,
+      "description": "単純な数式に近い正常文字列を保護する減点。"
+    },
+    "time_like": {
+      "value": -5,
+      "description": "時刻表現を含む正常文字列を保護する減点。"
+    },
+    "natural_sentence": {
+      "value": -3,
+      "description": "一定数のトークンと自然な文末を持つ英文を保護する減点。"
+    }
+  }
+}
