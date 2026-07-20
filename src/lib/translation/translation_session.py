@@ -10,7 +10,9 @@ from lib.profile.noise import (
     NoiseDictionary,
     apply_noise_dictionary_to_text,
 )
-from lib.profile.prompt import load_glossary_entries
+from lib.profile.prompt import (
+    load_glossary_entries,
+)
 from lib.subtitle.srt import (
     SrtBlock,
     apply_translations,
@@ -197,6 +199,24 @@ def inherit_missing_speakers(
     return inherited_blocks
 
 
+def prepare_translation_source_blocks(
+    blocks: list[SrtBlock],
+) -> list[SrtBlock]:
+    """
+    翻訳セッション全体の字幕へOCR前処理を適用し、
+    チャンク分割前にSpeakerを確定する。
+
+    全字幕を一度に処理することで、
+    前チャンクの明示Speakerを
+    次チャンクの先頭字幕へ継承できる。
+    """
+    return inherit_missing_speakers(
+        cleanup_blocks(
+            blocks
+        )
+    )
+
+
 def apply_noise_to_blocks(
     blocks: list[SrtBlock],
     noise_dictionary: NoiseDictionary,
@@ -240,6 +260,12 @@ def run_translation_session(
 
     glossary_entries = load_glossary_entries(
         resolved_profile
+    )
+
+    prepared_source_blocks = (
+        prepare_translation_source_blocks(
+            source_blocks
+        )
     )
 
     total_blocks = len(
@@ -377,22 +403,23 @@ def run_translation_session(
             source_blocks[start:end]
         )
 
-        # AIへ渡す字幕本文だけOCR前処理する。
-        before_context = cleanup_blocks(
-            source_blocks[
+        # 全字幕で確定したSpeaker情報を維持したまま、
+        # AIへ渡す範囲を切り出す。
+        before_context = (
+            prepared_source_blocks[
                 before_start:start
             ]
         )
 
         target_blocks = apply_noise_to_blocks(
-            cleanup_blocks(
-                source_target_blocks
-            ),
+            prepared_source_blocks[
+                start:end
+            ],
             noise_dictionary,
         )
 
-        after_context = cleanup_blocks(
-            source_blocks[
+        after_context = (
+            prepared_source_blocks[
                 end:after_end
             ]
         )

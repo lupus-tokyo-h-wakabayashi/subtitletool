@@ -3,6 +3,7 @@ from lib.subtitle.srt import (
 )
 from lib.translation.translation_session import (
     inherit_missing_speakers,
+    prepare_translation_source_blocks,
 )
 
 
@@ -193,3 +194,64 @@ def test_empty_text_does_not_receive_speaker(
     )
 
     assert actual[1].text == ""
+
+
+def test_prepare_speakers_before_chunk_split(
+) -> None:
+    source_blocks = [
+        make_block(
+            "1",
+            (
+                "RUSH: This is what Destiny\n"
+                "intended from the moment."
+            ),
+        ),
+        make_block(
+            "2",
+            "We entered the star system.",
+        ),
+        make_block(
+            "3",
+            "There is no other explanation.",
+        ),
+        make_block(
+            "4",
+            "YOUNG: I don't believe that.",
+        ),
+    ]
+
+    prepared_blocks = (
+        prepare_translation_source_blocks(
+            source_blocks
+        )
+    )
+
+    first_chunk = prepared_blocks[
+        0:2
+    ]
+
+    second_chunk = prepared_blocks[
+        2:4
+    ]
+
+    assert [
+               block.text
+               for block in first_chunk
+           ] == [
+               (
+                   "[RUSH] This is what Destiny\n"
+                   "intended from the moment."
+               ),
+               "[RUSH] We entered the star system.",
+           ]
+
+    assert [
+               block.text
+               for block in second_chunk
+           ] == [
+               (
+                   "[RUSH] "
+                   "There is no other explanation."
+               ),
+               "[YOUNG] I don't believe that.",
+           ]
