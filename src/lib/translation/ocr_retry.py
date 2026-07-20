@@ -19,15 +19,6 @@ from .ocr_assessment import (
     assess_ocr_source_line,
 )
 
-MIN_SYMBOL_DENSE_OCR_ASCII_LETTERS = 8
-MIN_SYMBOL_DENSE_OCR_TOKENS = 4
-MIN_SYMBOL_DENSE_OCR_SHORT_TOKENS = 3
-MIN_SYMBOL_DENSE_OCR_STRUCTURAL_SYMBOLS = 3
-MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO = 0.6
-
-SYMBOL_DENSE_OCR_STRUCTURAL_PATTERN = re.compile(
-    r"[=()\[\]{}<>|~\\]"
-)
 SOUND_EFFECT_ONLY_PATTERN = re.compile(
     r"^(?:"
     r"\([A-Z0-9 ,.'’!?-]+\)"
@@ -184,94 +175,6 @@ def extract_untranslated_english_error_ids(
         )
 
     return subtitle_ids
-
-
-def is_symbol_dense_ocr_source_line(
-    source_line: str,
-) -> bool:
-    """
-    原文1行が、短い英字トークンと構造記号が密集した
-    OCR破損文字列か判定する。
-
-    この関数は単独で翻訳前字幕を削除するためには使用しない。
-
-    呼出元で次を確認した後の、
-    高確度OCR判定として使用する。
-
-    - 未翻訳英文エラーの対象字幕IDである
-    - 原文の完全な1行がtranslationへ残っている
-
-    正常な効果音、型番、識別子、短い数式などを
-    誤検出しないよう、複数条件を同時に要求する。
-    """
-    normalized = source_line.strip()
-
-    if not normalized:
-        return False
-
-    if SOUND_EFFECT_ONLY_PATTERN.fullmatch(
-        normalized
-    ):
-        return False
-
-    ascii_letters = re.findall(
-        r"[A-Za-z]",
-        normalized,
-    )
-
-    if (
-        len(ascii_letters)
-        < MIN_SYMBOL_DENSE_OCR_ASCII_LETTERS
-    ):
-        return False
-
-    tokens = re.findall(
-        r"[A-Za-z]+",
-        normalized,
-    )
-
-    if (
-        len(tokens)
-        < MIN_SYMBOL_DENSE_OCR_TOKENS
-    ):
-        return False
-
-    short_tokens = [
-        token
-        for token in tokens
-        if len(token) <= 3
-    ]
-
-    if (
-        len(short_tokens)
-        < MIN_SYMBOL_DENSE_OCR_SHORT_TOKENS
-    ):
-        return False
-
-    structural_symbols = (
-        SYMBOL_DENSE_OCR_STRUCTURAL_PATTERN.findall(
-            normalized
-        )
-    )
-
-    if (
-        len(structural_symbols)
-        < MIN_SYMBOL_DENSE_OCR_STRUCTURAL_SYMBOLS
-    ):
-        return False
-
-    short_token_ratio = (
-        len(short_tokens)
-        / len(tokens)
-    )
-
-    if (
-        short_token_ratio
-        < MIN_SYMBOL_DENSE_OCR_SHORT_TOKEN_RATIO
-    ):
-        return False
-
-    return True
 
 
 def find_assessed_ocr_lines_in_source(
