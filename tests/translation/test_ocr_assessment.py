@@ -1,17 +1,28 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from lib.profile.glossary import (
     GlossaryEntries,
     GlossaryEntry,
 )
+from lib.profile.noise import (
+    NoiseDictionary,
+)
 from lib.profile.ocr_scoring import (
     OcrScoringConfig,
     load_ocr_scoring_config,
 )
+from lib.subtitle.srt import (
+    SrtBlock,
+)
 from lib.translation.ocr_assessment import (
     assess_ocr_source_line,
     select_ocr_threshold,
+)
+from lib.translation.ocr_retry import (
+    find_probable_untranslated_ocr_lines,
 )
 
 
@@ -71,6 +82,36 @@ def test_assess_protects_contractions_and_continuing_sentences(
 
     assert not result.has_contribution(
         "invalid_single_letter"
+    )
+
+
+@pytest.fixture
+def noise_dictionary(
+    tmp_path: Path,
+) -> NoiseDictionary:
+    return NoiseDictionary(
+        profile_name="test",
+        entries={},
+        official_path=(
+            tmp_path
+            / "noise.json"
+        ),
+        local_path=(
+            tmp_path
+            / "noise.local.json"
+        ),
+        local_loaded=False,
+    )
+
+
+def build_untranslated_english_error(
+    subtitle_id: str,
+    text: str,
+) -> str:
+    return (
+        "Untranslated English sentence detected: "
+        f"subtitle_id={subtitle_id!r}, "
+        f"text={text!r}"
     )
 
 
@@ -500,3 +541,294 @@ def test_assessment_contribution_uses_config_description(
             "unbalanced_parentheses"
         ].description
     )
+
+
+def test_standard_recovery_finds_structural_ocr_line(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    source_text = '"(CLR (=r 108'
+
+    blocks = [
+        SrtBlock(
+            number="497",
+            timestamp=(
+                "00:25:22,563 --> "
+                "00:25:24,773"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                build_untranslated_english_error(
+                    "497",
+                    source_text,
+                ),
+            ],
+            noise_dictionary,
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {
+        "497": [
+            source_text,
+        ],
+    }
+
+
+def test_standard_recovery_finds_only_damaged_mixed_line(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    damaged_line = (
+        "Ui maar i mele aah ml iaa"
+    )
+
+    normal_line = (
+        "seeing the old homestead again."
+    )
+
+    source_text = (
+        f"{damaged_line}\n"
+        f"{normal_line}"
+    )
+
+    blocks = [
+        SrtBlock(
+            number="98",
+            timestamp=(
+                "00:05:00,000 --> "
+                "00:05:02,000"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                build_untranslated_english_error(
+                    "98",
+                    source_text,
+                ),
+            ],
+            noise_dictionary,
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {
+        "98": [
+            damaged_line,
+        ],
+    }
+
+
+def test_standard_recovery_ignores_source_not_copied_to_translation(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    source_text = '"(CLR (=r 108'
+
+    blocks = [
+        SrtBlock(
+            number="497",
+            timestamp=(
+                "00:25:22,563 --> "
+                "00:25:24,773"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                "判読できない文字列です。",
+            ],
+            [
+                build_untranslated_english_error(
+                    "497",
+                    source_text,
+                ),
+            ],
+            noise_dictionary,
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {}
+
+
+def test_standard_recovery_protects_glossary_identifier(
+    scoring_config: OcrScoringConfig,
+    stargate_glossary: GlossaryEntries,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    source_text = "SG-1"
+
+    blocks = [
+        SrtBlock(
+            number="280",
+            timestamp=(
+                "00:14:41,506 --> "
+                "00:14:42,799"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                build_untranslated_english_error(
+                    "280",
+                    source_text,
+                ),
+            ],
+            noise_dictionary,
+            glossary_entries=(
+                stargate_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {}
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        (
+            "Hopefully, we've proven\n"
+            "that's not our goal."
+        ),
+        (
+            "I couldn't deal with it,\n"
+            "the thought of you\n"
+            "being trapped on that ship."
+        ),
+    ],
+)
+def test_standard_recovery_protects_natural_english(
+    source_text: str,
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="602",
+            timestamp=(
+                "00:00:01,100 --> "
+                "00:00:03,000"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                build_untranslated_english_error(
+                    "602",
+                    source_text,
+                ),
+            ],
+            noise_dictionary,
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {}
+
+
+def test_standard_recovery_ignores_unrelated_validation_error(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    source_text = '"(CLR (=r 108'
+
+    blocks = [
+        SrtBlock(
+            number="497",
+            timestamp=(
+                "00:25:22,563 --> "
+                "00:25:24,773"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                (
+                    "Chinese-specific characters "
+                    "detected: "
+                    "subtitle_id='497'"
+                ),
+            ],
+            noise_dictionary,
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {}
