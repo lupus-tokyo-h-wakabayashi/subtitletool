@@ -129,6 +129,8 @@ def test_short_mixed_case_ocr_line_requires_normal_sibling(
 
 def test_find_probable_untranslated_e13_short_ocr_line(
     noise_dictionary: NoiseDictionary,
+    empty_glossary: GlossaryEntries,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     target_block = SrtBlock(
         number="490",
@@ -153,6 +155,12 @@ def test_find_probable_untranslated_e13_short_ocr_line(
             noise_dictionary=(
                 noise_dictionary
             ),
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                ocr_scoring_config
+            ),
         )
     )
 
@@ -165,6 +173,8 @@ def test_find_probable_untranslated_e13_short_ocr_line(
 
 def test_e13_short_ocr_line_is_not_selected_without_matching_error(
     noise_dictionary: NoiseDictionary,
+    empty_glossary: GlossaryEntries,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     target_block = SrtBlock(
         number="490",
@@ -192,6 +202,12 @@ def test_e13_short_ocr_line_is_not_selected_without_matching_error(
             ],
             noise_dictionary=(
                 noise_dictionary
+            ),
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                ocr_scoring_config
             ),
         )
     )
