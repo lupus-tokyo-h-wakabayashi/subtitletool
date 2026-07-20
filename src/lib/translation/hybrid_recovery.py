@@ -52,13 +52,6 @@ HYBRID_TRANSLATED_SOUND_EFFECT_PATTERN = (
         r"（(?P<content>[^（）]+)）"
     )
 )
-HYBRID_HALF_WIDTH_PARENTHESIZED_PATTERN = (
-    re.compile(
-        r"\("
-        r"(?P<content>[^()\n]+)"
-        r"\)"
-    )
-)
 HYBRID_SOUND_EFFECT_ONLY_SEGMENT_PATTERN = (
     re.compile(
         r"^"
@@ -820,44 +813,20 @@ full_translationへコピーすること。
     )
 
 
-def normalize_hybrid_sound_effect_parentheses(
+def normalize_hybrid_parentheses(
     text: str,
-    *,
-    source_sound_effect_lines: list[str],
 ) -> str:
     """
-    効果音を含む字幕で、
-    日本語を含む半角括弧表現だけを
-    全角括弧へ正規化する。
-
-    原文に効果音行がない場合と、
-    日本語を含まない半角括弧表現は変更しない。
+    Hybrid翻訳結果の半角括弧を
+    日本語字幕用の全角括弧へ統一する。
     """
-    if not source_sound_effect_lines:
-        return text
-
-    def replace_parentheses(
-        match: re.Match[str],
-    ) -> str:
-        content = match.group(
-            "content"
-        )
-
-        if not JAPANESE_CHARACTER_PATTERN.search(
-            content
-        ):
-            return match.group(
-                0
-            )
-
-        return (
-            f"（{content}）"
-        )
-
     return (
-        HYBRID_HALF_WIDTH_PARENTHESIZED_PATTERN.sub(
-            replace_parentheses,
-            text,
+        text.replace(
+            "(",
+            "（",
+        ).replace(
+            ")",
+            "）",
         )
     )
 
@@ -880,6 +849,7 @@ def find_hybrid_sound_effect_segment_violations(
     subtitle_id: str,
     segment: str,
     *,
+    raw_segment: str,
     source_sound_effect_lines: list[str],
     source_text_lines: list[str],
     source_ocr_lines: list[str],
@@ -904,7 +874,7 @@ def find_hybrid_sound_effect_segment_violations(
     for source_sound_effect in (
         source_sound_effect_lines
     ):
-        if source_sound_effect not in segment:
+        if source_sound_effect not in raw_segment:
             continue
 
         violations.append(
@@ -1175,9 +1145,9 @@ def validate_hybrid_response(
             )
             continue
 
-        normalized_segment = segment.strip()
+        raw_segment = segment.strip()
 
-        if not normalized_segment:
+        if not raw_segment:
             reasons.append(
                 "Empty Hybrid segment: "
                 f"subtitle_id={subtitle_id!r}"
@@ -1192,11 +1162,8 @@ def validate_hybrid_response(
         )
 
         normalized_segment = (
-            normalize_hybrid_sound_effect_parentheses(
-                normalized_segment,
-                source_sound_effect_lines=(
-                    block_sound_effect_lines
-                ),
+            normalize_hybrid_parentheses(
+                raw_segment
             )
         )
 
@@ -1215,7 +1182,7 @@ def validate_hybrid_response(
         )
 
         for ocr_line in block_ocr_lines:
-            if ocr_line in normalized_segment:
+            if ocr_line in raw_segment:
                 reasons.append(
                     "Hybrid segment contains OCR source: "
                     f"subtitle_id={subtitle_id!r}, "
@@ -1254,6 +1221,7 @@ def validate_hybrid_response(
             find_hybrid_sound_effect_segment_violations(
                 subtitle_id,
                 normalized_segment,
+                raw_segment=raw_segment,
                 source_sound_effect_lines=(
                     block_sound_effect_lines
                 ),

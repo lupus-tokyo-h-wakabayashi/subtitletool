@@ -23,7 +23,7 @@ from lib.translation.hybrid_recovery import (
     build_hybrid_translation_prompt,
     find_group_ocr_lines,
     find_group_sound_effect_lines,
-    normalize_hybrid_sound_effect_parentheses,
+    normalize_hybrid_parentheses,
     validate_hybrid_response,
     recover_translation_with_hybrid,
 )
@@ -2901,12 +2901,12 @@ def test_e11_validation_rejects_sound_effect_source_copy(
         "text='(CHIRPING)'"
         in validation.reasons
     )
-
     assert (
-        "Hybrid sound effect translation "
-        "missing: "
+        "Hybrid sound effect requires "
+        "Japanese translation: "
         "subtitle_id='321', "
-        "text='(CHIRPING)'"
+        "values=['CHIRPING'], "
+        "text='（CHIRPING）'"
         in validation.reasons
     )
 
@@ -4223,14 +4223,11 @@ def build_chunk_metrics(
     )
 
 
-def test_normalize_hybrid_sound_effect_parentheses(
+def test_normalize_hybrid_parentheses(
 ) -> None:
     actual = (
-        normalize_hybrid_sound_effect_parentheses(
-            "(スコットがうめく音)",
-            source_sound_effect_lines=[
-                "(SCOTT GRUNTING)",
-            ],
+        normalize_hybrid_parentheses(
+            "(スコットがうめく音)"
         )
     )
 
@@ -4239,17 +4236,14 @@ def test_normalize_hybrid_sound_effect_parentheses(
     )
 
 
-def test_normalize_hybrid_sound_effect_parentheses_in_mixed_text(
+def test_normalize_hybrid_parentheses_in_mixed_text(
 ) -> None:
     actual = (
-        normalize_hybrid_sound_effect_parentheses(
+        normalize_hybrid_parentheses(
             (
                 "(スコットがうめく音)"
                 "大丈夫か？"
-            ),
-            source_sound_effect_lines=[
-                "(SCOTT GRUNTING)",
-            ],
+            )
         )
     )
 
@@ -4259,18 +4253,39 @@ def test_normalize_hybrid_sound_effect_parentheses_in_mixed_text(
     )
 
 
-def test_normalize_hybrid_sound_effect_parentheses_preserves_english(
+def test_normalize_hybrid_parentheses_converts_english_content(
 ) -> None:
     actual = (
-        normalize_hybrid_sound_effect_parentheses(
-            "(SG-1)",
-            source_sound_effect_lines=[
-                "(CONSOLE BEEPS)",
-            ],
+        normalize_hybrid_parentheses(
+            "(SG-1)"
         )
     )
 
-    assert actual == "(SG-1)"
+    assert actual == "（SG-1）"
+
+
+def test_normalize_hybrid_parentheses_preserves_fullwidth_parentheses(
+) -> None:
+    actual = (
+        normalize_hybrid_parentheses(
+            "（既に全角）"
+        )
+    )
+
+    assert actual == "（既に全角）"
+
+
+def test_normalize_hybrid_parentheses_preserves_plain_text(
+) -> None:
+    actual = (
+        normalize_hybrid_parentheses(
+            "括弧を含まない字幕です。"
+        )
+    )
+
+    assert actual == (
+        "括弧を含まない字幕です。"
+    )
 
 
 def test_validate_hybrid_response_normalizes_sound_effect_parentheses(
@@ -4331,4 +4346,162 @@ def test_validate_hybrid_response_normalizes_sound_effect_parentheses(
 
     assert validation.full_translation == (
         "（スコットがうめく音）"
+    )
+
+
+def test_e05_validation_normalizes_halfwidth_ocr_placeholder(
+) -> None:
+    ocr_line = (
+        "= PV Fel oael "
+        "(ct V a bY ate)’ <16|"
+    )
+
+    block = SrtBlock(
+        number="98",
+        timestamp=(
+            "00:04:50,999 --> "
+            "00:04:54,961"
+        ),
+        text=(
+            f"{ocr_line}\n"
+            "seeing the old homestead\n"
+            "again."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "98",
+            }
+        ),
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    "(判読不能)"
+                    "懐かしい我が家を"
+                    "再び見られた。"
+                ),
+                "segments": {
+                    "98": (
+                        "(判読不能)"
+                        "懐かしい我が家を"
+                        "再び見られた。"
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {
+            "98": [
+                ocr_line,
+            ],
+        },
+    )
+
+    assert validation.valid is True
+    assert validation.reasons == ()
+
+    assert validation.segments == {
+        "98": (
+            "（判読不能）"
+            "懐かしい我が家を"
+            "再び見られた。"
+        ),
+    }
+
+    assert validation.full_translation == (
+        "（判読不能）"
+        "懐かしい我が家を"
+        "再び見られた。"
+    )
+
+
+def test_e05_validation_detects_ocr_source_before_parentheses_normalization(
+) -> None:
+    ocr_line = (
+        "= PV Fel oael "
+        "(ct V a bY ate)’ <16|"
+    )
+
+    block = SrtBlock(
+        number="98",
+        timestamp=(
+            "00:04:50,999 --> "
+            "00:04:54,961"
+        ),
+        text=(
+            f"{ocr_line}\n"
+            "seeing the old homestead\n"
+            "again."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "98",
+            }
+        ),
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    f"{ocr_line}\n"
+                    "(判読不能)"
+                    "懐かしい我が家を"
+                    "再び見られた。"
+                ),
+                "segments": {
+                    "98": (
+                        f"{ocr_line}\n"
+                        "(判読不能)"
+                        "懐かしい我が家を"
+                        "再び見られた。"
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    validation = validate_hybrid_response(
+        response,
+        group,
+        {
+            "98": [
+                ocr_line,
+            ],
+        },
+    )
+
+    assert validation.valid is False
+
+    assert (
+        "Hybrid segment contains OCR source: "
+        "subtitle_id='98', "
+        f"text={ocr_line!r}"
+        in validation.reasons
     )
