@@ -693,110 +693,6 @@ def find_short_mixed_case_ocr_lines_in_source(
     return results
 
 
-def find_probable_untranslated_ocr_lines_with_legacy_rules(
-    target_blocks: list[SrtBlock],
-    translated_texts: list[str],
-    errors: list[str],
-    noise_dictionary: NoiseDictionary,
-) -> dict[str, list[str]]:
-    """
-    未翻訳英文エラーになった字幕について、
-    translationへそのままコピーされた原文行のうち、
-    OCR破損の可能性が高い行を返す。
-
-    Noise辞書や既存ヒューリスティックに加えて、
-    正常行と混在する短い大小文字型OCR行も対象にする。
-
-    短い大小文字型OCR行は、
-    次の条件をすべて満たす場合だけ返す。
-
-    - 未翻訳英文エラーの対象字幕IDである
-    - 同じ字幕内に正常な兄弟行がある
-    - OCR候補の完全な原文行がtranslationに残っている
-
-    戻り値:
-
-        {
-            "490": [
-                "dam IAN el ESie",
-            ],
-        }
-    """
-    error_ids = (
-        extract_untranslated_english_error_ids(
-            errors
-        )
-    )
-
-    if not error_ids:
-        return {}
-
-    probable_lines: dict[
-        str,
-        list[str],
-    ] = {}
-
-    for block, translated_text in zip(
-        target_blocks,
-        translated_texts,
-        strict=True,
-    ):
-        if block.number not in error_ids:
-            continue
-
-        short_mixed_case_lines = set(
-            find_short_mixed_case_ocr_lines_in_source(
-                block.text,
-                noise_dictionary,
-            )
-        )
-
-        matched_lines: list[str] = []
-
-        for raw_line in block.text.splitlines():
-            source_line = raw_line.strip()
-
-            if not source_line:
-                continue
-
-            if source_line not in translated_text:
-                continue
-
-            is_existing_ocr = (
-                is_probable_ocr_source_line(
-                    source_line,
-                    noise_dictionary,
-                )
-            )
-
-            is_short_mixed_case_ocr = (
-                source_line
-                in short_mixed_case_lines
-            )
-
-            if not (
-                is_existing_ocr
-                or is_short_mixed_case_ocr
-            ):
-                continue
-
-            if source_line in matched_lines:
-                continue
-
-            matched_lines.append(
-                source_line
-            )
-
-        if not matched_lines:
-            continue
-
-        probable_lines[
-            block.number
-        ] = matched_lines
-
-    return probable_lines
-
-
 def find_assessed_ocr_lines_in_source(
     source_text: str,
     glossary_entries: Mapping[
@@ -902,38 +798,21 @@ def find_probable_untranslated_ocr_lines(
     noise_dictionary: NoiseDictionary,
     *,
     glossary_entries: Mapping[
-                          str,
-                          str,
-                      ] | None = None,
-    scoring_config: (
-        OcrScoringConfig
-        | None
-    ) = None,
+        str,
+        str,
+    ],
+    scoring_config: OcrScoringConfig,
 ) -> dict[str, list[str]]:
     """
     未翻訳英文エラーになった字幕から、
     translationへ残ったOCR破損原文行を返す。
 
-    glossary_entriesとscoring_configが
-    両方指定された場合は統合OCR評価器を使用する。
+    OCR候補の判定には、
+    Glossary対応の統合OCR評価器を使用する。
 
-    いずれかが未指定の場合は、
-    Hybrid Recoveryと既存テストの互換性維持のため
-    従来判定へ委譲する。
+    noise_dictionaryは呼出API移行中の
+    互換引数として保持する。
     """
-    if (
-        glossary_entries is None
-        or scoring_config is None
-    ):
-        return (
-            find_probable_untranslated_ocr_lines_with_legacy_rules(
-                target_blocks,
-                translated_texts,
-                errors,
-                noise_dictionary,
-            )
-        )
-
     error_ids = (
         extract_untranslated_english_error_ids(
             errors
