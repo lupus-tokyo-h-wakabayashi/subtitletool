@@ -58,19 +58,19 @@
     },
     "minimum_glossary_similarity": {
       "value": 0.75,
-      "description": "原文トークンをGlossary sourceのOCR崩れ候補とする最小類似度。"
+      "description": "OCR候補文字列をGlossary sourceのOCR崩れ候補とする最小類似度。"
     },
     "minimum_glossary_source_length": {
       "value": 4,
-      "description": "Glossary近似一致の対象とするsourceと原文トークンの最小文字数。"
+      "description": "Glossary近似一致の対象とする正規化後sourceの最小文字数。"
     },
     "maximum_glossary_length_difference": {
       "value": 2,
-      "description": "Glossary近似一致で許容するsourceと原文トークンの最大文字数差。"
+      "description": "Glossary近似一致で許容する正規化後sourceとOCR候補文字列の最大文字数差。"
     },
     "maximum_glossary_exact_protection": {
       "value": 8,
-      "description": "Glossary完全一致による減点の最大絶対値。"
+      "description": "Glossary完全一致を短い用語として保護する正規化後sourceの最大文字数。"
     },
     "minimum_damage_score_for_glossary_miss": {
       "value": 6,
