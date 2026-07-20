@@ -20,11 +20,6 @@ from lib.translation.ocr_retry import (
     apply_level_1_ocr_fallback,
     extract_untranslated_english_error_ids,
     find_probable_untranslated_ocr_lines,
-    find_short_mixed_case_ocr_lines_in_source,
-    is_low_symbol_word_salad_ocr_source_line,
-    is_probable_ocr_source_line,
-    is_short_mixed_case_ocr_source_line,
-    is_symbol_dense_ocr_source_line,
 )
 from lib.translation.retry import (
     build_untranslated_english_retry_instruction,
@@ -97,34 +92,6 @@ UNTRANSLATED_ERROR = (
     "subtitle_id='80', "
     f"text={UNTRANSLATED_RESULT!r}"
 )
-
-
-def test_find_short_mixed_case_ocr_line_in_mixed_source(
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    actual = (
-        find_short_mixed_case_ocr_lines_in_source(
-            E13_SOURCE_TEXT,
-            noise_dictionary,
-        )
-    )
-
-    assert actual == [
-        E13_SHORT_OCR_LINE,
-    ]
-
-
-def test_short_mixed_case_ocr_line_requires_normal_sibling(
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    actual = (
-        find_short_mixed_case_ocr_lines_in_source(
-            E13_SHORT_OCR_LINE,
-            noise_dictionary,
-        )
-    )
-
-    assert actual == []
 
 
 def test_find_probable_untranslated_e13_short_ocr_line(
@@ -335,38 +302,6 @@ def test_extract_untranslated_english_error_ids() -> None:
     assert actual == {
         "80",
     }
-
-
-def test_probable_ocr_source_line_is_detected(
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    actual = is_probable_ocr_source_line(
-        OCR_LINE,
-        noise_dictionary,
-    )
-
-    assert actual is True
-
-
-@pytest.mark.parametrize(
-    "source_line",
-    [
-        "the wrong people!",
-        "We are the wrong people!",
-        "I am ready.",
-        "Plan B is ready.",
-    ],
-)
-def test_normal_english_is_not_probable_ocr(
-    source_line: str,
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    actual = is_probable_ocr_source_line(
-        source_line,
-        noise_dictionary,
-    )
-
-    assert actual is False
 
 
 def test_find_probable_untranslated_ocr_lines(
@@ -853,175 +788,6 @@ def test_level_1_fallback_does_not_run_with_other_errors(
     assert result is None
 
 
-def test_symbol_dense_ocr_source_line_is_detected(
-) -> None:
-    actual = is_symbol_dense_ocr_source_line(
-        SYMBOL_DENSE_OCR_LINE
-    )
-
-    assert actual is True
-
-
-def test_short_mixed_case_ocr_source_line_is_detected(
-) -> None:
-    actual = (
-        is_short_mixed_case_ocr_source_line(
-            "dam IAN el ESie"
-        )
-    )
-
-    assert actual is True
-
-
-@pytest.mark.parametrize(
-    "source_line",
-    [
-        "How can I not",
-        "I am not ready",
-        "Plan B is ready",
-        "NASA will send help",
-        "This is my home",
-        "This IS my HOME",
-        "Colonel Young is here",
-        "What do you mean",
-        "I couldn't deal with it",
-        "SG-1 is ready",
-        "(CHIRPING)",
-    ],
-)
-def test_normal_line_is_not_short_mixed_case_ocr(
-    source_line: str,
-) -> None:
-    actual = (
-        is_short_mixed_case_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is False
-
-
-@pytest.mark.parametrize(
-    "source_line",
-    [
-        "",
-        "   ",
-        "sa",
-        "Ui maar i mele",
-        "dam ian el esie",
-        "DAM IAN EL ESIE",
-        "one two three four five",
-        "P4X-351",
-        "x = 10",
-    ],
-)
-def test_ambiguous_line_is_not_short_mixed_case_ocr(
-    source_line: str,
-) -> None:
-    actual = (
-        is_short_mixed_case_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is False
-
-
-def test_low_symbol_word_salad_ocr_source_line_is_detected(
-) -> None:
-    actual = (
-        is_low_symbol_word_salad_ocr_source_line(
-            "Ui maar i mele aah ml iaa"
-        )
-    )
-
-    assert actual is True
-
-
-@pytest.mark.parametrize(
-    "source_line",
-    [
-        "How can I not",
-        'The "us" on that recording',
-        "I couldn't deal with it",
-        "Hopefully we have proven that",
-        "We need to find a way home",
-        "(CONSOLE BEEPS)",
-        "SG-1 is ready",
-        "Colonel Young is in command",
-    ],
-)
-def test_normal_line_is_not_low_symbol_word_salad_ocr(
-    source_line: str,
-) -> None:
-    actual = (
-        is_low_symbol_word_salad_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is False
-
-
-@pytest.mark.parametrize(
-    "source_line",
-    [
-        "",
-        "   ",
-        "sa",
-        "Ui maar i mele",
-        "one two three four five",
-        "P4X-351",
-        "x = 10",
-    ],
-)
-def test_ambiguous_line_is_not_low_symbol_word_salad_ocr(
-    source_line: str,
-) -> None:
-    actual = (
-        is_low_symbol_word_salad_ocr_source_line(
-            source_line
-        )
-    )
-
-    assert actual is False
-
-
-@pytest.mark.parametrize(
-    "source_line",
-    [
-        "This is what Destiny intended.",
-        "What's going on?",
-        "(CROWD CHATTERING)",
-        "(LOW MECHANICAL HUM) (CONTINUES)",
-        "SG-1",
-        "F-302",
-        "P4X-351",
-        "x = 10",
-        "sa",
-    ],
-)
-def test_normal_or_ambiguous_line_is_not_symbol_dense_ocr(
-    source_line: str,
-) -> None:
-    actual = is_symbol_dense_ocr_source_line(
-        source_line
-    )
-
-    assert actual is False
-
-
-def test_probable_ocr_source_line_detects_symbol_dense_text(
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    actual = is_probable_ocr_source_line(
-        SYMBOL_DENSE_OCR_LINE,
-        noise_dictionary,
-    )
-
-    assert actual is True
-
-
 def test_find_symbol_dense_untranslated_ocr_line(
     noise_dictionary: NoiseDictionary,
     empty_glossary: GlossaryEntries,
@@ -1107,14 +873,3 @@ def test_symbol_dense_ocr_fallback_wraps_complete_line(
             SYMBOL_DENSE_OCR_LINE,
         ],
     }
-
-
-def test_short_ambiguous_line_is_not_high_confidence_ocr(
-    noise_dictionary: NoiseDictionary,
-) -> None:
-    actual = is_probable_ocr_source_line(
-        "sa",
-        noise_dictionary,
-    )
-
-    assert actual is False
