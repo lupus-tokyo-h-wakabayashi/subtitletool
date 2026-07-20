@@ -1,10 +1,12 @@
 from lib.subtitle.srt import SrtBlock
+from lib.subtitle.text import (
+    is_sound_effect_line,
+    is_sound_effect_only_text,
+)
 from lib.translation.hybrid_group import (
     build_hybrid_translation_group,
     build_hybrid_translation_groups,
     crosses_hybrid_time_boundary,
-    is_sound_effect_only_source,
-    is_source_sound_effect_line,
     parse_srt_timestamp_range,
     source_text_ends_sentence,
     subtitle_gap_milliseconds,
@@ -549,45 +551,61 @@ def test_build_hybrid_translation_groups_merges_overlapping_groups(
     )
 
 
-def test_source_sound_effect_line_detection(
+def test_sound_effect_line_detection(
 ) -> None:
-    assert is_source_sound_effect_line(
+    assert is_sound_effect_line(
         "(CHIRPING)"
     ) is True
 
-    assert is_source_sound_effect_line(
+    assert is_sound_effect_line(
         "(CONSOLE BEEPS)"
     ) is True
 
-    assert is_source_sound_effect_line(
+    assert is_sound_effect_line(
         "(LOW MECHANICAL HUM)"
     ) is True
 
-    assert is_source_sound_effect_line(
+    assert is_sound_effect_line(
         "Colonel Young, come in."
     ) is False
 
-    assert is_source_sound_effect_line(
+    assert is_sound_effect_line(
         "Ui maar i mele aah ml iaa"
     ) is False
 
+    assert is_sound_effect_line(
+        "(GASPS) (PANTING)"
+    ) is True
 
-def test_sound_effect_only_source_detection(
+    assert is_sound_effect_line(
+        "(CHUCKLES) Yeah, I know."
+    ) is False
+
+
+def test_sound_effect_only_text_detection(
 ) -> None:
-    assert is_sound_effect_only_source(
+    assert is_sound_effect_only_text(
         "(CHIRPING)"
     ) is True
 
-    assert is_sound_effect_only_source(
+    assert is_sound_effect_only_text(
         "(SIGHS)\n(CONSOLE BEEPS)"
     ) is True
 
-    assert is_sound_effect_only_source(
+    assert is_sound_effect_only_text(
         "(ON RADIO)\nColonel Young, come in."
     ) is False
 
-    assert is_sound_effect_only_source(
+    assert is_sound_effect_only_text(
         ""
+    ) is False
+
+    assert is_sound_effect_only_text(
+        "(GASPS) (PANTING)"
+    ) is True
+
+    assert is_sound_effect_only_text(
+        "(CHUCKLES)\nYeah, I know."
     ) is False
 
 

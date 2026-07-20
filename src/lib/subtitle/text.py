@@ -19,6 +19,14 @@ SPEAKER_LABEL_PATTERN = re.compile(
     """,
     re.VERBOSE,
 )
+SOUND_EFFECT_LINE_PATTERN = re.compile(
+    r"^"
+    r"(?:"
+    r"\([A-Z0-9 ,.'’!?-]+\)"
+    r"\s*"
+    r")+"
+    r"$"
+)
 LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
 HAN_SEQUENCE_PATTERN = re.compile(
     r"[\u3400-\u4DBF\u4E00-\u9FFF]+"
@@ -283,6 +291,53 @@ def mask_chinese_ocr_text(
     return HAN_SEQUENCE_PATTERN.sub(
         replace_sequence,
         text,
+    )
+
+
+def is_sound_effect_line(
+    text: str,
+) -> bool:
+    """
+    原文の1行が効果音・動作説明だけか判定する。
+
+    例:
+        (CHIRPING)
+        (CONSOLE BEEPS)
+        (GASPS) (PANTING)
+
+    台詞を含む場合はFalseを返す。
+    """
+    return bool(
+        SOUND_EFFECT_LINE_PATTERN.fullmatch(
+            text.strip()
+        )
+    )
+
+
+def is_sound_effect_only_text(
+    text: str,
+) -> bool:
+    """
+    字幕内の空でない行が、
+    すべて効果音・動作説明か判定する。
+
+    効果音と台詞が混在する字幕はFalseを返す。
+    空文字列もFalseを返す。
+    """
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    if not lines:
+        return False
+
+    return all(
+        is_sound_effect_line(
+            line
+        )
+        for line in lines
     )
 
 

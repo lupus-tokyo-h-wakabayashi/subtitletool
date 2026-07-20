@@ -9,18 +9,12 @@ from lib.profile.ocr_scoring import (
 )
 from lib.subtitle.srt import SrtBlock
 from lib.subtitle.text import (
+    is_sound_effect_line,
     mask_chinese_ocr_text,
     mask_suspicious_latin_sequences,
 )
 from .ocr_assessment import (
     assess_ocr_source_line,
-)
-
-SOUND_EFFECT_ONLY_PATTERN = re.compile(
-    r"^(?:"
-    r"\([A-Z0-9 ,.'’!?-]+\)"
-    r"\s*"
-    r")+$"
 )
 
 
@@ -223,7 +217,7 @@ def find_assessed_ocr_lines_in_source(
     for position, source_line in enumerate(
         source_lines
     ):
-        if SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+        if is_sound_effect_line(
             source_line
         ):
             continue
