@@ -23,7 +23,7 @@ SPEAKER_PATTERNS = (
         r"^\s*"
         r"\[(?P<speaker>[A-Za-z][A-Za-z0-9 ._'’-]{0,40})\]"
         r"\s*"
-        r"(?P<text>.+)"
+        r"(?P<text>[\s\S]+)"
         r"$"
     ),
 
@@ -32,7 +32,7 @@ SPEAKER_PATTERNS = (
         r"^\s*"
         r"(?P<speaker>[A-Z][A-Z0-9 ._'’-]{1,40})"
         r":\s*"
-        r"(?P<text>.+)"
+        r"(?P<text>[\s\S]+)"
         r"$"
     ),
 
@@ -41,11 +41,10 @@ SPEAKER_PATTERNS = (
         r"^\s*"
         r"(?P<speaker>[A-Z][A-Za-z0-9 ._'’-]{1,40})"
         r":\s*"
-        r"(?P<text>.+)"
+        r"(?P<text>[\s\S]+)"
         r"$"
     ),
 )
-
 
 NON_SPEAKER_LABELS = {
     "NOTE",
