@@ -26,9 +26,6 @@ from .hybrid_inspection import (
 )
 from .ocr_retry import (
     find_assessed_ocr_lines_in_source,
-    find_short_mixed_case_ocr_lines_in_source,
-    is_low_symbol_word_salad_ocr_source_line,
-    is_probable_ocr_source_line,
 )
 from .retry import (
     build_required_glossary_instruction,
@@ -137,97 +134,6 @@ def build_hybrid_response_schema(
     }
 
 
-def find_group_ocr_lines_with_legacy_rules(
-    group: HybridTranslationGroup,
-    noise_dictionary: NoiseDictionary,
-) -> dict[str, list[str]]:
-    """
-    Hybridグループ内の高確度OCR行を抽出する。
-
-    Noise辞書や既存ヒューリスティックで検出できる
-    OCR行は、グループ内のすべての字幕を対象にする。
-
-    記号をほとんど含まない英字ワードサラダ判定は、
-    正常英文の誤検出を避けるため、通常翻訳で実際に
-    Validationへ失敗した字幕IDだけに適用する。
-
-    短い大小文字混在型のOCR行は、
-    共通の混在字幕判定を使用し、
-    通常翻訳で失敗した字幕IDだけに適用する。
-
-    効果音行はOCR破損として扱わない。
-    """
-    results: dict[
-        str,
-        list[str],
-    ] = {}
-
-    for block in group.blocks:
-        short_mixed_case_lines = set()
-
-        if block.number in group.failed_ids:
-            short_mixed_case_lines = set(
-                find_short_mixed_case_ocr_lines_in_source(
-                    block.text,
-                    noise_dictionary,
-                )
-            )
-
-        lines: list[str] = []
-
-        for raw_line in block.text.splitlines():
-            source_line = raw_line.strip()
-
-            if not source_line:
-                continue
-
-            if is_source_sound_effect_line(
-                source_line
-            ):
-                continue
-
-            is_existing_ocr = (
-                is_probable_ocr_source_line(
-                    source_line,
-                    noise_dictionary,
-                )
-            )
-
-            is_failed_word_salad = (
-                block.number
-                in group.failed_ids
-                and is_low_symbol_word_salad_ocr_source_line(
-                source_line
-            )
-            )
-
-            is_failed_short_mixed_case = (
-                source_line
-                in short_mixed_case_lines
-            )
-
-            if not (
-                is_existing_ocr
-                or is_failed_word_salad
-                or is_failed_short_mixed_case
-            ):
-                continue
-
-            if source_line in lines:
-                continue
-
-            lines.append(
-                source_line
-            )
-
-        if lines:
-            results[
-                block.number
-            ] = lines
-
-    return results
-
-
 def find_group_ocr_lines_with_assessment(
     group: HybridTranslationGroup,
     glossary_entries: Mapping[
@@ -302,36 +208,18 @@ def find_group_ocr_lines(
     noise_dictionary: NoiseDictionary,
     *,
     glossary_entries: Mapping[
-                          str,
-                          str,
-                      ] | None = None,
-    scoring_config: (
-        OcrScoringConfig
-        | None
-    ) = None,
+        str,
+        str,
+    ],
+    scoring_config: OcrScoringConfig,
 ) -> dict[str, list[str]]:
     """
-    Hybridグループ内のOCR行を返す。
+    Hybridグループ内のOCR行を
+    統合OCR評価器で分類して返す。
 
-    glossary_entriesとscoring_configが
-    両方指定された場合は、
-    統合OCR評価器を使用する。
-
-    いずれかが未指定の場合は、
-    既存テストと移行期間中の互換性維持のため
-    従来判定へ委譲する。
+    noise_dictionaryは呼出API移行中の
+    互換引数として保持する。
     """
-    if (
-        glossary_entries is None
-        or scoring_config is None
-    ):
-        return (
-            find_group_ocr_lines_with_legacy_rules(
-                group,
-                noise_dictionary,
-            )
-        )
-
     return (
         find_group_ocr_lines_with_assessment(
             group,
