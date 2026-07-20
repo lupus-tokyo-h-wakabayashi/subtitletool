@@ -4,8 +4,15 @@ import json
 from pathlib import Path
 
 import pytest
+from lib.profile.glossary import (
+    GlossaryEntries,
+)
 from lib.profile.noise import (
     NoiseDictionary,
+)
+from lib.profile.ocr_scoring import (
+    OcrScoringConfig,
+    load_ocr_scoring_config,
 )
 from lib.subtitle.srt import SrtBlock
 from lib.translation import translation_chunk
@@ -260,6 +267,28 @@ def noise_dictionary(
         ),
         local_loaded=False,
     )
+
+
+@pytest.fixture
+def empty_glossary(
+) -> GlossaryEntries:
+    """
+    統合OCR評価テストで使用する
+    空のGlossaryを返す。
+    """
+    return GlossaryEntries(
+        ()
+    )
+
+
+@pytest.fixture
+def ocr_scoring_config(
+) -> OcrScoringConfig:
+    """
+    config/ocr-scoring.jsonから
+    検証済みOCRスコア設定を読み込む。
+    """
+    return load_ocr_scoring_config()
 
 
 @pytest.fixture
