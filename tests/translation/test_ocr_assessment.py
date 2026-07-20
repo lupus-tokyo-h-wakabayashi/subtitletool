@@ -263,6 +263,46 @@ def test_assess_detects_short_mixed_case_ocr(
     )
 
 
+def test_context_word_salad_requires_failed_subtitle(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+) -> None:
+    result = assess_ocr_source_line(
+        "Ui maar i mele aah ml iaa",
+        empty_glossary,
+        scoring_config,
+        validation_failed=False,
+        has_normal_sibling=True,
+    )
+
+    assert result.threshold == 12
+    assert not result.probable_ocr
+
+    assert not result.has_contribution(
+        "low_symbol_word_salad"
+    )
+
+
+def test_natural_sentence_protects_uppercase_acronym(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+) -> None:
+    result = assess_ocr_source_line(
+        "dropped out of FTL",
+        empty_glossary,
+        scoring_config,
+        validation_failed=True,
+        has_normal_sibling=True,
+    )
+
+    assert result.threshold == 6
+    assert not result.probable_ocr
+
+    assert result.has_contribution(
+        "natural_sentence"
+    )
+
+
 def test_short_mixed_case_requires_validation_context(
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
@@ -294,8 +334,8 @@ def test_short_mixed_case_requires_validation_context(
     assert normal_result.threshold == 12
     assert not normal_result.probable_ocr
 
-    assert failed_result.threshold == 8
-    assert failed_result.probable_ocr
+    assert failed_result.threshold == 12
+    assert not failed_result.probable_ocr
 
     assert sibling_result.threshold == 6
     assert sibling_result.probable_ocr
