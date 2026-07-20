@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Mapping
 
 from lib.profile.noise import (
     NoiseDictionary,
     find_suspicious_latin_sequences,
+)
+from lib.profile.ocr_scoring import (
+    OcrScoringConfig,
 )
 from lib.subtitle.srt import SrtBlock
 from lib.subtitle.text import (
     DEFAULT_ALLOWED_LATIN_TERMS,
     mask_chinese_ocr_text,
     mask_suspicious_latin_sequences,
+)
+from .ocr_assessment import (
+    assess_ocr_source_line,
 )
 
 MIN_SYMBOL_DENSE_OCR_ASCII_LETTERS = 8
@@ -686,7 +693,7 @@ def find_short_mixed_case_ocr_lines_in_source(
     return results
 
 
-def find_probable_untranslated_ocr_lines(
+def find_probable_untranslated_ocr_lines_with_legacy_rules(
     target_blocks: list[SrtBlock],
     translated_texts: list[str],
     errors: list[str],
@@ -770,6 +777,200 @@ def find_probable_untranslated_ocr_lines(
             if not (
                 is_existing_ocr
                 or is_short_mixed_case_ocr
+            ):
+                continue
+
+            if source_line in matched_lines:
+                continue
+
+            matched_lines.append(
+                source_line
+            )
+
+        if not matched_lines:
+            continue
+
+        probable_lines[
+            block.number
+        ] = matched_lines
+
+    return probable_lines
+
+
+def find_assessed_ocr_lines_in_source(
+    source_text: str,
+    glossary_entries: Mapping[
+        str,
+        str,
+    ],
+    scoring_config: OcrScoringConfig,
+    *,
+    validation_failed: bool,
+) -> list[str]:
+    """
+    字幕原文を行単位で統合OCR評価し、
+    OCR破損候補だけを原文順で返す。
+
+    Validation失敗済みの場合は、
+    同じ字幕に正常行があるかを判定し、
+    状況に応じた閾値を使用する。
+
+    効果音だけの行はOCR候補にしない。
+    """
+    source_lines = [
+        raw_line.strip()
+        for raw_line in (
+            source_text.splitlines()
+        )
+        if raw_line.strip()
+    ]
+
+    if not source_lines:
+        return []
+
+    base_assessments = [
+        assess_ocr_source_line(
+            source_line,
+            glossary_entries,
+            scoring_config,
+            validation_failed=(
+                validation_failed
+            ),
+            has_normal_sibling=False,
+        )
+        for source_line in source_lines
+    ]
+
+    results: list[str] = []
+
+    for position, source_line in enumerate(
+        source_lines
+    ):
+        if SOUND_EFFECT_ONLY_PATTERN.fullmatch(
+            source_line
+        ):
+            continue
+
+        has_normal_sibling = any(
+            (
+                sibling_position
+                != position
+                and not (
+                sibling_assessment
+                .probable_ocr
+            )
+            )
+            for (
+                sibling_position,
+                sibling_assessment,
+            ) in enumerate(
+                base_assessments
+            )
+        )
+
+        assessment = (
+            assess_ocr_source_line(
+                source_line,
+                glossary_entries,
+                scoring_config,
+                validation_failed=(
+                    validation_failed
+                ),
+                has_normal_sibling=(
+                    has_normal_sibling
+                ),
+            )
+        )
+
+        if not assessment.probable_ocr:
+            continue
+
+        if source_line in results:
+            continue
+
+        results.append(
+            source_line
+        )
+
+    return results
+
+
+def find_probable_untranslated_ocr_lines(
+    target_blocks: list[SrtBlock],
+    translated_texts: list[str],
+    errors: list[str],
+    noise_dictionary: NoiseDictionary,
+    *,
+    glossary_entries: Mapping[
+                          str,
+                          str,
+                      ] | None = None,
+    scoring_config: (
+        OcrScoringConfig
+        | None
+    ) = None,
+) -> dict[str, list[str]]:
+    """
+    未翻訳英文エラーになった字幕から、
+    translationへ残ったOCR破損原文行を返す。
+
+    glossary_entriesとscoring_configが
+    両方指定された場合は統合OCR評価器を使用する。
+
+    いずれかが未指定の場合は、
+    Hybrid Recoveryと既存テストの互換性維持のため
+    従来判定へ委譲する。
+    """
+    if (
+        glossary_entries is None
+        or scoring_config is None
+    ):
+        return (
+            find_probable_untranslated_ocr_lines_with_legacy_rules(
+                target_blocks,
+                translated_texts,
+                errors,
+                noise_dictionary,
+            )
+        )
+
+    error_ids = (
+        extract_untranslated_english_error_ids(
+            errors
+        )
+    )
+
+    if not error_ids:
+        return {}
+
+    probable_lines: dict[
+        str,
+        list[str],
+    ] = {}
+
+    for block, translated_text in zip(
+        target_blocks,
+        translated_texts,
+        strict=True,
+    ):
+        if block.number not in error_ids:
+            continue
+
+        assessed_lines = (
+            find_assessed_ocr_lines_in_source(
+                block.text,
+                glossary_entries,
+                scoring_config,
+                validation_failed=True,
+            )
+        )
+
+        matched_lines: list[str] = []
+
+        for source_line in assessed_lines:
+            if (
+                source_line
+                not in translated_text
             ):
                 continue
 
