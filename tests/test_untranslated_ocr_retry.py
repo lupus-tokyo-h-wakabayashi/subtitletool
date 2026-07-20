@@ -372,6 +372,8 @@ def test_normal_english_is_not_probable_ocr(
 def test_find_probable_untranslated_ocr_lines(
     target_block: SrtBlock,
     noise_dictionary: NoiseDictionary,
+    empty_glossary: GlossaryEntries,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     actual = (
         find_probable_untranslated_ocr_lines(
@@ -387,6 +389,12 @@ def test_find_probable_untranslated_ocr_lines(
             noise_dictionary=(
                 noise_dictionary
             ),
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                ocr_scoring_config
+            ),
         )
     )
 
@@ -400,6 +408,8 @@ def test_find_probable_untranslated_ocr_lines(
 def test_does_not_select_normal_source_line(
     target_block: SrtBlock,
     noise_dictionary: NoiseDictionary,
+    empty_glossary: GlossaryEntries,
+    ocr_scoring_config: OcrScoringConfig,
 ) -> None:
     actual = (
         find_probable_untranslated_ocr_lines(
@@ -422,6 +432,12 @@ def test_does_not_select_normal_source_line(
             ],
             noise_dictionary=(
                 noise_dictionary
+            ),
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                ocr_scoring_config
             ),
         )
     )
