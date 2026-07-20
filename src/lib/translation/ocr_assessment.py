@@ -487,6 +487,23 @@ def is_time_like(
     )
 
 
+def is_natural_acronym_token(
+    token: str,
+) -> bool:
+    """
+    自然英文中に現れる可能性がある
+    2文字以上の全大文字略語を判定する。
+
+    単独の略語だけで英文全体を
+    正常と判断する用途には使用しない。
+    """
+    return (
+        len(token) >= 2
+        and token.isalpha()
+        and token.isupper()
+    )
+
+
 def is_natural_sentence(
     text: str,
     tokens: list[str],
@@ -543,11 +560,34 @@ def is_natural_sentence(
         return False
 
     if any(
-        is_suspicious_token(
-            token
+        (
+            is_suspicious_token(
+                token
+            )
+            and not (
+            is_natural_acronym_token(
+                token
+            )
+        )
         )
         for token in tokens
     ):
+        return False
+
+    has_natural_word = any(
+        (
+            token.islower()
+            or token.istitle()
+            or token.casefold()
+            in {
+                "a",
+                "i",
+            }
+        )
+        for token in tokens
+    )
+
+    if not has_natural_word:
         return False
 
     return all(
@@ -559,6 +599,9 @@ def is_natural_sentence(
                 "a",
                 "i",
             }
+            or is_natural_acronym_token(
+            token
+        )
         )
         for token in tokens
     )
@@ -865,11 +908,13 @@ def assess_ocr_source_line(
             "dense_structural_symbols"
         )
 
-    if any(
+    has_strong_corruption_symbol = any(
         character
         in STRONG_CORRUPTION_SYMBOLS
         for character in normalized
-    ):
+    )
+
+    if has_strong_corruption_symbol:
         apply_weight(
             "strong_corruption_symbol"
         )
@@ -958,7 +1003,10 @@ def assess_ocr_source_line(
         >= minimum_suspicious_tokens
     )
 
-    if low_symbol_word_salad:
+    if (
+        low_symbol_word_salad
+        and validation_failed
+    ):
         apply_weight(
             "low_symbol_word_salad"
         )
@@ -993,6 +1041,25 @@ def assess_ocr_source_line(
     if damaged_alphanumeric_structure:
         apply_weight(
             "damaged_alphanumeric_structure"
+        )
+
+    unsupported_short_mixed_case = (
+        short_mixed_case
+        and not has_normal_sibling
+        and not symbol_dense_structure
+        and not damaged_alphanumeric_structure
+        and not unbalanced_delimiters
+        and not has_strong_corruption_symbol
+    )
+
+    if unsupported_short_mixed_case:
+        threshold = max(
+            threshold,
+            get_integer_value(
+                scoring_config,
+                "thresholds",
+                "high_confidence",
+            ),
         )
 
     damage_score = score
