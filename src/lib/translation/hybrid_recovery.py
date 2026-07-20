@@ -205,7 +205,6 @@ def find_group_ocr_lines_with_assessment(
 
 def find_group_ocr_lines(
     group: HybridTranslationGroup,
-    noise_dictionary: NoiseDictionary,
     *,
     glossary_entries: Mapping[
         str,
@@ -216,9 +215,6 @@ def find_group_ocr_lines(
     """
     Hybridグループ内のOCR行を
     統合OCR評価器で分類して返す。
-
-    noise_dictionaryは呼出API移行中の
-    互換引数として保持する。
     """
     return (
         find_group_ocr_lines_with_assessment(
@@ -1365,7 +1361,6 @@ def recover_single_hybrid_group(
 
     ocr_lines = find_group_ocr_lines(
         group,
-        noise_dictionary,
         glossary_entries=(
             glossary_entries
         ),
