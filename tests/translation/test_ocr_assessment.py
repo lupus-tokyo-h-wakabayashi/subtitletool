@@ -44,6 +44,35 @@ def stargate_glossary() -> GlossaryEntries:
     )
 
 
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        "Hopefully, we've proven",
+        "that's not our goal.",
+        "I couldn't deal with it,",
+        "I'm sorry.",
+    ],
+)
+def test_assess_protects_contractions_and_continuing_sentences(
+    source_text: str,
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+) -> None:
+    result = assess_ocr_source_line(
+        source_text,
+        empty_glossary,
+        scoring_config,
+        validation_failed=True,
+        has_normal_sibling=True,
+    )
+
+    assert not result.probable_ocr
+
+    assert not result.has_contribution(
+        "invalid_single_letter"
+    )
+
+
 def test_select_ocr_threshold_uses_high_confidence(
     scoring_config: OcrScoringConfig,
 ) -> None:

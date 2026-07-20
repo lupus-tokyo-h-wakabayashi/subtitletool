@@ -14,6 +14,7 @@ from lib.translation.ocr_glossary import (
 
 ASCII_TOKEN_PATTERN = re.compile(
     r"[A-Za-z]+"
+    r"(?:['’][A-Za-z]+)*"
 )
 
 TIME_PATTERN = re.compile(
@@ -517,6 +518,9 @@ def is_natural_sentence(
             "?",
             "!",
             "…",
+            ",",
+            ";",
+            ":",
         )
     )
 

@@ -8,6 +8,10 @@ from typing import Mapping
 
 from lib.infrastructure.ollama import generate
 from lib.profile.noise import NoiseDictionary
+from lib.profile.ocr_scoring import (
+    OcrScoringConfig,
+    load_ocr_scoring_config,
+)
 from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
@@ -21,6 +25,7 @@ from .hybrid_inspection import (
     try_save_hybrid_attempt_report,
 )
 from .ocr_retry import (
+    find_assessed_ocr_lines_in_source,
     find_short_mixed_case_ocr_lines_in_source,
     is_low_symbol_word_salad_ocr_source_line,
     is_probable_ocr_source_line,
@@ -132,7 +137,7 @@ def build_hybrid_response_schema(
     }
 
 
-def find_group_ocr_lines(
+def find_group_ocr_lines_with_legacy_rules(
     group: HybridTranslationGroup,
     noise_dictionary: NoiseDictionary,
 ) -> dict[str, list[str]]:
@@ -221,6 +226,119 @@ def find_group_ocr_lines(
             ] = lines
 
     return results
+
+
+def find_group_ocr_lines_with_assessment(
+    group: HybridTranslationGroup,
+    glossary_entries: Mapping[
+        str,
+        str,
+    ],
+    scoring_config: OcrScoringConfig,
+) -> dict[str, list[str]]:
+    """
+    Hybridグループの字幕原文を
+    統合OCR評価器で分類する。
+
+    通常翻訳でValidationに失敗した字幕には
+    失敗字幕用の閾値を適用する。
+
+    グループへ文脈として追加された
+    失敗していない字幕には、
+    高確度OCR用の閾値を適用する。
+
+    効果音行は評価対象から除外する。
+    """
+    results: dict[
+        str,
+        list[str],
+    ] = {}
+
+    for block in group.blocks:
+        source_lines = [
+            raw_line.strip()
+            for raw_line in (
+                block.text.splitlines()
+            )
+            if (
+                raw_line.strip()
+                and not (
+                is_source_sound_effect_line(
+                    raw_line.strip()
+                )
+            )
+            )
+        ]
+
+        if not source_lines:
+            continue
+
+        lines = (
+            find_assessed_ocr_lines_in_source(
+                "\n".join(
+                    source_lines
+                ),
+                glossary_entries,
+                scoring_config,
+                validation_failed=(
+                    block.number
+                    in group.failed_ids
+                ),
+            )
+        )
+
+        if not lines:
+            continue
+
+        results[
+            block.number
+        ] = lines
+
+    return results
+
+
+def find_group_ocr_lines(
+    group: HybridTranslationGroup,
+    noise_dictionary: NoiseDictionary,
+    *,
+    glossary_entries: Mapping[
+                          str,
+                          str,
+                      ] | None = None,
+    scoring_config: (
+        OcrScoringConfig
+        | None
+    ) = None,
+) -> dict[str, list[str]]:
+    """
+    Hybridグループ内のOCR行を返す。
+
+    glossary_entriesとscoring_configが
+    両方指定された場合は、
+    統合OCR評価器を使用する。
+
+    いずれかが未指定の場合は、
+    既存テストと移行期間中の互換性維持のため
+    従来判定へ委譲する。
+    """
+    if (
+        glossary_entries is None
+        or scoring_config is None
+    ):
+        return (
+            find_group_ocr_lines_with_legacy_rules(
+                group,
+                noise_dictionary,
+            )
+        )
+
+    return (
+        find_group_ocr_lines_with_assessment(
+            group,
+            glossary_entries,
+            scoring_config,
+        )
+    )
 
 
 def find_group_sound_effect_lines(
@@ -1353,9 +1471,19 @@ def recover_single_hybrid_group(
     他グループの未修正エラーに影響されないよう
     現在のグループだけを対象に実行する。
     """
+    ocr_scoring_config = (
+        load_ocr_scoring_config()
+    )
+
     ocr_lines = find_group_ocr_lines(
         group,
         noise_dictionary,
+        glossary_entries=(
+            glossary_entries
+        ),
+        scoring_config=(
+            ocr_scoring_config
+        ),
     )
 
     # Phase 1-7：対象Hybridグループを取得する
