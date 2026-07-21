@@ -7,11 +7,14 @@ from collections.abc import Mapping
 from lib.profile.ocr_scoring import (
     OcrScoringConfig,
 )
-from lib.subtitle.srt import SrtBlock
+from lib.subtitle.srt import (
+    SrtBlock,
+    parse_speaker_from_text,
+)
 from lib.subtitle.text import (
-    is_sound_effect_line,
     mask_chinese_ocr_text,
     mask_suspicious_latin_sequences,
+    split_leading_sound_effects,
 )
 from .ocr_assessment import (
     assess_ocr_source_line,
@@ -179,22 +182,45 @@ def find_assessed_ocr_lines_in_source(
     validation_failed: bool,
 ) -> list[str]:
     """
-    字幕原文を行単位で統合OCR評価し、
-    OCR破損候補だけを原文順で返す。
+    字幕原文からSpeakerと行頭効果音を除外し、
+    残った台詞を行単位で統合OCR評価する。
 
     Validation失敗済みの場合は、
     同じ字幕に正常行があるかを判定し、
     状況に応じた閾値を使用する。
 
-    効果音だけの行はOCR候補にしない。
+    Speaker名、効果音だけの行、
+    行頭効果音部分はOCR評価へ渡さない。
     """
-    source_lines = [
-        raw_line.strip()
-        for raw_line in (
-            source_text.splitlines()
+    parsed_source = (
+        parse_speaker_from_text(
+            source_text
         )
-        if raw_line.strip()
-    ]
+    )
+
+    source_lines: list[str] = []
+
+    for raw_line in (
+        parsed_source.text.splitlines()
+    ):
+        stripped_line = raw_line.strip()
+
+        if not stripped_line:
+            continue
+
+        (
+            _sound_effects,
+            remaining_text,
+        ) = split_leading_sound_effects(
+            stripped_line
+        )
+
+        if not remaining_text:
+            continue
+
+        source_lines.append(
+            remaining_text
+        )
 
     if not source_lines:
         return []
@@ -217,11 +243,6 @@ def find_assessed_ocr_lines_in_source(
     for position, source_line in enumerate(
         source_lines
     ):
-        if is_sound_effect_line(
-            source_line
-        ):
-            continue
-
         has_normal_sibling = any(
             (
                 sibling_position

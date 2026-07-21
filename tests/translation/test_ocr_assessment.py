@@ -660,6 +660,102 @@ def test_standard_recovery_finds_only_damaged_mixed_line(
     }
 
 
+def test_standard_recovery_assesses_dialogue_without_speaker_and_sound_effect(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+) -> None:
+    damaged_dialogue = (
+        "Ui maar i mele aah ml iaa"
+    )
+
+    source_text = (
+        "[RUSH] "
+        "(CHUCKLING) "
+        f"{damaged_dialogue}"
+    )
+
+    blocks = [
+        SrtBlock(
+            number="627",
+            timestamp=(
+                "00:31:10,000 --> "
+                "00:31:12,000"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                build_untranslated_english_error(
+                    "627",
+                    source_text,
+                ),
+            ],
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {
+        "627": [
+            damaged_dialogue,
+        ],
+    }
+
+
+def test_standard_recovery_ignores_speaker_sound_effect_only_text(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+) -> None:
+    source_text = (
+        "[RUSH] (CHUCKLING)"
+    )
+
+    blocks = [
+        SrtBlock(
+            number="627",
+            timestamp=(
+                "00:31:10,000 --> "
+                "00:31:12,000"
+            ),
+            text=source_text,
+        ),
+    ]
+
+    actual = (
+        find_probable_untranslated_ocr_lines(
+            blocks,
+            [
+                source_text,
+            ],
+            [
+                build_untranslated_english_error(
+                    "627",
+                    source_text,
+                ),
+            ],
+            glossary_entries=(
+                empty_glossary
+            ),
+            scoring_config=(
+                scoring_config
+            ),
+        )
+    )
+
+    assert actual == {}
+
+
 def test_standard_recovery_ignores_source_not_copied_to_translation(
     scoring_config: OcrScoringConfig,
     empty_glossary: GlossaryEntries,
