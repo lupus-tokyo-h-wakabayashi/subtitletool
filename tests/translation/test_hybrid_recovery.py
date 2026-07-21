@@ -407,6 +407,217 @@ def test_e08_hybrid_source_payload_classifies_lines(
     }
 
 
+def test_hybrid_source_payload_separates_speaker_sound_effect_and_ocr(
+    ocr_scoring_config: OcrScoringConfig,
+) -> None:
+    damaged_dialogue = (
+        "Ui maar i mele aah ml iaa"
+    )
+
+    block = SrtBlock(
+        number="627",
+        timestamp=(
+            "00:31:10,000 --> "
+            "00:31:12,000"
+        ),
+        text=(
+            "[RUSH] "
+            "(CHUCKLING) "
+            f"{damaged_dialogue}"
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "627",
+            }
+        ),
+    )
+
+    ocr_lines = find_group_ocr_lines(
+        group,
+        glossary_entries={},
+        scoring_config=(
+            ocr_scoring_config
+        ),
+    )
+
+    actual = build_hybrid_source_payload(
+        group,
+        ocr_lines,
+    )
+
+    assert ocr_lines == {
+        "627": [
+            damaged_dialogue,
+        ],
+    }
+
+    assert actual == {
+        "subtitles": [
+            {
+                "id": "627",
+                "speaker": "RUSH",
+                "lines": [
+                    {
+                        "kind": (
+                            "sound_effect"
+                        ),
+                        "text": (
+                            "(CHUCKLING)"
+                        ),
+                    },
+                    {
+                        "kind": "ocr",
+                        "text": (
+                            damaged_dialogue
+                        ),
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def test_hybrid_source_payload_separates_leading_sound_effect_from_text(
+) -> None:
+    block = SrtBlock(
+        number="628",
+        timestamp=(
+            "00:31:12,000 --> "
+            "00:31:14,000"
+        ),
+        text=(
+            "[YOUNG] "
+            "(GASPS) Get out!"
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "628",
+            }
+        ),
+    )
+
+    actual = build_hybrid_source_payload(
+        group,
+        {},
+    )
+
+    assert actual == {
+        "subtitles": [
+            {
+                "id": "628",
+                "speaker": "YOUNG",
+                "lines": [
+                    {
+                        "kind": (
+                            "sound_effect"
+                        ),
+                        "text": "(GASPS)",
+                    },
+                    {
+                        "kind": "text",
+                        "text": "Get out!",
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def test_find_group_sound_effect_lines_extracts_leading_effect_from_mixed_line(
+) -> None:
+    block = SrtBlock(
+        number="629",
+        timestamp=(
+            "00:31:14,000 --> "
+            "00:31:16,000"
+        ),
+        text=(
+            "[SCOTT] "
+            "(PANTING) "
+            "We have to move."
+        ),
+    )
+
+    group = HybridTranslationGroup(
+        positions=(
+            0,
+        ),
+        blocks=(
+            block,
+        ),
+        failed_ids=frozenset(
+            {
+                "629",
+            }
+        ),
+    )
+
+    actual = (
+        find_group_sound_effect_lines(
+            group
+        )
+    )
+
+    assert actual == {
+        "629": [
+            "(PANTING)",
+        ],
+    }
+
+
+def test_build_hybrid_context_payload_separates_speaker_from_text(
+) -> None:
+    blocks = [
+        SrtBlock(
+            number="626",
+            timestamp=(
+                "00:31:08,000 --> "
+                "00:31:10,000"
+            ),
+            text=(
+                "[RUSH] "
+                "(SIGHS) "
+                "We need more time."
+            ),
+        ),
+    ]
+
+    actual = (
+        build_hybrid_context_payload(
+            blocks
+        )
+    )
+
+    assert actual == [
+        {
+            "id": "626",
+            "speaker": "RUSH",
+            "text": (
+                "(SIGHS) "
+                "We need more time."
+            ),
+        },
+    ]
+
+
 def test_build_hybrid_context_payload_preserves_id_and_text(
 ) -> None:
     blocks = [

@@ -17,7 +17,7 @@ from lib.subtitle.srt import (
     parse_speaker_from_text,
 )
 from lib.subtitle.text import (
-    is_sound_effect_line,
+    split_leading_sound_effects,
 )
 from .hybrid_group import (
     HybridTranslationGroup,
@@ -148,14 +148,9 @@ def find_group_ocr_lines_with_assessment(
     Hybridグループの字幕原文を
     統合OCR評価器で分類する。
 
-    通常翻訳でValidationに失敗した字幕には
-    失敗字幕用の閾値を適用する。
-
-    グループへ文脈として追加された
-    失敗していない字幕には、
-    高確度OCR用の閾値を適用する。
-
-    効果音行は評価対象から除外する。
+    Speakerと行頭効果音の除外は、
+    Standard Recoveryと同じ
+    共通OCR評価処理へ委譲する。
     """
     results: dict[
         str,
@@ -163,29 +158,9 @@ def find_group_ocr_lines_with_assessment(
     ] = {}
 
     for block in group.blocks:
-        source_lines = [
-            raw_line.strip()
-            for raw_line in (
-                block.text.splitlines()
-            )
-            if (
-                raw_line.strip()
-                and not (
-                is_sound_effect_line(
-                    raw_line.strip()
-                )
-            )
-            )
-        ]
-
-        if not source_lines:
-            continue
-
         lines = (
             find_assessed_ocr_lines_in_source(
-                "\n".join(
-                    source_lines
-                ),
+                block.text,
                 glossary_entries,
                 scoring_config,
                 validation_failed=(
@@ -231,8 +206,12 @@ def find_group_sound_effect_lines(
     group: HybridTranslationGroup,
 ) -> dict[str, list[str]]:
     """
-    Hybridグループ内の効果音行を
+    Hybridグループ内の行頭効果音を
     字幕IDごとに抽出する。
+
+    Speaker表記は先に分離し、
+    効果音と台詞が同じ行にある場合も
+    効果音部分だけを返す。
     """
     results: dict[
         str,
@@ -240,25 +219,39 @@ def find_group_sound_effect_lines(
     ] = {}
 
     for block in group.blocks:
+        parsed_source = (
+            parse_speaker_from_text(
+                block.text
+            )
+        )
+
         sound_effect_lines: list[str] = []
 
-        for raw_line in block.text.splitlines():
+        for raw_line in (
+            parsed_source.text.splitlines()
+        ):
             source_line = raw_line.strip()
 
             if not source_line:
                 continue
 
-            if not is_sound_effect_line(
-                source_line
-            ):
-                continue
-
-            if source_line in sound_effect_lines:
-                continue
-
-            sound_effect_lines.append(
+            (
+                sound_effects,
+                _remaining_text,
+            ) = split_leading_sound_effects(
                 source_line
             )
+
+            for sound_effect in sound_effects:
+                if (
+                    sound_effect
+                    in sound_effect_lines
+                ):
+                    continue
+
+                sound_effect_lines.append(
+                    sound_effect
+                )
 
         if sound_effect_lines:
             results[
@@ -274,8 +267,8 @@ def find_group_text_lines(
 ) -> dict[str, list[str]]:
     """
     Hybridグループ内から、
-    OCR行・効果音行として分類されていない
-    正常行を抽出する。
+    Speakerと行頭効果音を除外したうえで、
+    OCR行ではない正常台詞を抽出する。
 
     OCR行と正常英文が同じ字幕IDに混在する場合の
     検証に使用する。
@@ -286,6 +279,12 @@ def find_group_text_lines(
     ] = {}
 
     for block in group.blocks:
+        parsed_source = (
+            parse_speaker_from_text(
+                block.text
+            )
+        )
+
         block_ocr_lines = set(
             ocr_lines.get(
                 block.number,
@@ -295,22 +294,32 @@ def find_group_text_lines(
 
         text_lines: list[str] = []
 
-        for raw_line in block.text.splitlines():
+        for raw_line in (
+            parsed_source.text.splitlines()
+        ):
             source_line = raw_line.strip()
 
             if not source_line:
                 continue
 
-            if source_line in block_ocr_lines:
+            (
+                _sound_effects,
+                remaining_text,
+            ) = split_leading_sound_effects(
+                source_line
+            )
+
+            if not remaining_text:
                 continue
 
-            if is_sound_effect_line(
-                source_line
+            if (
+                remaining_text
+                in block_ocr_lines
             ):
                 continue
 
             text_lines.append(
-                source_line
+                remaining_text
             )
 
         if text_lines:
@@ -327,14 +336,20 @@ def build_hybrid_source_payload(
 ) -> dict[str, object]:
     """
     Hybrid Promptへ渡す原文を、
-    通常行・OCR行・効果音行に分類して
-    構造化する。
+    Speaker・通常行・OCR行・効果音行へ
+    分離して構造化する。
     """
     subtitles: list[
         dict[str, object]
     ] = []
 
     for block in group.blocks:
+        parsed_source = (
+            parse_speaker_from_text(
+                block.text
+            )
+        )
+
         block_ocr_lines = set(
             ocr_lines.get(
                 block.number,
@@ -342,19 +357,44 @@ def build_hybrid_source_payload(
             )
         )
 
-        lines = []
+        lines: list[
+            dict[str, str]
+        ] = []
 
-        for raw_line in block.text.splitlines():
+        for raw_line in (
+            parsed_source.text.splitlines()
+        ):
             source_line = raw_line.strip()
 
             if not source_line:
                 continue
 
-            if is_sound_effect_line(
+            (
+                sound_effects,
+                remaining_text,
+            ) = split_leading_sound_effects(
                 source_line
+            )
+
+            for sound_effect in sound_effects:
+                lines.append(
+                    {
+                        "kind": (
+                            "sound_effect"
+                        ),
+                        "text": (
+                            sound_effect
+                        ),
+                    }
+                )
+
+            if not remaining_text:
+                continue
+
+            if (
+                remaining_text
+                in block_ocr_lines
             ):
-                line_kind = "sound_effect"
-            elif source_line in block_ocr_lines:
                 line_kind = "ocr"
             else:
                 line_kind = "text"
@@ -362,15 +402,30 @@ def build_hybrid_source_payload(
             lines.append(
                 {
                     "kind": line_kind,
-                    "text": source_line,
+                    "text": (
+                        remaining_text
+                    ),
                 }
             )
 
+        subtitle: dict[
+            str,
+            object,
+        ] = {
+            "id": block.number,
+        }
+
+        if parsed_source.speaker is not None:
+            subtitle[
+                "speaker"
+            ] = parsed_source.speaker
+
+        subtitle[
+            "lines"
+        ] = lines
+
         subtitles.append(
-            {
-                "id": block.number,
-                "lines": lines,
-            }
+            subtitle
         )
 
     return {
@@ -385,19 +440,38 @@ def build_hybrid_context_payload(
     Hybrid Recoveryの参考文脈を
     Prompt入力用のPayloadへ変換する。
 
-    Contextは翻訳結果の出力対象ではないため、
-    字幕IDと原文だけを保持する。
+    Speakerが存在する場合は、
+    本文から分離して構造化する。
     """
     if blocks is None:
         return []
 
-    return [
-        {
+    context_payload: list[
+        dict[str, str]
+    ] = []
+
+    for block in blocks:
+        parsed_source = (
+            parse_speaker_from_text(
+                block.text
+            )
+        )
+
+        context_item = {
             "id": block.number,
-            "text": block.text,
+            "text": parsed_source.text,
         }
-        for block in blocks
-    ]
+
+        if parsed_source.speaker is not None:
+            context_item[
+                "speaker"
+            ] = parsed_source.speaker
+
+        context_payload.append(
+            context_item
+        )
+
+    return context_payload
 
 
 def build_hybrid_segment_requirements(
