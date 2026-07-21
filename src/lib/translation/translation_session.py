@@ -21,7 +21,6 @@ from lib.subtitle.srt import (
 )
 from lib.subtitle.text import (
     cleanup_ocr_text,
-    is_sound_effect_only_text,
 )
 from .translation_chunk import (
     build_initial_translation_request_payload,
@@ -128,92 +127,18 @@ def cleanup_blocks(
     ]
 
 
-def inherit_missing_speakers(
-    blocks: list[SrtBlock],
-) -> list[SrtBlock]:
-    """
-    明示Speakerを字幕順に保持し、
-    Speakerのない後続台詞へ継承する。
-
-    効果音だけの字幕にはSpeakerを設定しないが、
-    現在Speakerの記憶は維持する。
-
-    最初の明示Speakerより前にある字幕と、
-    本文が空の字幕は変更しない。
-    """
-    inherited_blocks: list[SrtBlock] = []
-    current_speaker: str | None = None
-
-    for block in blocks:
-        parsed = parse_speaker_from_text(
-            block.text
-        )
-
-        if parsed.speaker is not None:
-            current_speaker = parsed.speaker
-
-            inherited_blocks.append(
-                SrtBlock(
-                    number=block.number,
-                    timestamp=block.timestamp,
-                    text=rebuild_speaker_text(
-                        parsed.speaker,
-                        parsed.text,
-                    ),
-                )
-            )
-
-            continue
-
-        if not parsed.text.strip():
-            inherited_blocks.append(
-                block
-            )
-            continue
-
-        if is_sound_effect_only_text(
-            parsed.text
-        ):
-            inherited_blocks.append(
-                block
-            )
-            continue
-
-        if current_speaker is None:
-            inherited_blocks.append(
-                block
-            )
-            continue
-
-        inherited_blocks.append(
-            SrtBlock(
-                number=block.number,
-                timestamp=block.timestamp,
-                text=rebuild_speaker_text(
-                    current_speaker,
-                    parsed.text,
-                ),
-            )
-        )
-
-    return inherited_blocks
-
-
 def prepare_translation_source_blocks(
     blocks: list[SrtBlock],
 ) -> list[SrtBlock]:
     """
-    翻訳セッション全体の字幕へOCR前処理を適用し、
-    チャンク分割前にSpeakerを確定する。
+    翻訳セッション全体の字幕へ
+    OCR前処理を適用する。
 
-    全字幕を一度に処理することで、
-    前チャンクの明示Speakerを
-    次チャンクの先頭字幕へ継承できる。
+    明示されたSpeakerだけを維持し、
+    Speakerのない字幕へは補完しない。
     """
-    return inherit_missing_speakers(
-        cleanup_blocks(
-            blocks
-        )
+    return cleanup_blocks(
+        blocks
     )
 
 
@@ -403,7 +328,7 @@ def run_translation_session(
             source_blocks[start:end]
         )
 
-        # 全字幕で確定したSpeaker情報を維持したまま、
+        # OCR前処理済みの字幕から、
         # AIへ渡す範囲を切り出す。
         before_context = (
             prepared_source_blocks[
