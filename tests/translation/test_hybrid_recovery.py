@@ -670,17 +670,18 @@ def test_build_hybrid_context_payload_returns_empty_for_none(
     assert actual == []
 
 
-def test_build_hybrid_translation_prompt_includes_surrounding_context(
+def test_build_hybrid_translation_prompt_describes_structured_speakers(
 ) -> None:
     target_block = SrtBlock(
-        number="104",
+        number="627",
         timestamp=(
-            "00:04:44,576 --> "
-            "00:04:45,619"
+            "00:31:10,000 --> "
+            "00:31:12,000"
         ),
         text=(
-            "Okay, when\n"
-            "she returns home..."
+            "[RUSH] "
+            "(CHUCKLING) "
+            "Ui maar i mele aah ml iaa"
         ),
     )
 
@@ -693,102 +694,107 @@ def test_build_hybrid_translation_prompt_includes_surrounding_context(
         ),
         failed_ids=frozenset(
             {
-                "104",
+                "627",
             }
         ),
     )
 
     before_context = [
         SrtBlock(
-            number="103",
+            number="626",
             timestamp=(
-                "00:04:43,575 --> "
-                "00:04:44,284"
+                "00:31:08,000 --> "
+                "00:31:10,000"
             ),
-            text="Don't let her.",
+            text=(
+                "[YOUNG] "
+                "We need more time."
+            ),
         ),
     ]
 
     after_context = [
         SrtBlock(
-            number="105",
+            number="628",
             timestamp=(
-                "00:04:45,911 --> "
-                "00:04:47,120"
+                "00:31:12,000 --> "
+                "00:31:14,000"
             ),
             text=(
-                "Don't release her.\n"
-                "Keep her here."
+                "[SCOTT] "
+                "We have to move."
             ),
         ),
     ]
 
     prompt = build_hybrid_translation_prompt(
         group,
-        {},
+        {
+            "627": [
+                (
+                    "Ui maar i mele "
+                    "aah ml iaa"
+                ),
+            ],
+        },
         {},
         before_context=before_context,
         after_context=after_context,
     )
 
     assert (
-        "【参考文脈（前）】"
+        "【Speaker】"
         in prompt
     )
 
     assert (
-        '"id": "103"'
+        "speakerは話者を識別するための"
+        "参考情報であり、\n"
+        "翻訳対象の本文ではない。"
         in prompt
     )
 
     assert (
-        '"text": "Don\'t let her."'
+        "speaker名をfull_translationや\n"
+        "segmentsへ自動的に追加しないこと。"
         in prompt
     )
 
     assert (
-        "【翻訳対象】"
+        '"speaker": "RUSH"'
         in prompt
     )
 
     assert (
-        '"id": "104"'
+        '"speaker": "YOUNG"'
         in prompt
     )
 
     assert (
-        '"text": "Okay, when"'
+        '"speaker": "SCOTT"'
         in prompt
     )
 
     assert (
-        '"text": "she returns home..."'
+        '"kind": "sound_effect"'
         in prompt
     )
 
     assert (
-        "【参考文脈（後）】"
+        '"kind": "ocr"'
         in prompt
     )
 
     assert (
-        '"id": "105"'
-        in prompt
+        prompt.index(
+            '"speaker": "YOUNG"'
+        )
+        < prompt.index(
+        '"speaker": "RUSH"'
     )
-
-    assert (
-        "Don\'t release her.\\nKeep her here."
-        in prompt
+        < prompt.index(
+        '"speaker": "SCOTT"'
     )
-
-    assert (
-        "context_beforeとcontext_afterの字幕は、"
-        in prompt
-    )
-
-    assert (
-        "full_translationとsegmentsへ出力しないこと。"
-        in prompt
     )
 
 
