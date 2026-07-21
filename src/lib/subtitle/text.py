@@ -27,6 +27,17 @@ SOUND_EFFECT_LINE_PATTERN = re.compile(
     r")+"
     r"$"
 )
+LEADING_SOUND_EFFECT_PATTERN = re.compile(
+    r"^"
+    r"(?P<sound_effect>"
+    r"\([A-Z0-9 ,.'’!?-]+\)"
+    r")"
+    r"(?:"
+    r"\s+"
+    r"|"
+    r"$"
+    r")"
+)
 LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+")
 HAN_SEQUENCE_PATTERN = re.compile(
     r"[\u3400-\u4DBF\u4E00-\u9FFF]+"
@@ -291,6 +302,56 @@ def mask_chinese_ocr_text(
     return HAN_SEQUENCE_PATTERN.sub(
         replace_sequence,
         text,
+    )
+
+
+def split_leading_sound_effects(
+    text: str,
+) -> tuple[list[str], str]:
+    """
+    行頭から連続する効果音・動作説明と、
+    その後に続く字幕本文を分離する。
+
+    例:
+        (CHUCKLING) Is that
+        ↓
+        ["(CHUCKLING)"], "Is that"
+
+        (GASPS) (PANTING) Get out!
+        ↓
+        ["(GASPS)", "(PANTING)"], "Get out!"
+
+    行中・行末の括弧表現や、
+    小文字を含む通常の括弧文は分離しない。
+    """
+    remaining_text = text.strip()
+    sound_effects: list[str] = []
+
+    while remaining_text:
+        match = (
+            LEADING_SOUND_EFFECT_PATTERN.match(
+                remaining_text
+            )
+        )
+
+        if match is None:
+            break
+
+        sound_effects.append(
+            match.group(
+                "sound_effect"
+            )
+        )
+
+        remaining_text = (
+            remaining_text[
+                match.end():
+            ].strip()
+        )
+
+    return (
+        sound_effects,
+        remaining_text,
     )
 
 
