@@ -1706,6 +1706,218 @@ def test_e08_hybrid_recovery_end_to_end(
            }
 
 
+def test_e19_hybrid_recovery_handles_speaker_sound_effect_and_ocr(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    damaged_dialogue = (
+        "Ui maar i mele aah ml iaa"
+    )
+
+    target_blocks = [
+        SrtBlock(
+            number="627",
+            timestamp=(
+                "00:31:10,000 --> "
+                "00:31:12,000"
+            ),
+            text=(
+                "[RUSH] "
+                "(CHUCKLING) "
+                f"{damaged_dialogue}"
+            ),
+        ),
+    ]
+
+    recovered_segment = (
+        "（笑い）"
+        f"{HYBRID_OCR_PLACEHOLDER}"
+    )
+
+    response = json.dumps(
+        {
+            "group": {
+                "full_translation": (
+                    recovered_segment
+                ),
+                "segments": {
+                    "627": (
+                        recovered_segment
+                    ),
+                },
+            },
+        },
+        ensure_ascii=False,
+    )
+
+    generated_requests: list[
+        dict[str, object]
+    ] = []
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[str, object],
+    ) -> str:
+        generated_requests.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "response_format": (
+                    response_format
+                ),
+            }
+        )
+
+        return response
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
+    previous_texts = [
+        (
+            "(CHUCKLING) "
+            f"{damaged_dialogue}"
+        ),
+    ]
+
+    original_previous_texts = list(
+        previous_texts
+    )
+
+    errors = [
+        (
+            "Untranslated English sentence "
+            "detected: subtitle_id='627', "
+            f"text={damaged_dialogue!r}"
+        ),
+    ]
+
+    result = recover_translation_with_hybrid(
+        target_blocks,
+        previous_texts,
+        errors,
+        "test-model",
+        noise_dictionary=(
+            noise_dictionary
+        ),
+        glossary_entries={},
+    )
+
+    assert result == [
+        recovered_segment,
+    ]
+
+    assert previous_texts == (
+        original_previous_texts
+    )
+
+    assert len(
+        generated_requests
+    ) == 1
+
+    generated_request = (
+        generated_requests[0]
+    )
+
+    assert generated_request[
+               "model"
+           ] == "test-model"
+
+    prompt = generated_request[
+        "prompt"
+    ]
+
+    assert isinstance(
+        prompt,
+        str,
+    )
+
+    assert (
+        '"speaker": "RUSH"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "sound_effect"'
+        in prompt
+    )
+
+    assert (
+        '"text": "(CHUCKLING)"'
+        in prompt
+    )
+
+    assert (
+        '"kind": "ocr"'
+        in prompt
+    )
+
+    assert (
+        f'"text": "{damaged_dialogue}"'
+        in prompt
+    )
+
+    assert (
+        "speaker名をfull_translationや\n"
+        "segmentsへ自動的に追加しないこと。"
+        in prompt
+    )
+
+    assert (
+        "* 字幕ID 627: "
+        "kind=sound_effectを"
+        "短い日本語の効果音へ翻訳し、"
+        "その部分を全角括弧で囲む。"
+        "kind=ocrの位置を"
+        "「（判読不能）」で表現し、"
+        "OCR原文をコピーしない。"
+        "segmentには"
+        "「（判読不能）」と、"
+        "それ以外の翻訳結果を"
+        "両方とも含める。"
+        "各行の内容を原文順に配置する。"
+        in prompt
+    )
+
+    response_format = generated_request[
+        "response_format"
+    ]
+
+    assert isinstance(
+        response_format,
+        dict,
+    )
+
+    required_ids = (
+        response_format[
+            "properties"
+        ][
+            "group"
+        ][
+            "properties"
+        ][
+            "segments"
+        ][
+            "required"
+        ]
+    )
+
+    assert required_ids == [
+        "627",
+    ]
+
+
 def valid_hybrid_payload(
 ) -> dict[str, object]:
     segments = {
