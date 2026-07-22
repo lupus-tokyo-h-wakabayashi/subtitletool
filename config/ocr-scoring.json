@@ -174,6 +174,10 @@
       "value": 2,
       "description": "短い大小文字混在型OCRの複合条件を満たす場合の追加スコア。"
     },
+    "short_broken_fragment": {
+      "value": 3,
+      "description": "短い破損断片で、自然英文として保護すべきでない行へ追加するスコア。"
+    },
     "damaged_alphanumeric_structure": {
       "value": 2,
       "description": "英数字混在と区切り記号不均衡が同時に発生する場合の追加スコア。"

@@ -1227,6 +1227,41 @@ def test_e08_prompt_contains_segment_requirements(
     )
 
 
+def test_hybrid_prompt_warns_about_short_broken_text(
+) -> None:
+    group = build_hybrid_translation_group(
+        [
+            SrtBlock(
+                number="1",
+                timestamp=(
+                    "00:00:00,000 --> "
+                    "00:00:01,000"
+                ),
+                text="EVLA Col i",
+            ),
+        ],
+        {
+            "1",
+        },
+    )
+
+    assert group is not None
+
+    prompt = build_hybrid_translation_prompt(
+        group,
+        {},
+        {},
+    )
+
+    assert (
+        "kind=textのうち短く不自然な"
+        "英字断片は、無理に英訳せず、"
+        "必要なら「（判読不能）」表現へ"
+        "寄せること。"
+        in prompt
+    )
+
+
 def test_e08_validation_accepts_mixed_ocr_result(
     e08_target_blocks: list[SrtBlock],
     ocr_scoring_config: OcrScoringConfig,

@@ -29,6 +29,10 @@ from .hybrid_inspection import (
 from .ocr_retry import (
     find_assessed_ocr_lines_in_source,
 )
+from .ocr_assessment import (
+    count_ascii_letters,
+    extract_ascii_tokens,
+)
 from .retry import (
     build_required_glossary_instruction,
     extract_error_subtitle_ids,
@@ -330,6 +334,39 @@ def find_group_text_lines(
     return results
 
 
+def looks_like_short_broken_fragment(
+    text: str,
+) -> bool:
+    """
+    短いOCR破損断片っぽい英字列を判定する。
+
+    Hybridのkind=text防御を追加するため、
+    通常の自然文ではなく破損断片だけを拾う。
+    """
+    tokens = extract_ascii_tokens(
+        text
+    )
+
+    return (
+        len(tokens) <= 3
+        and count_ascii_letters(
+            text
+        ) >= 5
+        and any(
+            token.isupper()
+            for token in tokens
+        )
+        and any(
+            token.istitle()
+            for token in tokens
+        )
+        and any(
+            len(token) == 1
+            for token in tokens
+        )
+    )
+
+
 def build_hybrid_source_payload(
     group: HybridTranslationGroup,
     ocr_lines: dict[str, list[str]],
@@ -544,6 +581,22 @@ def build_hybrid_segment_requirements(
                 "自然な日本語へ翻訳する。"
                 "英文を残さない。"
             )
+
+            if any(
+                looks_like_short_broken_fragment(
+                    text_line
+                )
+                for text_line in text_lines.get(
+                    subtitle_id,
+                    [],
+                )
+            ):
+                instructions.append(
+                    "kind=textのうち短く不自然な"
+                    "英字断片は、無理に英訳せず、"
+                    "必要なら「（判読不能）」表現へ"
+                    "寄せること。"
+                )
 
         if has_sound_effect_lines:
             instructions.append(

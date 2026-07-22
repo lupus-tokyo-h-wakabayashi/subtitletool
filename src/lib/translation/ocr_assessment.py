@@ -530,6 +530,28 @@ def is_natural_sentence(
     ):
         return False
 
+    short_broken_fragment = (
+        len(tokens) <= 3
+        and count_ascii_letters(
+            text
+        ) >= 5
+        and any(
+            token.isupper()
+            for token in tokens
+        )
+        and any(
+            token.istitle()
+            for token in tokens
+        )
+        and any(
+            len(token) == 1
+            for token in tokens
+        )
+    )
+
+    if short_broken_fragment:
+        return False
+
     normalized = text.strip().rstrip(
         "\"')]}〉》」』）】"
     )
@@ -1028,6 +1050,29 @@ def assess_ocr_source_line(
     if short_mixed_case:
         apply_weight(
             "short_mixed_case"
+        )
+
+    short_broken_fragment = (
+        validation_failed
+        and len(tokens) <= 3
+        and ascii_letter_count >= 5
+        and any(
+            token.isupper()
+            for token in tokens
+        )
+        and any(
+            token.istitle()
+            for token in tokens
+        )
+        and any(
+            len(token) == 1
+            for token in tokens
+        )
+    )
+
+    if short_broken_fragment:
+        apply_weight(
+            "short_broken_fragment"
         )
 
     damaged_alphanumeric_structure = (

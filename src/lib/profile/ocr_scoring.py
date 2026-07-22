@@ -86,6 +86,7 @@ EXPECTED_GROUP_KEYS = {
             "symbol_dense_structure",
             "low_symbol_word_salad",
             "short_mixed_case",
+            "short_broken_fragment",
             "damaged_alphanumeric_structure",
             "glossary_exact_match",
             "glossary_similar_match",

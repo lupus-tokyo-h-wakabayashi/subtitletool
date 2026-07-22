@@ -317,6 +317,29 @@ def test_short_mixed_case_requires_validation_context(
     assert sibling_result.probable_ocr
 
 
+def test_assess_detects_short_broken_fragment(
+    scoring_config: OcrScoringConfig,
+    empty_glossary: GlossaryEntries,
+) -> None:
+    result = assess_ocr_source_line(
+        "EVLA Col i",
+        empty_glossary,
+        scoring_config,
+        validation_failed=True,
+        has_normal_sibling=False,
+    )
+
+    assert result.probable_ocr
+
+    assert result.has_contribution(
+        "short_broken_fragment"
+    )
+
+    assert not result.has_contribution(
+        "natural_sentence"
+    )
+
+
 def test_assess_protects_exact_short_glossary_term(
     scoring_config: OcrScoringConfig,
     stargate_glossary: GlossaryEntries,
