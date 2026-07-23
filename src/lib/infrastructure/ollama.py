@@ -4,9 +4,34 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 
 DEFAULT_MODEL = "qwen3:14b"
 STARTUP_TIMEOUT_SECONDS = 30
+
+
+@dataclass(frozen=True)
+class OllamaGenerateExchange:
+    """
+    Ollamaとの1回の生成通信結果。
+
+    request_payload:
+        /api/generateへ送信したPayload。
+
+    raw_response_body:
+        HTTPレスポンスをUTF-8として復号した未加工文字列。
+
+    response_body:
+        未加工レスポンスをJSONとして解析した辞書。
+
+    generated_text:
+        responseフィールドから取得して前後空白を除去した生成文字列。
+    """
+
+    request_payload: dict[str, object]
+    raw_response_body: str
+    response_body: dict[str, object]
+    generated_text: str
 
 
 def build_generate_payload(
@@ -154,21 +179,21 @@ def ensure_available(
     )
 
 
-def generate(
+def generate_exchange(
     prompt: str,
     model: str = DEFAULT_MODEL,
     temperature: float = 0.2,
     top_p: float = 0.9,
     timeout: int = 900,
     response_format: dict[str, object] | None = None,
-) -> str:
+) -> OllamaGenerateExchange:
     """
-    Ollamaへ生成リクエストを送信する。
+    Ollamaへ生成リクエストを送信し、
+    実際のRequest Payloadと未加工Responseを含む通信結果を返す。
 
     response_formatが指定されている場合は、
     JSON Schemaをformatとして送信する。
     """
-    # 各生成処理の前に接続を保証する
     ensure_available()
 
     request_payload = build_generate_payload(
@@ -191,11 +216,12 @@ def generate(
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = json.loads(
-                response.read().decode(
-                    "utf-8"
-                )
+        with urllib.request.urlopen(
+            request,
+            timeout=timeout,
+        ) as response:
+            raw_response_body = response.read().decode(
+                "utf-8"
             )
 
     except urllib.error.HTTPError as error:
@@ -213,7 +239,25 @@ def generate(
             f"Failed to connect to Ollama: {error.reason}"
         ) from error
 
-    generated = body.get(
+    try:
+        response_body = json.loads(
+            raw_response_body
+        )
+
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "Ollama response is not valid JSON."
+        ) from error
+
+    if not isinstance(
+        response_body,
+        dict,
+    ):
+        raise RuntimeError(
+            "Ollama response body is not a JSON object."
+        )
+
+    generated = response_body.get(
         "response"
     )
 
@@ -226,4 +270,36 @@ def generate(
             "generated text."
         )
 
-    return generated.strip()
+    return OllamaGenerateExchange(
+        request_payload=request_payload,
+        raw_response_body=raw_response_body,
+        response_body=response_body,
+        generated_text=generated.strip(),
+    )
+
+
+def generate(
+    prompt: str,
+    model: str = DEFAULT_MODEL,
+    temperature: float = 0.2,
+    top_p: float = 0.9,
+    timeout: int = 900,
+    response_format: dict[str, object] | None = None,
+) -> str:
+    """
+    Ollamaへ生成リクエストを送信し、
+    前後空白を除去した生成文字列を返す。
+
+    既存の呼び出し側との互換性を維持するため、
+    戻り値は従来どおりstrとする。
+    """
+    exchange = generate_exchange(
+        prompt=prompt,
+        model=model,
+        temperature=temperature,
+        top_p=top_p,
+        timeout=timeout,
+        response_format=response_format,
+    )
+
+    return exchange.generated_text
