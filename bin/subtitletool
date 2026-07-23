@@ -15,6 +15,10 @@ switch $COMMAND
         set -gx PYTHONPATH ~/projects/subtitletool/src
         python3 ~/projects/subtitletool/src/commands/make.py $argv[2..-1]
 
+    case charactor
+        set -gx PYTHONPATH ~/projects/subtitletool/src
+        python3 ~/projects/subtitletool/src/commands/charactor.py $argv[2..-1]
+
     case extract
         set -gx PYTHONPATH ~/projects/subtitletool/src
         python3 ~/projects/subtitletool/src/commands/extract.py $argv[2..-1]
@@ -35,6 +39,7 @@ switch $COMMAND
         echo "Usage:"
         echo "  subtitletool scan input.mkv"
         echo "  subtitletool translate input.eng.srt [output.ja.srt]"
+        echo "  subtitletool charactor input.eng.srt [--profile PROFILE]"
         echo "  subtitletool make input.mkv"
         echo "  subtitletool extract input.mkv"
         echo "  subtitletool ocr input.eng.sup [output.eng.srt]"

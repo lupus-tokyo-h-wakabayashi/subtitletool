@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+from .charactor import (
+    build_charactor_prompt,
+)
 from .config import (
     resolve_profile_config,
 )
@@ -137,9 +140,17 @@ def build_translation_prompt(
         profile_name
     )
 
+    profile_config = resolve_profile_config(
+        profile_name
+    )
+
+    charactor = build_charactor_prompt(
+        profile_config
+    )
+
     return template.format(
         target_count=target_count,
         glossary=glossary,
         style=style,
         request_json=request_json,
-    )
+    ) + charactor

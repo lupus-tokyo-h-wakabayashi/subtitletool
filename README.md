@@ -323,6 +323,34 @@ PGS字幕をOCRし、SRTへ変換します。
 
 SRT字幕をローカルLLMへ送り、JSON形式のレスポンスを使って日本語へ翻訳します。
 
+### charactor
+
+英語SRTで明示されている話者名を抽出し、指定プロファイルの
+`charactor.json`を生成します。`description`は空文字で生成されるため、
+人物の性格や立場をあとから記入してください。
+
+```bash
+subtitletool charactor \
+    movie.eng.srt \
+    --profile stargate
+```
+
+生成形式:
+
+```json
+[
+  {
+    "charactor": "Daniel",
+    "description": "男性の考古学者。スターゲイトの起動に関わった。"
+  }
+]
+```
+
+`charactor.json`はこのコマンドを実行した場合だけ生成されます。
+既存ファイルを再生成した場合、同じ話者の`description`は維持されます。
+翻訳時は、選択したプロファイルにこのファイルが存在する場合だけ、
+人物設定が翻訳プロンプトへ追加されます。
+
 ### mux
 
 翻訳字幕を動画へMuxします。
