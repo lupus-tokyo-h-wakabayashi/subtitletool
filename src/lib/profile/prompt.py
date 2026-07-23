@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 from pathlib import Path
 
 from .charactor import (
@@ -17,6 +18,88 @@ from .style import (
 )
 
 DEFAULT_PROMPT_NAME = "translate"
+
+
+def extract_request_speaker_names(
+    request_json: str,
+) -> list[str]:
+    """
+    翻訳リクエストに明示された話者名だけを、
+    前文脈・対象・後文脈の順で抽出する。
+    """
+    try:
+        payload = json.loads(
+            request_json
+        )
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(payload, dict):
+        return []
+
+    speakers: list[str] = []
+    seen: set[str] = set()
+
+    def add_speaker(value: object) -> None:
+        if not isinstance(value, str):
+            return
+
+        speaker = value.strip()
+
+        if not speaker:
+            return
+
+        identity = speaker.casefold()
+
+        if identity in seen:
+            return
+
+        seen.add(identity)
+        speakers.append(speaker)
+
+    def add_context_speakers(
+        context_key: str,
+    ) -> None:
+        context = payload.get(
+            context_key
+        )
+
+        if not isinstance(context, list):
+            return
+
+        for item in context:
+            if isinstance(item, dict):
+                add_speaker(
+                    item.get("speaker")
+                )
+
+    add_context_speakers(
+        "context_before"
+    )
+
+    targets = payload.get(
+        "targets"
+    )
+
+    if isinstance(targets, dict):
+        for item in targets.values():
+            if not isinstance(item, dict):
+                continue
+
+            source = item.get(
+                "source"
+            )
+
+            if isinstance(source, dict):
+                add_speaker(
+                    source.get("speaker")
+                )
+
+    add_context_speakers(
+        "context_after"
+    )
+
+    return speakers
 
 
 def read_config_file(path: Path) -> str:
@@ -145,7 +228,12 @@ def build_translation_prompt(
     )
 
     charactor = build_charactor_prompt(
-        profile_config
+        profile_config,
+        speaker_names=(
+            extract_request_speaker_names(
+                request_json
+            )
+        ),
     )
 
     return template.format(

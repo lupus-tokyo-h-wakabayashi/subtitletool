@@ -116,6 +116,78 @@ def test_build_charactor_prompt_is_optional(
     assert build_charactor_prompt(config) == ""
 
 
+def test_build_charactor_prompt_ignores_empty_file(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "charactor.json").write_text(
+        "",
+        encoding="utf-8",
+    )
+
+    prompt = build_charactor_prompt(
+        make_profile_config(tmp_path)
+    )
+
+    assert prompt == ""
+
+
+def test_build_charactor_prompt_filters_to_request_speakers(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "charactor.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "charactor": "RUSH",
+                    "description": "皮肉な科学者。",
+                },
+                {
+                    "charactor": "YOUNG",
+                    "description": "冷静な指揮官。",
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    prompt = build_charactor_prompt(
+        make_profile_config(tmp_path),
+        speaker_names=["rush"],
+    )
+
+    assert "RUSH" in prompt
+    assert "皮肉な科学者。" in prompt
+    assert "YOUNG" not in prompt
+    assert "冷静な指揮官。" not in prompt
+
+
+def test_build_charactor_prompt_without_matching_speaker_is_empty(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "charactor.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "charactor": "RUSH",
+                    "description": "皮肉な科学者。",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    prompt = build_charactor_prompt(
+        make_profile_config(tmp_path),
+        speaker_names=[],
+    )
+
+    assert prompt == ""
+
+
 def test_build_charactor_prompt_includes_description(
     tmp_path: Path,
 ) -> None:

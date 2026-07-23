@@ -83,11 +83,16 @@ def load_charactors(
     path: Path,
 ) -> tuple[Charactor, ...]:
     try:
+        raw_text = path.read_text(
+            encoding="utf-8",
+            errors="strict",
+        )
+
+        if not raw_text.strip():
+            return ()
+
         payload = json.loads(
-            path.read_text(
-                encoding="utf-8",
-                errors="strict",
-            )
+            raw_text
         )
     except json.JSONDecodeError as error:
         raise RuntimeError(
@@ -198,6 +203,7 @@ def write_charactors(
 
 def build_charactor_prompt(
     profile_config: ProfileConfig,
+    speaker_names: list[str] | None = None,
 ) -> str:
     path = charactor_path(
         profile_config
@@ -207,6 +213,22 @@ def build_charactor_prompt(
         return ""
 
     charactors = load_charactors(path)
+
+    if speaker_names is not None:
+        requested_speakers = {
+            speaker.casefold()
+            for speaker in speaker_names
+        }
+        charactors = tuple(
+            item
+            for item in charactors
+            if item.charactor.casefold()
+            in requested_speakers
+        )
+
+    if not charactors:
+        return ""
+
     payload = [
         {
             "charactor": item.charactor,

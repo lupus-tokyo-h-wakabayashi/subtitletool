@@ -5346,3 +5346,111 @@ def test_e05_validation_detects_ocr_source_before_parentheses_normalization(
         f"text={ocr_line!r}"
         in validation.reasons
     )
+
+
+def test_repeated_source_copy_uses_final_short_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    noise_dictionary: NoiseDictionary,
+) -> None:
+    block = SrtBlock(
+        number="233",
+        timestamp=(
+            "00:12:24,118 --> "
+            "00:12:26,079"
+        ),
+        text=(
+            "Hopefully, this is\n"
+            "a one-time event."
+        ),
+    )
+    prompts: list[str] = []
+
+    def fake_generate(
+        prompt: str,
+        *,
+        model: str,
+        response_format: dict[str, object],
+    ) -> str:
+        prompts.append(prompt)
+
+        if len(prompts) <= 3:
+            return json.dumps(
+                {
+                    "group": {
+                        "full_translation": (
+                            "Hopefully, this is "
+                            "a one-time event."
+                        ),
+                        "segments": {
+                            "233": (
+                                "Hopefully, this is "
+                                "a one-time event."
+                            ),
+                        },
+                    },
+                }
+            )
+
+        return json.dumps(
+            {
+                "translation": (
+                    "今回だけだといいが。"
+                ),
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "generate",
+        fake_generate,
+    )
+    monkeypatch.setattr(
+        hybrid_recovery,
+        "try_save_hybrid_attempt_report",
+        lambda **kwargs: None,
+    )
+
+    metrics = TranslationChunkMetric(
+        chunk_number=1,
+        chunk_start=233,
+        chunk_end=233,
+        target_ids=("233",),
+        started_at=datetime.now(),
+    )
+
+    result = recover_translation_with_hybrid(
+        [block],
+        ["Hopefully, this is a one-time event."],
+        [
+            "Untranslated English sentence detected: "
+            "subtitle_id='233', "
+            "text='Hopefully, this is a one-time event.'"
+        ],
+        "test-model",
+        noise_dictionary=noise_dictionary,
+        glossary_entries={},
+        metrics=metrics,
+    )
+
+    assert result == [
+        "今回だけだといいが。",
+    ]
+    assert len(prompts) == 4
+    assert "【参考文脈】" in prompts[0]
+    assert "【参考文脈】" not in prompts[3]
+    assert (
+        "英語字幕1文だけを"
+        in prompts[3]
+    )
+    assert len(metrics.hybrid_groups) == 1
+    assert metrics.hybrid_groups[0].result == "success"
+    assert [
+        attempt.attempt
+        for attempt in metrics.hybrid_groups[0].attempts
+    ] == [
+        1,
+        2,
+        3,
+        4,
+    ]

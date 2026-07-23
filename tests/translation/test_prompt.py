@@ -3,6 +3,7 @@ import json
 import pytest
 from lib.profile.prompt import (
     build_translation_prompt as build_profile_translation_prompt,
+    extract_request_speaker_names,
 )
 from lib.subtitle.srt import SrtBlock
 from lib.translation.translation_prompt import (
@@ -131,6 +132,46 @@ def test_build_translation_request_json_uses_id_keyed_targets(
 
     assert "target" not in payload
     assert "translations" not in payload
+
+
+def test_extract_request_speaker_names_uses_context_and_targets(
+) -> None:
+    request_json = json.dumps(
+        {
+            "context_before": [
+                {
+                    "speaker": "RUSH",
+                    "text": "Before.",
+                },
+            ],
+            "targets": {
+                "1": {
+                    "source": {
+                        "speaker": "YOUNG",
+                        "text": "Target.",
+                    },
+                    "translation": "",
+                },
+            },
+            "context_after": [
+                {
+                    "speaker": "rush",
+                    "text": "After.",
+                },
+                {
+                    "speaker": None,
+                    "text": "Unknown.",
+                },
+            ],
+        }
+    )
+
+    assert extract_request_speaker_names(
+        request_json
+    ) == [
+        "RUSH",
+        "YOUNG",
+    ]
 
 
 def test_build_ocr_noise_instruction() -> None:

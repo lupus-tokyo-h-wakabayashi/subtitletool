@@ -49,6 +49,9 @@ from .translation_validation import (
 )
 
 MAX_HYBRID_RECOVERY_ATTEMPTS = 3
+FINAL_SOURCE_COPY_FALLBACK_ATTEMPT = (
+    MAX_HYBRID_RECOVERY_ATTEMPTS + 1
+)
 HYBRID_OCR_PLACEHOLDER = (
     "（判読不能）"
 )
@@ -89,6 +92,135 @@ class HybridValidationResult:
     reasons: tuple[str, ...]
     full_translation: str | None
     segments: dict[str, str]
+
+
+def normalize_source_copy_text(
+    text: str,
+) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        text,
+    ).strip().casefold()
+
+
+def is_single_source_copy(
+    group: HybridTranslationGroup,
+    validation: HybridValidationResult,
+) -> bool:
+    if len(group.blocks) != 1:
+        return False
+
+    block = group.blocks[0]
+    segment = validation.segments.get(
+        block.number
+    )
+
+    if segment is None:
+        return False
+
+    source = parse_speaker_from_text(
+        block.text
+    ).text
+
+    return normalize_source_copy_text(
+        segment
+    ) == normalize_source_copy_text(
+        source
+    )
+
+
+def build_final_source_copy_prompt(
+    source_text: str,
+) -> str:
+    return f"""
+次の英語字幕1文だけを、簡潔で自然な日本語字幕へ翻訳してください。
+
+英語をそのまま残さないでください。
+説明や注釈を追加しないでください。
+JSONオブジェクトだけを返してください。
+
+英語字幕:
+{source_text}
+
+返却形式:
+{{"translation":"日本語訳"}}
+""".strip()
+
+
+def build_final_source_copy_schema(
+) -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "translation": {
+                "type": "string",
+                "minLength": 1,
+            },
+        },
+        "required": [
+            "translation",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def parse_final_source_copy_response(
+    response: str,
+    source_text: str,
+) -> tuple[str | None, list[str]]:
+    try:
+        payload = json.loads(
+            response.strip()
+        )
+    except json.JSONDecodeError as error:
+        return None, [
+            "Invalid final source-copy fallback JSON: "
+            f"line={error.lineno}, "
+            f"column={error.colno}, "
+            f"message={error.msg}"
+        ]
+
+    if not isinstance(payload, dict) or set(payload) != {
+        "translation",
+    }:
+        return None, [
+            "Invalid final source-copy fallback structure"
+        ]
+
+    translation = payload.get(
+        "translation"
+    )
+
+    if not isinstance(translation, str):
+        return None, [
+            "Invalid final source-copy fallback translation"
+        ]
+
+    translation = translation.strip()
+
+    if not translation:
+        return None, [
+            "Empty final source-copy fallback translation"
+        ]
+
+    if normalize_source_copy_text(
+        translation
+    ) == normalize_source_copy_text(
+        source_text
+    ):
+        return None, [
+            "Final source-copy fallback repeated English source"
+        ]
+
+    if not JAPANESE_CHARACTER_PATTERN.search(
+        translation
+    ):
+        return None, [
+            "Final source-copy fallback requires Japanese"
+        ]
+
+    return translation, []
 
 
 def build_hybrid_response_schema(
@@ -1543,6 +1675,7 @@ def recover_single_hybrid_group(
             )
 
     retry_reasons: list[str] = []
+    repeated_source_copy_count = 0
 
     for attempt in range(
         1,
@@ -1637,6 +1770,14 @@ def recover_single_hybrid_group(
             retry_reasons = list(
                 hybrid_validation.reasons
             )
+
+            if is_single_source_copy(
+                group,
+                hybrid_validation,
+            ):
+                repeated_source_copy_count += 1
+            else:
+                repeated_source_copy_count = 0
 
             if metrics_group is not None:
                 validation_reasons = tuple(
@@ -1871,6 +2012,144 @@ def recover_single_hybrid_group(
 
         return merged_texts
 
+    if (
+        repeated_source_copy_count
+        == MAX_HYBRID_RECOVERY_ATTEMPTS
+        and len(group.blocks) == 1
+        and not ocr_lines
+    ):
+        fallback_started_at = time.monotonic()
+        block = group.blocks[0]
+        parsed_source = parse_speaker_from_text(
+            block.text
+        )
+        fallback_prompt = (
+            build_final_source_copy_prompt(
+                parsed_source.text
+            )
+        )
+        fallback_schema = (
+            build_final_source_copy_schema()
+        )
+
+        print()
+        print("Final Source-Copy Fallback:")
+        print(f"  ID: {block.number}")
+
+        fallback_response = generate(
+            fallback_prompt,
+            model=model,
+            response_format=fallback_schema,
+        )
+        (
+            fallback_translation,
+            fallback_reasons,
+        ) = parse_final_source_copy_response(
+            fallback_response,
+            parsed_source.text,
+        )
+
+        if fallback_translation is not None:
+            standard_response = (
+                build_standard_translation_response(
+                    [block],
+                    [fallback_translation],
+                )
+            )
+            standard_validation = (
+                validate_translation_response(
+                    standard_response,
+                    expected_ids=[block.number],
+                    source_speakers=[
+                        parsed_source.speaker
+                    ],
+                    source_texts=[
+                        parsed_source.text
+                    ],
+                    noise_dictionary=(
+                        noise_dictionary
+                    ),
+                    glossary_entries=(
+                        glossary_entries
+                    ),
+                )
+            )
+
+            if standard_validation.valid:
+                if metrics_group is not None:
+                    metrics_group.add_attempt(
+                        TranslationAttemptMetric(
+                            pipeline="hybrid",
+                            attempt=(
+                                FINAL_SOURCE_COPY_FALLBACK_ATTEMPT
+                            ),
+                            target_ids=tuple(
+                                group.target_ids
+                            ),
+                            elapsed_seconds=(
+                                time.monotonic()
+                                - fallback_started_at
+                            ),
+                            response_received=True,
+                            validation_stage="complete",
+                            validation_valid=True,
+                        )
+                    )
+                    metrics_group.mark_success()
+
+                merged_texts = list(
+                    translated_texts
+                )
+                merged_texts[
+                    group.positions[0]
+                ] = standard_validation.translated_texts[0]
+
+                print(
+                    "Final Source-Copy Fallback "
+                    "succeeded."
+                )
+
+                return merged_texts
+
+            fallback_reasons = list(
+                standard_validation.reasons
+            )
+
+        retry_reasons = fallback_reasons
+
+        if metrics_group is not None:
+            validation_reasons = tuple(
+                retry_reasons
+            )
+            metrics_group.add_attempt(
+                TranslationAttemptMetric(
+                    pipeline="hybrid",
+                    attempt=(
+                        FINAL_SOURCE_COPY_FALLBACK_ATTEMPT
+                    ),
+                    target_ids=tuple(
+                        group.target_ids
+                    ),
+                    elapsed_seconds=(
+                        time.monotonic()
+                        - fallback_started_at
+                    ),
+                    response_received=True,
+                    validation_stage=(
+                        "hybrid_validation"
+                    ),
+                    validation_valid=False,
+                    validation_reasons=(
+                        validation_reasons
+                    ),
+                    reason_codes=(
+                        build_validation_reason_codes(
+                            validation_reasons
+                        )
+                    ),
+                )
+            )
+
     if metrics_group is not None:
         metrics_group.mark_failed()
 
@@ -1878,7 +2157,18 @@ def recover_single_hybrid_group(
         "Hybrid Translation Recovery failed "
         f"after "
         f"{MAX_HYBRID_RECOVERY_ATTEMPTS} "
-        "attempts for subtitles "
+        "attempts"
+        + (
+            " and final source-copy fallback"
+            if (
+                repeated_source_copy_count
+                == MAX_HYBRID_RECOVERY_ATTEMPTS
+                and len(group.blocks) == 1
+                and not ocr_lines
+            )
+            else ""
+        )
+        + " for subtitles "
         + ", ".join(
             group.target_ids
         )
