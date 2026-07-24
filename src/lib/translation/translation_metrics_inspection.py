@@ -5,6 +5,9 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from .translation_artifacts import (
+    TranslationArtifactRegistry,
+)
 from .translation_metrics import (
     AdaptiveChunkMetric,
     HybridGroupMetric,
@@ -763,6 +766,10 @@ def save_chunk_metrics_report(
     session: TranslationSessionMetric,
     chunk: TranslationChunkMetric,
     output_directory: Path | None = None,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> Path:
     """
     1チャンクの計測レポートを保存する。
@@ -782,6 +789,11 @@ def save_chunk_metrics_report(
         exist_ok=True,
     )
 
+    if artifact_registry is not None:
+        artifact_registry.register_directory(
+            resolved_output_directory
+        )
+
     output_path = (
         resolved_output_directory
         / build_chunk_metrics_filename(
@@ -796,6 +808,11 @@ def save_chunk_metrics_report(
         ),
     )
 
+    if artifact_registry is not None:
+        artifact_registry.register_file(
+            output_path
+        )
+
     return output_path
 
 
@@ -803,6 +820,10 @@ def save_session_metrics_report(
     *,
     session: TranslationSessionMetric,
     output_directory: Path | None = None,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> Path:
     """
     セッションのsummary.jsonを保存する。
@@ -822,6 +843,11 @@ def save_session_metrics_report(
         exist_ok=True,
     )
 
+    if artifact_registry is not None:
+        artifact_registry.register_directory(
+            resolved_output_directory
+        )
+
     output_path = (
         resolved_output_directory
         / "summary.json"
@@ -834,6 +860,11 @@ def save_session_metrics_report(
         ),
     )
 
+    if artifact_registry is not None:
+        artifact_registry.register_file(
+            output_path
+        )
+
     return output_path
 
 
@@ -842,6 +873,10 @@ def save_translation_metrics_reports(
     session: TranslationSessionMetric,
     chunk: TranslationChunkMetric,
     output_directory: Path | None = None,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> tuple[Path, Path]:
     """
     現在のチャンクとセッションサマリーを保存する。
@@ -850,6 +885,7 @@ def save_translation_metrics_reports(
         session=session,
         chunk=chunk,
         output_directory=output_directory,
+        artifact_registry=artifact_registry,
     )
 
     summary_path = (
@@ -857,6 +893,9 @@ def save_translation_metrics_reports(
             session=session,
             output_directory=(
                 output_directory
+            ),
+            artifact_registry=(
+                artifact_registry
             ),
         )
     )
@@ -872,6 +911,10 @@ def try_save_translation_metrics_reports(
     session: TranslationSessionMetric,
     chunk: TranslationChunkMetric,
     output_directory: Path | None = None,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> tuple[Path, Path] | None:
     """
     計測レポートをbest-effortで保存する。
@@ -886,6 +929,9 @@ def try_save_translation_metrics_reports(
                 chunk=chunk,
                 output_directory=(
                     output_directory
+                ),
+                artifact_registry=(
+                    artifact_registry
                 ),
             )
         )

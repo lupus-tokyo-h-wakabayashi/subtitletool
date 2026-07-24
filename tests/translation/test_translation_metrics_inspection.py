@@ -8,6 +8,9 @@ import pytest
 from lib.translation import (
     translation_metrics_inspection,
 )
+from lib.translation.translation_artifacts import (
+    TranslationArtifactRegistry,
+)
 from lib.translation.translation_metrics import (
     AdaptiveChunkMetric,
     HybridGroupMetric,
@@ -1486,6 +1489,62 @@ def test_save_translation_metrics_reports(
     )
 
 
+def test_save_translation_metrics_reports_registers_artifacts(
+    tmp_path: Path,
+) -> None:
+    session = make_session()
+    chunk = make_chunk()
+
+    session.add_chunk(
+        chunk
+    )
+
+    output_directory = (
+        tmp_path
+        / "translation-metrics"
+        / "session"
+    )
+
+    registry = TranslationArtifactRegistry(
+        root_directory=tmp_path
+    )
+
+    chunk_path, summary_path = (
+        save_translation_metrics_reports(
+            session=session,
+            chunk=chunk,
+            output_directory=(
+                output_directory
+            ),
+            artifact_registry=registry,
+        )
+    )
+
+    assert registry.files == (
+        chunk_path.resolve(),
+        summary_path.resolve(),
+    )
+
+    assert registry.directories == (
+        output_directory.resolve(),
+    )
+
+    result = registry.cleanup()
+
+    assert result.deleted_files == (
+        chunk_path.resolve(),
+        summary_path.resolve(),
+    )
+
+    assert result.deleted_directories == (
+        output_directory.resolve(),
+    )
+
+    assert not chunk_path.exists()
+    assert not summary_path.exists()
+    assert not output_directory.exists()
+
+
 # best-effort保存
 def test_try_save_translation_metrics_reports_returns_none_on_io_error(
     monkeypatch: pytest.MonkeyPatch,
@@ -1528,4 +1587,101 @@ def test_try_save_translation_metrics_reports_returns_none_on_io_error(
     assert (
         "OSError: write failed"
         in captured.out
+    )
+
+
+def test_try_save_translation_metrics_reports_registers_partial_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = make_session()
+    chunk = make_chunk()
+
+    session.add_chunk(
+        chunk
+    )
+
+    output_directory = (
+        tmp_path
+        / "translation-metrics"
+        / "session"
+    )
+
+    registry = TranslationArtifactRegistry(
+        root_directory=tmp_path
+    )
+
+    original_write_metrics_report = (
+        translation_metrics_inspection
+        .write_metrics_report
+    )
+
+    write_count = 0
+
+    def fail_second_write(
+        output_path: Path,
+        report: dict[str, object],
+    ) -> None:
+        nonlocal write_count
+
+        write_count += 1
+
+        if write_count == 2:
+            raise OSError(
+                "summary write failed"
+            )
+
+        original_write_metrics_report(
+            output_path,
+            report,
+        )
+
+    monkeypatch.setattr(
+        translation_metrics_inspection,
+        "write_metrics_report",
+        fail_second_write,
+    )
+
+    result = (
+        try_save_translation_metrics_reports(
+            session=session,
+            chunk=chunk,
+            output_directory=(
+                output_directory
+            ),
+            artifact_registry=registry,
+        )
+    )
+
+    chunk_path = (
+        output_directory
+        / "chunk-000001-000010.json"
+    )
+
+    summary_path = (
+        output_directory
+        / "summary.json"
+    )
+
+    assert result is None
+
+    assert registry.files == (
+        chunk_path.resolve(),
+    )
+
+    assert registry.directories == (
+        output_directory.resolve(),
+    )
+
+    assert chunk_path.exists()
+    assert not summary_path.exists()
+
+    cleanup_result = registry.cleanup()
+
+    assert cleanup_result.deleted_files == (
+        chunk_path.resolve(),
+    )
+
+    assert cleanup_result.deleted_directories == (
+        output_directory.resolve(),
     )
