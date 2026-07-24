@@ -45,6 +45,9 @@ from .retry import (
     extract_error_subtitle_ids,
     has_structural_validation_error,
 )
+from .translation_artifacts import (
+    TranslationArtifactRegistry,
+)
 from .translation_metrics import (
     TRANSLATION_RESULT_CHINESE_FALLBACK_SUCCESS,
     TRANSLATION_RESULT_FAILED,
@@ -334,6 +337,10 @@ def save_failed_translation_response(
     chunk_start: int,
     chunk_end: int,
     attempt: int,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> Path:
     TRANSLATION_DEBUG_DIR.mkdir(
         parents=True,
@@ -355,6 +362,11 @@ def save_failed_translation_response(
         response,
         encoding="utf-8",
     )
+
+    if artifact_registry is not None:
+        artifact_registry.register_file(
+            output_path
+        )
 
     return output_path
 
@@ -527,6 +539,10 @@ def translate_chunk(
     noise_dictionary: NoiseDictionary,
     profile_name: str,
     metrics: TranslationChunkMetric | None = None,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> list[str]:
     # Phase 1-5：チャンク計測開始
     metrics_started_at = (
@@ -818,6 +834,7 @@ def translate_chunk(
             chunk_start=chunk_start,
             chunk_end=chunk_end,
             attempt=attempt,
+            artifact_registry=artifact_registry,
         )
 
         last_errors = validation.reasons

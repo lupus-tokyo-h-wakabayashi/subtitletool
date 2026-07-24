@@ -1,9 +1,16 @@
+from pathlib import Path
+
 from lib.subtitle.srt import (
     SrtBlock,
+)
+from lib.translation import translation_chunk
+from lib.translation.translation_artifacts import (
+    TranslationArtifactRegistry,
 )
 from lib.translation.translation_chunk import (
     generate_translation_response,
     normalize_translation_text,
+    save_failed_translation_response,
 )
 
 
@@ -98,3 +105,79 @@ def test_generate_translation_response_passes_schema(
         "model": "qwen3:14b",
         "response_format": response_schema,
     }
+
+
+def test_save_failed_translation_response_registers_artifact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    debug_directory = (
+        tmp_path
+        / "tmp"
+    )
+
+    monkeypatch.setattr(
+        translation_chunk,
+        "TRANSLATION_DEBUG_DIR",
+        debug_directory,
+    )
+
+    registry = TranslationArtifactRegistry(
+        root_directory=debug_directory
+    )
+
+    saved_path = save_failed_translation_response(
+        '{"targets": {}}',
+        chunk_start=1,
+        chunk_end=10,
+        attempt=2,
+        artifact_registry=registry,
+    )
+
+    assert saved_path.exists()
+
+    assert saved_path.read_text(
+        encoding="utf-8"
+    ) == '{"targets": {}}'
+
+    assert saved_path.parent == (
+        debug_directory
+    )
+
+    assert saved_path.name.startswith(
+        "failed-translation-"
+        "1-10-attempt-2-"
+    )
+
+    assert registry.files == (
+        saved_path.resolve(),
+    )
+
+
+def test_save_failed_translation_response_without_registry(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    debug_directory = (
+        tmp_path
+        / "tmp"
+    )
+
+    monkeypatch.setattr(
+        translation_chunk,
+        "TRANSLATION_DEBUG_DIR",
+        debug_directory,
+    )
+
+    saved_path = save_failed_translation_response(
+        "invalid response",
+        chunk_start=11,
+        chunk_end=20,
+        attempt=1,
+    )
+
+    assert saved_path.exists()
+
+    assert saved_path.read_text(
+        encoding="utf-8"
+    ) == "invalid response"
