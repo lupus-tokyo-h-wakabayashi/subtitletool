@@ -79,6 +79,57 @@ def build_report(
     )
 
 
+def build_suspicious_report(
+    tmp_path: Path,
+) -> OcrInspectionReport:
+    entry = OcrInspectionEntry(
+        subtitle_id="102",
+        timestamp=(
+            "00:08:15,000 --> "
+            "00:08:17,000"
+        ),
+        raw_text="SST A",
+        speaker=None,
+        parsed_text="SST A",
+        cleaned_text="SST A",
+        noise_candidates=(),
+        short_uppercase_fragment_candidates=(
+            "SST A",
+        ),
+        noise_applied_text="SST A",
+        status=(
+            OcrInspectionStatus.SUSPICIOUS
+        ),
+        reasons=(
+            OcrInspectionReason
+            .SHORT_UPPERCASE_FRAGMENT,
+        ),
+        resolved_text=None,
+        changed_steps=(
+            "short_uppercase_fragment_detected",
+        ),
+    )
+
+    summary = OcrInspectionSummary(
+        subtitle_count=1,
+        speaker_detected_count=0,
+        cleanup_changed_count=0,
+        noise_candidate_subtitle_count=0,
+        noise_candidate_count=0,
+        noise_applied_count=0,
+        changed_subtitle_count=0,
+    )
+
+    return OcrInspectionReport(
+        source_srt=(
+            tmp_path / "input.eng.srt"
+        ),
+        profile_name="stargate",
+        summary=summary,
+        entries=(entry,),
+    )
+
+
 def test_json_report_is_written(
     tmp_path: Path,
 ) -> None:
@@ -123,7 +174,7 @@ def test_json_report_structure(
         )
     )
 
-    assert data["version"] == 1
+    assert data["version"] == 2
     assert data["profile"] == "stargate"
 
     assert (
@@ -146,6 +197,70 @@ def test_json_report_structure(
         ["noise_candidates"]
         == ["VVNsKomCIAcM"]
     )
+
+    assert (
+        data["entries"][0]
+        ["short_uppercase_fragment_candidates"]
+        == []
+    )
+
+    assert (
+        data["entries"][0]["status"]
+        == "confirmed_noise"
+    )
+
+    assert (
+        data["entries"][0]["reasons"]
+        == ["noise_dictionary_applied"]
+    )
+
+    assert (
+        data["entries"][0]["resolved_text"]
+        == "I think （判読不能）"
+    )
+
+
+def test_suspicious_quality_is_serialized(
+    tmp_path: Path,
+) -> None:
+    output_path = (
+        tmp_path / "suspicious.json"
+    )
+
+    write_ocr_json_report(
+        output_path,
+        build_suspicious_report(tmp_path),
+    )
+
+    data = json.loads(
+        output_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    entry = data["entries"][0]
+
+    assert (
+        entry
+        ["short_uppercase_fragment_candidates"]
+        == ["SST A"]
+    )
+
+    assert entry["status"] == "suspicious"
+
+    assert entry["reasons"] == [
+        "short_uppercase_fragment",
+    ]
+
+    assert entry["resolved_text"] is None
+
+    assert entry["noise_applied_text"] == (
+        "SST A"
+    )
+
+    assert entry["changed_steps"] == [
+        "short_uppercase_fragment_detected",
+    ]
 
 
 def test_japanese_is_not_ascii_escaped(

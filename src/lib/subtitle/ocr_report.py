@@ -10,7 +10,7 @@ from lib.subtitle.ocr_inspection import (
     OcrInspectionSummary,
 )
 
-OCR_REPORT_VERSION = 1
+OCR_REPORT_VERSION = 2
 
 
 def serialize_ocr_inspection_entry(
@@ -26,9 +26,19 @@ def serialize_ocr_inspection_entry(
         "noise_candidates": list(
             entry.noise_candidates
         ),
+        "short_uppercase_fragment_candidates": list(
+            entry
+            .short_uppercase_fragment_candidates
+        ),
         "noise_applied_text": (
             entry.noise_applied_text
         ),
+        "status": entry.status.value,
+        "reasons": [
+            reason.value
+            for reason in entry.reasons
+        ],
+        "resolved_text": entry.resolved_text,
         "changed_steps": list(
             entry.changed_steps
         ),
