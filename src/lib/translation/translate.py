@@ -12,6 +12,9 @@ from lib.subtitle.srt import (
     SrtBlock,
     parse_srt,
 )
+from .translation_artifacts import (
+    TranslationArtifactRegistry,
+)
 from .translation_output import (
     print_translation_already_complete,
 )
@@ -30,6 +33,23 @@ CHUNK_SIZE = 10
 
 # 翻訳対象の前後に参考として渡す字幕数
 CONTEXT_SIZE = 15
+
+
+def build_translation_artifact_registry(
+) -> TranslationArtifactRegistry:
+    """
+    1回の翻訳実行で生成される一時ファイルを
+    追跡するレジストリを生成する。
+    """
+    project_root = (
+        Path(__file__)
+        .resolve()
+        .parents[3]
+    )
+
+    return TranslationArtifactRegistry(
+        root_directory=project_root
+    )
 
 
 def filter_empty_source_blocks(
@@ -231,6 +251,10 @@ def translate_srt(
 
         return output_path
 
+    artifact_registry = (
+        build_translation_artifact_registry()
+    )
+
     inspection_path = run_translation_session(
         source_blocks=source_blocks,
         translated_blocks_all=(
@@ -243,6 +267,7 @@ def translate_srt(
         profile_config=profile_config,
         noise_dictionary=noise_dictionary,
         inspect_request=inspect_request,
+        artifact_registry=artifact_registry,
     )
 
     if inspection_path is not None:
