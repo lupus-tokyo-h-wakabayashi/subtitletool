@@ -11,6 +11,8 @@ from lib.subtitle.ocr_inspection import (
     STEP_NOISE_DICTIONARY,
     STEP_OCR_CLEANUP,
     STEP_SPEAKER_PARSE,
+    OcrInspectionReason,
+    OcrInspectionStatus,
     inspect_ocr_block,
     inspect_ocr_blocks,
 )
@@ -88,6 +90,16 @@ def test_normal_text_is_not_changed(
     )
 
     assert entry.changed_steps == ()
+
+    assert entry.status == (
+        OcrInspectionStatus.ACCEPTED
+    )
+
+    assert entry.reasons == ()
+
+    assert entry.resolved_text == (
+        "This is normal text."
+    )
 
 
 def test_common_ocr_error_is_recorded(
@@ -255,6 +267,19 @@ def test_confirmed_noise_is_detected_and_applied(
         entry.changed_steps
     )
 
+    assert entry.status == (
+        OcrInspectionStatus.CONFIRMED_NOISE
+    )
+
+    assert entry.reasons == (
+        OcrInspectionReason
+        .NOISE_DICTIONARY_APPLIED,
+    )
+
+    assert entry.resolved_text == (
+        "Move （判読不能） away."
+    )
+
 
 def test_candidate_noise_is_not_applied(
     tmp_path: Path,
@@ -288,6 +313,17 @@ def test_candidate_noise_is_not_applied(
 
     assert entry.observed is True
     assert entry.changed is False
+
+    assert entry.status == (
+        OcrInspectionStatus.SUSPICIOUS
+    )
+
+    assert entry.reasons == (
+        OcrInspectionReason
+        .SUSPICIOUS_LATIN_SEQUENCE,
+    )
+
+    assert entry.resolved_text is None
 
 
 def test_inspection_does_not_write_noise_file(
@@ -411,3 +447,11 @@ def test_empty_blocks_create_empty_report(
 
     assert report.entries == ()
     assert report.summary.subtitle_count == 0
+
+
+def test_unresolved_status_is_available_for_future_resolution(
+) -> None:
+    assert (
+        OcrInspectionStatus.UNRESOLVED.value
+        == "unresolved"
+    )

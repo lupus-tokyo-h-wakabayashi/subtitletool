@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from lib.profile.noise import (
@@ -20,6 +21,22 @@ STEP_NOISE_DETECTED = "noise_detected"
 STEP_NOISE_DICTIONARY = "noise_dictionary"
 
 
+class OcrInspectionStatus(StrEnum):
+    ACCEPTED = "accepted"
+    SUSPICIOUS = "suspicious"
+    CONFIRMED_NOISE = "confirmed_noise"
+    UNRESOLVED = "unresolved"
+
+
+class OcrInspectionReason(StrEnum):
+    SUSPICIOUS_LATIN_SEQUENCE = (
+        "suspicious_latin_sequence"
+    )
+    NOISE_DICTIONARY_APPLIED = (
+        "noise_dictionary_applied"
+    )
+
+
 @dataclass(frozen=True)
 class OcrInspectionEntry:
     subtitle_id: str
@@ -30,6 +47,9 @@ class OcrInspectionEntry:
     cleaned_text: str
     noise_candidates: tuple[str, ...]
     noise_applied_text: str
+    status: OcrInspectionStatus
+    reasons: tuple[OcrInspectionReason, ...]
+    resolved_text: str | None
     changed_steps: tuple[str, ...]
 
     @property
@@ -76,6 +96,43 @@ class OcrInspectionReport:
     entries: tuple[OcrInspectionEntry, ...]
 
 
+def build_ocr_inspection_quality(
+    *,
+    cleaned_text: str,
+    noise_candidates: tuple[str, ...],
+    noise_applied_text: str,
+) -> tuple[
+    OcrInspectionStatus,
+    tuple[OcrInspectionReason, ...],
+    str | None,
+]:
+    if noise_applied_text != cleaned_text:
+        return (
+            OcrInspectionStatus.CONFIRMED_NOISE,
+            (
+                OcrInspectionReason
+                .NOISE_DICTIONARY_APPLIED,
+            ),
+            noise_applied_text,
+        )
+
+    if noise_candidates:
+        return (
+            OcrInspectionStatus.SUSPICIOUS,
+            (
+                OcrInspectionReason
+                .SUSPICIOUS_LATIN_SEQUENCE,
+            ),
+            None,
+        )
+
+    return (
+        OcrInspectionStatus.ACCEPTED,
+        (),
+        noise_applied_text,
+    )
+
+
 def inspect_ocr_block(
     block: SrtBlock,
     noise_dictionary: NoiseDictionary,
@@ -116,6 +173,16 @@ def inspect_ocr_block(
         )
     )
 
+    (
+        status,
+        reasons,
+        resolved_text,
+    ) = build_ocr_inspection_quality(
+        cleaned_text=cleaned_text,
+        noise_candidates=noise_candidates,
+        noise_applied_text=noise_applied_text,
+    )
+
     changed_steps: list[str] = []
 
     if parsed.speaker is not None:
@@ -147,6 +214,9 @@ def inspect_ocr_block(
         cleaned_text=cleaned_text,
         noise_candidates=noise_candidates,
         noise_applied_text=noise_applied_text,
+        status=status,
+        reasons=reasons,
+        resolved_text=resolved_text,
         changed_steps=tuple(
             changed_steps
         ),

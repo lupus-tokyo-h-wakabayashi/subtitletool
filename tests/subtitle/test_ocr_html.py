@@ -11,6 +11,8 @@ from lib.subtitle.ocr_inspection import (
     OcrInspectionEntry,
     OcrInspectionReport,
     OcrInspectionSummary,
+    OcrInspectionReason,
+    OcrInspectionStatus,
 )
 
 
@@ -33,6 +35,16 @@ def build_report(
             "VVNsKomCIAcM",
         ),
         noise_applied_text=(
+            "Move （判読不能） away."
+        ),
+        status=(
+            OcrInspectionStatus.CONFIRMED_NOISE
+        ),
+        reasons=(
+            OcrInspectionReason
+            .NOISE_DICTIONARY_APPLIED,
+        ),
+        resolved_text=(
             "Move （判読不能） away."
         ),
         changed_steps=(
@@ -172,6 +184,9 @@ def test_speaker_only_entry_is_not_marked_as_changed() -> None:
         cleaned_text="Normal dialogue.",
         noise_candidates=(),
         noise_applied_text="Normal dialogue.",
+        status=OcrInspectionStatus.ACCEPTED,
+        reasons=(),
+        resolved_text="Normal dialogue.",
         changed_steps=(
             "speaker_parse",
         ),

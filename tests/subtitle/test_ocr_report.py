@@ -7,6 +7,8 @@ from lib.subtitle.ocr_inspection import (
     OcrInspectionEntry,
     OcrInspectionReport,
     OcrInspectionSummary,
+    OcrInspectionReason,
+    OcrInspectionStatus,
 )
 from lib.subtitle.ocr_report import (
     write_ocr_json_report,
@@ -36,6 +38,16 @@ def build_report(
             "VVNsKomCIAcM",
         ),
         noise_applied_text=(
+            "I think （判読不能）"
+        ),
+        status=(
+            OcrInspectionStatus.CONFIRMED_NOISE
+        ),
+        reasons=(
+            OcrInspectionReason
+            .NOISE_DICTIONARY_APPLIED,
+        ),
+        resolved_text=(
             "I think （判読不能）"
         ),
         changed_steps=(
