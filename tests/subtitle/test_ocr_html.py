@@ -75,6 +75,34 @@ def build_report(
     )
 
 
+def build_suspicious_entry() -> OcrInspectionEntry:
+    return OcrInspectionEntry(
+        subtitle_id="102",
+        timestamp=(
+            "00:08:15,000 --> "
+            "00:08:17,000"
+        ),
+        raw_text="SST A",
+        speaker=None,
+        parsed_text="SST A",
+        cleaned_text="SST A",
+        noise_candidates=(),
+        short_uppercase_fragment_candidates=(
+            "SST A",
+        ),
+        noise_applied_text="SST A",
+        status=OcrInspectionStatus.SUSPICIOUS,
+        reasons=(
+            OcrInspectionReason
+            .SHORT_UPPERCASE_FRAGMENT,
+        ),
+        resolved_text=None,
+        changed_steps=(
+            "short_uppercase_fragment_detected",
+        ),
+    )
+
+
 def test_html_contains_report_data(
     tmp_path: Path,
 ) -> None:
@@ -95,6 +123,70 @@ def test_html_contains_report_data(
     assert "Move away." in html
     assert "VVNsKomCIAcM" in html
     assert "（判読不能）" in html
+
+
+def test_suspicious_quality_is_rendered() -> None:
+    html = render_entry(
+        build_suspicious_entry()
+    )
+
+    assert 'data-status="suspicious"' in html
+
+    assert (
+        "entry-status-suspicious"
+        in html
+    )
+
+    assert "Status:" in html
+    assert "suspicious" in html
+    assert "SST A" in html
+
+    assert (
+        "Short Uppercase Fragments"
+        in html
+    )
+
+    assert (
+        "short_uppercase_fragment"
+        in html
+    )
+
+    assert "Quality Reasons" in html
+    assert "Resolved Text" in html
+    assert "（空）" in html
+
+
+def test_uppercase_candidate_is_escaped() -> None:
+    entry = OcrInspectionEntry(
+        subtitle_id="103",
+        timestamp=(
+            "00:08:18,000 --> "
+            "00:08:20,000"
+        ),
+        raw_text="<SST A>",
+        speaker=None,
+        parsed_text="<SST A>",
+        cleaned_text="<SST A>",
+        noise_candidates=(),
+        short_uppercase_fragment_candidates=(
+            "<SST A>",
+        ),
+        noise_applied_text="<SST A>",
+        status=OcrInspectionStatus.SUSPICIOUS,
+        reasons=(
+            OcrInspectionReason
+            .SHORT_UPPERCASE_FRAGMENT,
+        ),
+        resolved_text=None,
+        changed_steps=(
+            "short_uppercase_fragment_detected",
+        ),
+    )
+
+    html = render_entry(entry)
+
+    assert "<SST A>" not in html
+    assert "&lt;SST A&gt;" in html
 
 
 def test_html_escapes_subtitle_content(

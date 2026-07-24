@@ -48,6 +48,51 @@ def render_noise_candidates(
     )
 
 
+def render_short_uppercase_fragment_candidates(
+    entry: OcrInspectionEntry,
+) -> str:
+    candidates = (
+        entry
+        .short_uppercase_fragment_candidates
+    )
+
+    if not candidates:
+        return (
+            '<span class="empty">'
+            "なし"
+            "</span>"
+        )
+
+    return "".join(
+        (
+            '<span class="uppercase-candidate">'
+            f"{escape(candidate)}"
+            "</span>"
+        )
+        for candidate in candidates
+    )
+
+
+def render_quality_reasons(
+    entry: OcrInspectionEntry,
+) -> str:
+    if not entry.reasons:
+        return (
+            '<span class="empty">'
+            "なし"
+            "</span>"
+        )
+
+    return "".join(
+        (
+            '<span class="reason">'
+            f"{escape(reason.value)}"
+            "</span>"
+        )
+        for reason in entry.reasons
+    )
+
+
 def render_changed_steps(
     entry: OcrInspectionEntry,
 ) -> str:
@@ -80,9 +125,21 @@ def render_entry(
             entry.parsed_text,
             entry.cleaned_text,
             entry.noise_applied_text,
+            entry.resolved_text or "",
+            entry.status.value,
+            *(
+                reason.value
+                for reason in entry.reasons
+            ),
             *entry.noise_candidates,
+            *(
+                entry
+                .short_uppercase_fragment_candidates
+            ),
         ]
     ).lower()
+
+    status_value = entry.status.value
 
     changed_value = (
         "true"
@@ -102,7 +159,10 @@ def render_entry(
         else "false"
     )
 
-    card_classes = ["entry"]
+    card_classes = [
+        "entry",
+        f"entry-status-{status_value}",
+    ]
 
     if entry.changed:
         card_classes.append(
@@ -126,6 +186,7 @@ def render_entry(
 <article
     class="{escape(' '.join(card_classes))}"
     data-search="{escape(searchable_text, quote=True)}"
+    data-status="{escape(status_value, quote=True)}"
     data-changed="{changed_value}"
     data-noise="{noise_value}"
     data-speaker="{speaker_value}"
@@ -136,6 +197,12 @@ def render_entry(
         <span>
             Speaker:
             {escape(entry.speaker or "なし")}
+        </span>
+        <span
+            class="status-badge status-{escape(status_value)}"
+        >
+            Status:
+            {escape(status_value)}
         </span>
     </header>
 
@@ -167,6 +234,16 @@ def render_entry(
                 {render_text(entry.noise_applied_text)}
             </div>
         </section>
+        <section>
+            <h3>Resolved Text</h3>
+            <div class="text-value">
+                {
+    render_text(
+        entry.resolved_text or ""
+    )
+    }
+            </div>
+        </section>
     </div>
 
     <div class="metadata-grid">
@@ -174,6 +251,24 @@ def render_entry(
             <h3>Noise Candidates</h3>
             <div>
                 {render_noise_candidates(entry)}
+            </div>
+        </section>
+
+        <section>
+            <h3>Short Uppercase Fragments</h3>
+            <div>
+                {
+    render_short_uppercase_fragment_candidates(
+        entry
+    )
+    }
+            </div>
+        </section>
+
+        <section>
+            <h3>Quality Reasons</h3>
+            <div>
+                {render_quality_reasons(entry)}
             </div>
         </section>
 
@@ -347,6 +442,16 @@ h3 {{
         inset 0 0 0 1px rgba(94, 189, 129, 0.35);
 }}
 
+.entry-status-suspicious {{
+    border-left-color: #e0a84e;
+    box-shadow:
+        inset 0 0 0 1px rgba(224, 168, 78, 0.28);
+}}
+
+.entry-status-confirmed_noise {{
+    border-left-color: #df6666;
+}}
+
 .entry-header {{
     display: flex;
     flex-wrap: wrap;
@@ -354,6 +459,31 @@ h3 {{
     padding: 12px 16px;
     background: #222731;
     color: #c9d0dc;
+}}
+
+.status-badge {{
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #303541;
+}}
+
+.status-accepted {{
+    color: #b9e6c9;
+}}
+
+.status-suspicious {{
+    background: #594321;
+    color: #ffe2a8;
+}}
+
+.status-confirmed_noise {{
+    background: #672f36;
+    color: #ffd9dc;
+}}
+
+.status-unresolved {{
+    background: #5a354f;
+    color: #ffd7f3;
 }}
 
 .comparison-grid {{
@@ -389,6 +519,8 @@ h3 {{
 }}
 
 .candidate,
+.uppercase-candidate,
+.reason,
 .step {{
     display: inline-block;
     margin: 2px 6px 2px 0;
@@ -399,6 +531,16 @@ h3 {{
 .candidate {{
     background: #672f36;
     color: #ffd9dc;
+}}
+
+.uppercase-candidate {{
+    background: #594321;
+    color: #ffe2a8;
+}}
+
+.reason {{
+    background: #493755;
+    color: #efd9ff;
 }}
 
 .step {{
