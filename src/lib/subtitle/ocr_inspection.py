@@ -97,6 +97,7 @@ class OcrInspectionSummary:
     noise_candidate_subtitle_count: int
     noise_candidate_count: int
     noise_applied_count: int
+    suspicious_subtitle_count: int
     changed_subtitle_count: int
 
 
@@ -291,6 +292,11 @@ def build_ocr_inspection_summary(
         noise_applied_count=sum(
             STEP_NOISE_DICTIONARY
             in entry.changed_steps
+            for entry in entries
+        ),
+        suspicious_subtitle_count=sum(
+            entry.status
+            == OcrInspectionStatus.SUSPICIOUS
             for entry in entries
         ),
         changed_subtitle_count=sum(

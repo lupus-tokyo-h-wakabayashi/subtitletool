@@ -465,6 +465,10 @@ def test_summary_does_not_count_observation_only_entries_as_changed(
                 "| think this changed.",
                 number="3",
             ),
+            build_block(
+                "SST A",
+                number="4",
+            ),
         ],
         source_srt=(
             tmp_path / "input.eng.srt"
@@ -473,7 +477,7 @@ def test_summary_does_not_count_observation_only_entries_as_changed(
         noise_dictionary=dictionary,
     )
 
-    assert report.summary.subtitle_count == 3
+    assert report.summary.subtitle_count == 4
 
     assert (
         report.summary
@@ -497,6 +501,12 @@ def test_summary_does_not_count_observation_only_entries_as_changed(
         report.summary
         .noise_applied_count
         == 0
+    )
+
+    assert (
+        report.summary
+        .suspicious_subtitle_count
+        == 2
     )
 
     assert (

@@ -62,6 +62,7 @@ def build_report(
         noise_candidate_subtitle_count=1,
         noise_candidate_count=1,
         noise_applied_count=1,
+        suspicious_subtitle_count=0,
         changed_subtitle_count=1,
     )
 
