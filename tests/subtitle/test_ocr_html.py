@@ -34,6 +34,7 @@ def build_report(
         noise_candidates=(
             "VVNsKomCIAcM",
         ),
+        short_uppercase_fragment_candidates=(),
         noise_applied_text=(
             "Move （判読不能） away."
         ),
@@ -183,6 +184,7 @@ def test_speaker_only_entry_is_not_marked_as_changed() -> None:
         parsed_text="Normal dialogue.",
         cleaned_text="Normal dialogue.",
         noise_candidates=(),
+        short_uppercase_fragment_candidates=(),
         noise_applied_text="Normal dialogue.",
         status=OcrInspectionStatus.ACCEPTED,
         reasons=(),

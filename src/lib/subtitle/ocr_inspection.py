@@ -9,6 +9,9 @@ from lib.profile.noise import (
     apply_noise_dictionary_to_text,
     find_suspicious_latin_sequences,
 )
+from lib.subtitle.ocr_quality import (
+    find_suspicious_short_uppercase_fragments,
+)
 from lib.subtitle.srt import (
     SrtBlock,
     parse_speaker_from_text,
@@ -18,6 +21,9 @@ from lib.subtitle.text import cleanup_ocr_text
 STEP_SPEAKER_PARSE = "speaker_parse"
 STEP_OCR_CLEANUP = "ocr_cleanup"
 STEP_NOISE_DETECTED = "noise_detected"
+STEP_SHORT_UPPERCASE_FRAGMENT_DETECTED = (
+    "short_uppercase_fragment_detected"
+)
 STEP_NOISE_DICTIONARY = "noise_dictionary"
 
 
@@ -31,6 +37,9 @@ class OcrInspectionStatus(StrEnum):
 class OcrInspectionReason(StrEnum):
     SUSPICIOUS_LATIN_SEQUENCE = (
         "suspicious_latin_sequence"
+    )
+    SHORT_UPPERCASE_FRAGMENT = (
+        "short_uppercase_fragment"
     )
     NOISE_DICTIONARY_APPLIED = (
         "noise_dictionary_applied"
@@ -46,6 +55,9 @@ class OcrInspectionEntry:
     parsed_text: str
     cleaned_text: str
     noise_candidates: tuple[str, ...]
+    short_uppercase_fragment_candidates: (
+        tuple[str, ...]
+    )
     noise_applied_text: str
     status: OcrInspectionStatus
     reasons: tuple[OcrInspectionReason, ...]
@@ -100,6 +112,9 @@ def build_ocr_inspection_quality(
     *,
     cleaned_text: str,
     noise_candidates: tuple[str, ...],
+    short_uppercase_fragment_candidates: (
+        tuple[str, ...]
+    ),
     noise_applied_text: str,
 ) -> tuple[
     OcrInspectionStatus,
@@ -116,13 +131,24 @@ def build_ocr_inspection_quality(
             noise_applied_text,
         )
 
+    reasons: list[OcrInspectionReason] = []
+
     if noise_candidates:
+        reasons.append(
+            OcrInspectionReason
+            .SUSPICIOUS_LATIN_SEQUENCE
+        )
+
+    if short_uppercase_fragment_candidates:
+        reasons.append(
+            OcrInspectionReason
+            .SHORT_UPPERCASE_FRAGMENT
+        )
+
+    if reasons:
         return (
             OcrInspectionStatus.SUSPICIOUS,
-            (
-                OcrInspectionReason
-                .SUSPICIOUS_LATIN_SEQUENCE,
-            ),
+            tuple(reasons),
             None,
         )
 
@@ -166,6 +192,12 @@ def inspect_ocr_block(
         )
     )
 
+    short_uppercase_fragment_candidates = (
+        find_suspicious_short_uppercase_fragments(
+            cleaned_text
+        )
+    )
+
     noise_applied_text = (
         apply_noise_dictionary_to_text(
             cleaned_text,
@@ -180,6 +212,9 @@ def inspect_ocr_block(
     ) = build_ocr_inspection_quality(
         cleaned_text=cleaned_text,
         noise_candidates=noise_candidates,
+        short_uppercase_fragment_candidates=(
+            short_uppercase_fragment_candidates
+        ),
         noise_applied_text=noise_applied_text,
     )
 
@@ -200,6 +235,11 @@ def inspect_ocr_block(
             STEP_NOISE_DETECTED
         )
 
+    if short_uppercase_fragment_candidates:
+        changed_steps.append(
+            STEP_SHORT_UPPERCASE_FRAGMENT_DETECTED
+        )
+
     if noise_applied_text != cleaned_text:
         changed_steps.append(
             STEP_NOISE_DICTIONARY
@@ -213,6 +253,9 @@ def inspect_ocr_block(
         parsed_text=parsed.text,
         cleaned_text=cleaned_text,
         noise_candidates=noise_candidates,
+        short_uppercase_fragment_candidates=(
+            short_uppercase_fragment_candidates
+        ),
         noise_applied_text=noise_applied_text,
         status=status,
         reasons=reasons,

@@ -37,6 +37,7 @@ def build_report(
         noise_candidates=(
             "VVNsKomCIAcM",
         ),
+        short_uppercase_fragment_candidates=(),
         noise_applied_text=(
             "I think （判読不能）"
         ),

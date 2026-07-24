@@ -7,6 +7,7 @@ from lib.profile.noise import (
     NoiseEntry,
 )
 from lib.subtitle.ocr_inspection import (
+    STEP_SHORT_UPPERCASE_FRAGMENT_DETECTED,
     STEP_NOISE_DETECTED,
     STEP_NOISE_DICTIONARY,
     STEP_OCR_CLEANUP,
@@ -100,6 +101,40 @@ def test_normal_text_is_not_changed(
     assert entry.resolved_text == (
         "This is normal text."
     )
+
+    assert (
+        entry
+        .short_uppercase_fragment_candidates
+        == ()
+    )
+
+
+def test_multiple_suspicious_reasons_have_stable_order(
+    tmp_path: Path,
+) -> None:
+    dictionary = build_noise_dictionary(
+        tmp_path
+    )
+
+    entry = inspect_ocr_block(
+        build_block(
+            "CandidateNoise\nSST A"
+        ),
+        dictionary,
+    )
+
+    assert entry.reasons == (
+        OcrInspectionReason
+        .SUSPICIOUS_LATIN_SEQUENCE,
+        OcrInspectionReason
+        .SHORT_UPPERCASE_FRAGMENT,
+    )
+
+    assert entry.status == (
+        OcrInspectionStatus.SUSPICIOUS
+    )
+
+    assert entry.resolved_text is None
 
 
 def test_common_ocr_error_is_recorded(
@@ -324,6 +359,48 @@ def test_candidate_noise_is_not_applied(
     )
 
     assert entry.resolved_text is None
+
+
+def test_short_uppercase_fragment_is_suspicious(
+    tmp_path: Path,
+) -> None:
+    dictionary = build_noise_dictionary(
+        tmp_path
+    )
+
+    entry = inspect_ocr_block(
+        build_block(
+            "SST A"
+        ),
+        dictionary,
+    )
+
+    assert (
+        entry
+        .short_uppercase_fragment_candidates
+        == (
+            "SST A",
+        )
+    )
+
+    assert entry.status == (
+        OcrInspectionStatus.SUSPICIOUS
+    )
+
+    assert entry.reasons == (
+        OcrInspectionReason
+        .SHORT_UPPERCASE_FRAGMENT,
+    )
+
+    assert entry.resolved_text is None
+
+    assert (
+        STEP_SHORT_UPPERCASE_FRAGMENT_DETECTED
+        in entry.changed_steps
+    )
+
+    assert entry.observed is True
+    assert entry.changed is False
 
 
 def test_inspection_does_not_write_noise_file(
