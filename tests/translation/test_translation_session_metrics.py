@@ -6,6 +6,9 @@ import pytest
 from lib.profile.config import ProfileConfig
 from lib.subtitle.srt import SrtBlock
 from lib.translation import translation_session
+from lib.translation.translation_artifacts import (
+    TranslationArtifactRegistry,
+)
 from lib.translation.translation_metrics import (
     TRANSLATION_RESULT_FAILED,
     TRANSLATION_RESULT_HYBRID_SUCCESS,
@@ -215,8 +218,10 @@ def test_run_translation_session_saves_success_metrics(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del output_directory
+        del artifact_registry
 
         saved_metrics.append(
             (
@@ -2590,4 +2595,131 @@ def test_run_translation_session_applies_adaptive_chunk_size(
                 / "output.srt"
             ),
         ),
+    ]
+
+
+def test_run_translation_session_passes_artifact_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    patch_session_dependencies(
+        monkeypatch
+    )
+
+    registry = TranslationArtifactRegistry(
+        root_directory=tmp_path
+    )
+
+    received_by_translate: list[
+        TranslationArtifactRegistry | None
+        ] = []
+
+    received_by_metrics: list[
+        TranslationArtifactRegistry | None
+        ] = []
+
+    def fake_translate_chunk(
+        *args: object,
+        metrics: (
+            TranslationChunkMetric
+            | None
+        ) = None,
+        artifact_registry: (
+            TranslationArtifactRegistry
+            | None
+        ) = None,
+        **kwargs: object,
+    ) -> list[str]:
+        del args
+        del kwargs
+
+        assert metrics is not None
+
+        received_by_translate.append(
+            artifact_registry
+        )
+
+        metrics.complete(
+            final_result=(
+                TRANSLATION_RESULT_STANDARD_SUCCESS
+            ),
+            elapsed_seconds=1.0,
+        )
+
+        return [
+            "翻訳結果"
+            for _ in metrics.target_ids
+        ]
+
+    def fake_save_metrics(
+        *,
+        session: TranslationSessionMetric,
+        chunk: TranslationChunkMetric,
+        output_directory: Path | None = None,
+        artifact_registry: (
+            TranslationArtifactRegistry
+            | None
+        ) = None,
+    ) -> tuple[Path, Path]:
+        del session
+        del chunk
+        del output_directory
+
+        received_by_metrics.append(
+            artifact_registry
+        )
+
+        return (
+            tmp_path
+            / "chunk.json",
+            tmp_path
+            / "summary.json",
+        )
+
+    monkeypatch.setattr(
+        translation_session,
+        "translate_chunk",
+        fake_translate_chunk,
+    )
+
+    monkeypatch.setattr(
+        translation_session,
+        "try_save_translation_metrics_reports",
+        fake_save_metrics,
+    )
+
+    result = (
+        translation_session.run_translation_session(
+            source_blocks=build_source_blocks(),
+            translated_blocks_all=[],
+            output_path=(
+                tmp_path
+                / "output.srt"
+            ),
+            model="test-model",
+            chunk_size=2,
+            context_size=1,
+            profile_config=(
+                build_profile_config(
+                    tmp_path
+                )
+            ),
+            noise_dictionary=(
+                build_test_noise_dictionary(
+                    []
+                )
+            ),
+            inspect_request=False,
+            artifact_registry=registry,
+        )
+    )
+
+    assert result is None
+
+    assert received_by_translate == [
+        registry,
+    ]
+
+    assert received_by_metrics == [
+        registry,
     ]

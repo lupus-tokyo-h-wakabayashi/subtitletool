@@ -22,6 +22,9 @@ from lib.subtitle.srt import (
 from lib.subtitle.text import (
     cleanup_ocr_text,
 )
+from .translation_artifacts import (
+    TranslationArtifactRegistry,
+)
 from .translation_chunk import (
     build_initial_translation_request_payload,
     save_translation_request_payload,
@@ -174,6 +177,10 @@ def run_translation_session(
     profile_config: ProfileConfig,
     noise_dictionary: NoiseDictionary,
     inspect_request: bool = False,
+    artifact_registry: (
+        TranslationArtifactRegistry
+        | None
+    ) = None,
 ) -> Path | None:
     """
     未翻訳部分をチャンク単位で翻訳し、
@@ -460,6 +467,7 @@ def run_translation_session(
                 noise_dictionary=noise_dictionary,
                 profile_name=resolved_profile,
                 metrics=chunk_metrics,
+                artifact_registry=artifact_registry,
             )
         except Exception as error:
             session_metrics.complete(
@@ -472,6 +480,7 @@ def run_translation_session(
             try_save_translation_metrics_reports(
                 session=session_metrics,
                 chunk=chunk_metrics,
+                artifact_registry=artifact_registry,
             )
 
             failure_recovery = (
@@ -594,6 +603,7 @@ def run_translation_session(
         try_save_translation_metrics_reports(
             session=session_metrics,
             chunk=chunk_metrics,
+            artifact_registry=artifact_registry,
         )
 
         # Phase 3-3：失敗した元チャンクの範囲内は
