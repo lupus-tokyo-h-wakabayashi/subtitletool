@@ -273,4 +273,6 @@ def translate_srt(
     if inspection_path is not None:
         return inspection_path
 
+    artifact_registry.cleanup()
+
     return output_path

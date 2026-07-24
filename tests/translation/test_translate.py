@@ -373,3 +373,253 @@ def test_translate_srt_passes_artifact_registry(
     assert received_registries == [
         registry,
     ]
+
+
+def test_translate_srt_cleans_artifacts_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_path = (
+        tmp_path
+        / "input.eng.srt"
+    )
+
+    output_path = (
+        tmp_path
+        / "output.ja.srt"
+    )
+
+    input_path.write_text(
+        (
+            "1\n"
+            "00:00:01,000 --> "
+            "00:00:02,000\n"
+            "First subtitle.\n"
+        ),
+        encoding="utf-8",
+    )
+
+    profile_directory = (
+        tmp_path
+        / "profile"
+    )
+
+    profile_config = ProfileConfig(
+        requested_profile="test",
+        resolved_profile="test",
+        profile_dir=profile_directory,
+        prompt_path=(
+            profile_directory
+            / "prompt.txt"
+        ),
+        glossary_path=(
+            profile_directory
+            / "glossary.json"
+        ),
+        style_path=(
+            profile_directory
+            / "style.json"
+        ),
+        noise_path=(
+            profile_directory
+            / "noise.json"
+        ),
+        noise_local_path=(
+            profile_directory
+            / "noise.local.json"
+        ),
+        fallback_used=False,
+    )
+
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    registry = TranslationArtifactRegistry(
+        root_directory=tmp_path
+    )
+
+    artifact_path = (
+        tmp_path
+        / "failed-translation.txt"
+    )
+
+    artifact_path.write_text(
+        "temporary",
+        encoding="utf-8",
+    )
+
+    registry.register_file(
+        artifact_path
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "resolve_profile_config",
+        lambda requested_profile: (
+            profile_config
+        ),
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "load_noise_dictionary",
+        lambda config: noise_dictionary,
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "load_resume_blocks",
+        lambda source_blocks, path: [],
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "build_translation_artifact_registry",
+        lambda: registry,
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "run_translation_session",
+        lambda **kwargs: None,
+    )
+
+    result = translate_srt(
+        input_path,
+        output_path,
+        profile_name="test",
+    )
+
+    assert result == output_path.resolve()
+    assert not artifact_path.exists()
+
+
+def test_translate_srt_preserves_artifacts_for_inspection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_path = (
+        tmp_path
+        / "input.eng.srt"
+    )
+
+    output_path = (
+        tmp_path
+        / "output.ja.srt"
+    )
+
+    inspection_path = (
+        tmp_path
+        / "translation-request.json"
+    )
+
+    input_path.write_text(
+        (
+            "1\n"
+            "00:00:01,000 --> "
+            "00:00:02,000\n"
+            "First subtitle.\n"
+        ),
+        encoding="utf-8",
+    )
+
+    profile_directory = (
+        tmp_path
+        / "profile"
+    )
+
+    profile_config = ProfileConfig(
+        requested_profile="test",
+        resolved_profile="test",
+        profile_dir=profile_directory,
+        prompt_path=(
+            profile_directory
+            / "prompt.txt"
+        ),
+        glossary_path=(
+            profile_directory
+            / "glossary.json"
+        ),
+        style_path=(
+            profile_directory
+            / "style.json"
+        ),
+        noise_path=(
+            profile_directory
+            / "noise.json"
+        ),
+        noise_local_path=(
+            profile_directory
+            / "noise.local.json"
+        ),
+        fallback_used=False,
+    )
+
+    noise_dictionary = (
+        build_test_noise_dictionary(
+            []
+        )
+    )
+
+    registry = TranslationArtifactRegistry(
+        root_directory=tmp_path
+    )
+
+    artifact_path = (
+        tmp_path
+        / "translation-request.json"
+    )
+
+    artifact_path.write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    registry.register_file(
+        artifact_path
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "resolve_profile_config",
+        lambda requested_profile: (
+            profile_config
+        ),
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "load_noise_dictionary",
+        lambda config: noise_dictionary,
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "load_resume_blocks",
+        lambda source_blocks, path: [],
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "build_translation_artifact_registry",
+        lambda: registry,
+    )
+
+    monkeypatch.setattr(
+        translate,
+        "run_translation_session",
+        lambda **kwargs: inspection_path,
+    )
+
+    result = translate_srt(
+        input_path,
+        output_path,
+        profile_name="test",
+        inspect_request=True,
+    )
+
+    assert result == inspection_path
+    assert artifact_path.exists()
