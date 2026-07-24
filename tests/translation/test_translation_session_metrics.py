@@ -440,8 +440,10 @@ def test_run_translation_session_reraises_single_subtitle_failure(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del output_directory
+        del artifact_registry
 
         saved_metrics.append(
             (
@@ -732,9 +734,11 @@ def test_run_translation_session_retries_failed_group_individually(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del session
         del output_directory
+        del artifact_registry
 
         saved_chunks.append(
             chunk
@@ -1200,9 +1204,11 @@ def test_run_translation_session_preserves_partial_recovery_before_reraising(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del session
         del output_directory
+        del artifact_registry
 
         saved_chunks.append(
             chunk
@@ -1521,8 +1527,10 @@ def test_run_translation_session_saves_each_chunk_metrics(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del output_directory
+        del artifact_registry
 
         saved_sessions.append(
             session
@@ -1714,8 +1722,10 @@ def test_run_translation_session_records_resume_position(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del output_directory
+        del artifact_registry
 
         saved_metrics.append(
             (
@@ -1926,9 +1936,11 @@ def test_run_translation_session_applies_reduced_chunk_after_hybrid(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del session
         del output_directory
+        del artifact_registry
 
         saved_chunks.append(
             chunk
@@ -2304,9 +2316,11 @@ def test_run_translation_session_applies_adaptive_chunk_size(
         session: TranslationSessionMetric,
         chunk: TranslationChunkMetric,
         output_directory: Path | None = None,
+        artifact_registry: object | None = None,
     ) -> tuple[Path, Path]:
         del session
         del output_directory
+        del artifact_registry
 
         saved_chunks.append(
             chunk
