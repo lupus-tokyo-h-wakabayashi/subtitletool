@@ -68,6 +68,9 @@ def serialize_ocr_inspection_summary(
         "noise_applied_count": (
             summary.noise_applied_count
         ),
+        "suspicious_subtitle_count": (
+            summary.suspicious_subtitle_count
+        ),
         "changed_subtitle_count": (
             summary.changed_subtitle_count
         ),

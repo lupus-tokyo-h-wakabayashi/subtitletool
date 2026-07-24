@@ -124,6 +124,7 @@ def test_html_contains_report_data(
     assert "Move away." in html
     assert "VVNsKomCIAcM" in html
     assert "（判読不能）" in html
+    assert "Suspicious Subtitles" in html
 
 
 def test_suspicious_quality_is_rendered() -> None:

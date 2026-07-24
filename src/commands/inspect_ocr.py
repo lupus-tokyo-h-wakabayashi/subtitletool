@@ -117,6 +117,10 @@ def print_report_summary(
         f"{summary.noise_applied_count}"
     )
     print(
+        "Suspicious        : "
+        f"{summary.suspicious_subtitle_count}"
+    )
+    print(
         "Changed Subtitles : "
         f"{summary.changed_subtitle_count}"
     )

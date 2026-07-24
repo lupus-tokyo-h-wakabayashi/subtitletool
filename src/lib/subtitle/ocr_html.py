@@ -620,6 +620,13 @@ h3 {{
         </div>
 
         <div class="summary-item">
+            Suspicious Subtitles
+            <strong>
+                {summary.suspicious_subtitle_count}
+            </strong>
+        </div>
+
+        <div class="summary-item">
             Changed Subtitles
             <strong>{summary.changed_subtitle_count}</strong>
         </div>

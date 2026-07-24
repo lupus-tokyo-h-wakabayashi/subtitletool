@@ -240,6 +240,12 @@ def test_suspicious_quality_is_serialized(
         )
     )
 
+    assert (
+        data["summary"]
+        ["suspicious_subtitle_count"]
+        == 1
+    )
+
     entry = data["entries"][0]
 
     assert (
