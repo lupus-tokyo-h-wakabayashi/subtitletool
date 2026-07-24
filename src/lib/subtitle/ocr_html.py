@@ -656,6 +656,14 @@ h3 {{
             話者ありのみ
         </label>
 
+        <label>
+            <input
+                id="suspicious-only"
+                type="checkbox"
+            >
+            要確認のみ
+        </label>
+
         <button
             id="reset"
             type="button"
@@ -683,6 +691,8 @@ h3 {{
         document.getElementById("noise-only");
     const speakerOnly =
         document.getElementById("speaker-only");
+    const suspiciousOnly =
+        document.getElementById("suspicious-only");
     const reset =
         document.getElementById("reset");
     const resultCount =
@@ -716,11 +726,16 @@ h3 {{
                 !speakerOnly.checked
                 || entry.dataset.speaker === "true";
 
+            const suspiciousMatched =
+                !suspiciousOnly.checked
+                || entry.dataset.status === "suspicious";
+
             const visible =
                 searchMatched
                 && changedMatched
                 && noiseMatched
-                && speakerMatched;
+                && speakerMatched
+                && suspiciousMatched;
 
             entry.classList.toggle(
                 "hidden",
@@ -756,6 +771,11 @@ h3 {{
         applyFilters
     );
 
+    suspiciousOnly.addEventListener(
+        "change",
+        applyFilters
+    );
+
     reset.addEventListener(
         "click",
         () => {{
@@ -763,6 +783,7 @@ h3 {{
             changedOnly.checked = false;
             noiseOnly.checked = false;
             speakerOnly.checked = false;
+            suspiciousOnly.checked = false;
             applyFilters();
         }}
     );

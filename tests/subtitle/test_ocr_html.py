@@ -223,7 +223,37 @@ def test_html_contains_filter_controls(
     assert 'id="changed-only"' in html
     assert 'id="noise-only"' in html
     assert 'id="speaker-only"' in html
+    assert 'id="suspicious-only"' in html
+    assert "要確認のみ" in html
     assert 'id="reset"' in html
+
+
+def test_suspicious_filter_is_connected(
+    tmp_path: Path,
+) -> None:
+    html = render_ocr_html_report(
+        build_report(tmp_path)
+    )
+
+    assert (
+        'document.getElementById("suspicious-only")'
+        in html
+    )
+
+    assert (
+        'entry.dataset.status === "suspicious"'
+        in html
+    )
+
+    assert (
+        "&& suspiciousMatched"
+        in html
+    )
+
+    assert (
+        "suspiciousOnly.checked = false;"
+        in html
+    )
 
 
 def test_html_does_not_use_external_assets(
