@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PGS_TO_SRT = str(Path.home() / "PgsToSrt/src/PgsToSrt/bin/Release/net8.0/PgsToSrt.dll")
+PGS_TO_SRT = str(Path.home() / "projects/PgsToSrt/src/PgsToSrt/bin/Release/net8.0/PgsToSrt.dll")
 DOTNET8 = str(Path.home() / ".dotnet8/dotnet")
 TRANSLATE = str(Path.home() / "projects/subtitletool/src/translate.py")
 
@@ -111,4 +111,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

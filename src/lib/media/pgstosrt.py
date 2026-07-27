@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 
 DOTNET8 = Path.home() / ".dotnet8/dotnet"
-PGS_TO_SRT_DLL = Path.home() / "PgsToSrt/src/PgsToSrt/bin/Release/net8.0/PgsToSrt.dll"
+PGS_TO_SRT_DLL = Path.home() / "projects/PgsToSrt/src/PgsToSrt/bin/Release/net8.0/PgsToSrt.dll"
 TESSDATA = "/usr/share/tesseract-ocr/4.00/tessdata"
 
 
